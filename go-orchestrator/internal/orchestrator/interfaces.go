@@ -74,6 +74,9 @@ type PremiereClient interface {
 
 	// EvalAudioCommand runs an audio/track management ExtendScript function.
 	EvalAudioCommand(ctx context.Context, command string, args map[string]any) (map[string]any, error)
+
+	// EvalImmersiveCommand runs a VR/360/HDR/advanced-format ExtendScript function.
+	EvalImmersiveCommand(ctx context.Context, command string, args map[string]any) (map[string]any, error)
 }
 
 // Orchestrator defines the complete set of operations exposed by the engine.
@@ -297,6 +300,9 @@ type Orchestrator interface {
 
 	// --- Audio & Track Management (extended) ---
 	EvalAudioCommand(ctx context.Context, command string, args map[string]any) (map[string]any, error)
+
+	// --- Immersive / VR / HDR / Advanced Formats ---
+	EvalImmersiveCommand(ctx context.Context, command string, args map[string]any) (map[string]any, error)
 
 	// --- Export ---
 	Export(ctx context.Context, params *ExportParams) (*ExportResult, error)

@@ -291,6 +291,32 @@ func (e *Engine) EvalAudioCommand(ctx context.Context, command string, args map[
 	return result, nil
 }
 
+// EvalImmersiveCommand is the passthrough for immersive-video (VR/360, HDR,
+// stereoscopic, frame-rate, aspect-ratio, timecode, render, caption)
+// ExtendScript commands. The MCP immersive_tools layer calls this with a
+// command name and an args map, and the engine forwards to the Premiere
+// bridge via EvalImmersiveCommand.
+func (e *Engine) EvalImmersiveCommand(ctx context.Context, command string, args map[string]any) (map[string]any, error) {
+	if command == "" {
+		return nil, fmt.Errorf("eval_immersive_command: command must not be empty")
+	}
+	e.logger.Debug("eval_immersive_command",
+		zap.String("command", command),
+	)
+	result, err := e.premiere.EvalImmersiveCommand(ctx, command, args)
+	if err != nil {
+		e.logger.Error("eval_immersive_command: failed",
+			zap.String("command", command),
+			zap.Error(err),
+		)
+		return nil, fmt.Errorf("eval immersive command %q: %w", command, err)
+	}
+	e.logger.Debug("eval_immersive_command: success",
+		zap.String("command", command),
+	)
+	return result, nil
+}
+
 // ---------------------------------------------------------------------------
 // Export
 // ---------------------------------------------------------------------------

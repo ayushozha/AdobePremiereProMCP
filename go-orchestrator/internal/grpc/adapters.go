@@ -268,6 +268,10 @@ func (a *PremiereAdapter) EvalAudioCommand(ctx context.Context, command string, 
 	return a.C.EvalAudioCommand(ctx, command, args)
 }
 
+func (a *PremiereAdapter) EvalImmersiveCommand(ctx context.Context, command string, args map[string]any) (map[string]any, error) {
+	return a.C.EvalImmersiveCommand(ctx, command, args)
+}
+
 // ---------------------------------------------------------------------------
 // MediaAdapter wraps *MediaEngineClient to satisfy orch.MediaClient.
 // ---------------------------------------------------------------------------

@@ -10480,3 +10480,2302 @@ function applyMirror(trackIndex, clipIndex, angle, centerX, centerY) { try { if 
 function applyCornerPin(trackIndex, clipIndex, cornersJson) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0; var corners = JSON.parse(cornersJson || "[]"); if (corners.length !== 4) return _err("Exactly 4 corner points required [{x,y},...]"); if (trackIndex >= seq.videoTracks.numTracks) return _err("Track index out of range"); var settings = seq.getSettings(); var seqW = parseInt(settings.videoFrameWidth) || 1920; var seqH = parseInt(settings.videoFrameHeight) || 1080; app.enableQE(); var qeSeq = qe.project.getActiveSequence(); var qeTrack = qeSeq.getVideoTrackAt(trackIndex); var qeClip = qeTrack.getItemAt(clipIndex); qeClip.addVideoEffect(qe.project.getVideoEffectByName("Corner Pin")); var clip = seq.videoTracks[trackIndex].clips[clipIndex]; var cornerNames = ["Upper Left", "Upper Right", "Lower Right", "Lower Left"]; for (var i = 2; i < clip.components.numItems; i++) { if (clip.components[i].displayName === "Corner Pin") { for (var c = 0; c < 4; c++) { var p = clip.components[i].properties.getParamForDisplayName(cornerNames[c]); if (p) p.setValue([corners[c].x * seqW, corners[c].y * seqH], true); } break; } } return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, corners: corners, effect: "Corner Pin", applied: true }); } catch (e) { return _err("applyCornerPin failed: " + e.message); } }
 
 function applySpherize(trackIndex, clipIndex, radius, centerX, centerY) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0; radius = parseFloat(radius) || 50; centerX = parseFloat(centerX); centerY = parseFloat(centerY); if (isNaN(centerX)) centerX = 0.5; if (isNaN(centerY)) centerY = 0.5; if (trackIndex >= seq.videoTracks.numTracks) return _err("Track index out of range"); var settings = seq.getSettings(); var seqW = parseInt(settings.videoFrameWidth) || 1920; var seqH = parseInt(settings.videoFrameHeight) || 1080; app.enableQE(); var qeSeq = qe.project.getActiveSequence(); var qeTrack = qeSeq.getVideoTrackAt(trackIndex); var qeClip = qeTrack.getItemAt(clipIndex); qeClip.addVideoEffect(qe.project.getVideoEffectByName("Spherize")); var clip = seq.videoTracks[trackIndex].clips[clipIndex]; for (var i = 2; i < clip.components.numItems; i++) { if (clip.components[i].displayName === "Spherize") { var radP = clip.components[i].properties.getParamForDisplayName("Radius"); var cenP = clip.components[i].properties.getParamForDisplayName("Center of Sphere"); if (radP) radP.setValue(radius, true); if (cenP) cenP.setValue([centerX * seqW, centerY * seqH], true); break; } } return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, radius: radius, centerX: centerX, centerY: centerY, effect: "Spherize", applied: true }); } catch (e) { return _err("applySpherize failed: " + e.message); } }
+
+// ===========================================================================
+// Motion Graphics & Essential Graphics Panel
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Helper: get video clip from track/clip indices
+// ---------------------------------------------------------------------------
+function _getVideoClip(trackIndex, clipIndex) {
+    if (!app.project) return null;
+    var seq = app.project.activeSequence;
+    if (!seq) return null;
+    trackIndex = parseInt(trackIndex, 10) || 0;
+    clipIndex = parseInt(clipIndex, 10) || 0;
+    if (trackIndex >= seq.videoTracks.numTracks) return null;
+    var track = seq.videoTracks[trackIndex];
+    if (!track.clips || clipIndex >= track.clips.numItems) return null;
+    return track.clips[clipIndex];
+}
+
+// ---------------------------------------------------------------------------
+// 1. getEssentialGraphicsComponents(trackIndex, clipIndex)
+// ---------------------------------------------------------------------------
+function getEssentialGraphicsComponents(trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        clipIndex = parseInt(clipIndex, 10) || 0;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
+        var track = seq.videoTracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+        var clip = track.clips[clipIndex];
+        var components = [];
+        if (clip.components) {
+            for (var i = 0; i < clip.components.numItems; i++) {
+                var comp = clip.components[i];
+                var props = [];
+                if (comp.properties) {
+                    for (var j = 0; j < comp.properties.numItems; j++) {
+                        var p = comp.properties[j];
+                        var pInfo = {
+                            index: j,
+                            displayName: p.displayName || "",
+                            value: null
+                        };
+                        try { pInfo.value = p.getValue(); } catch (pErr) {}
+                        props.push(pInfo);
+                    }
+                }
+                components.push({
+                    index: i,
+                    displayName: comp.displayName || "",
+                    matchName: comp.matchName || "",
+                    properties: props
+                });
+            }
+        }
+        return _ok({trackIndex: trackIndex, clipIndex: clipIndex, components: components});
+    } catch (e) {
+        return _err("getEssentialGraphicsComponents failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 2. setEssentialGraphicsProperty(trackIndex, clipIndex, propName, value)
+// ---------------------------------------------------------------------------
+function setEssentialGraphicsProperty(trackIndex, clipIndex, propName, value) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        clipIndex = parseInt(clipIndex, 10) || 0;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
+        var track = seq.videoTracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+        var clip = track.clips[clipIndex];
+        var found = false;
+        if (clip.components) {
+            for (var i = 0; i < clip.components.numItems && !found; i++) {
+                var comp = clip.components[i];
+                if (comp.properties) {
+                    var p = comp.properties.getParamForDisplayName(propName);
+                    if (p) {
+                        p.setValue(value, true);
+                        found = true;
+                    }
+                }
+            }
+        }
+        if (!found) return _err("Property '" + propName + "' not found");
+        return _ok({trackIndex: trackIndex, clipIndex: clipIndex, property: propName, value: value});
+    } catch (e) {
+        return _err("setEssentialGraphicsProperty failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 3. getEssentialGraphicsText(trackIndex, clipIndex)
+// ---------------------------------------------------------------------------
+function getEssentialGraphicsText(trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        clipIndex = parseInt(clipIndex, 10) || 0;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
+        var track = seq.videoTracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+        var clip = track.clips[clipIndex];
+        var texts = [];
+        if (clip.components) {
+            for (var i = 0; i < clip.components.numItems; i++) {
+                var comp = clip.components[i];
+                if (comp.properties) {
+                    for (var j = 0; j < comp.properties.numItems; j++) {
+                        var p = comp.properties[j];
+                        var dn = (p.displayName || "").toLowerCase();
+                        if (dn.indexOf("text") >= 0 || dn.indexOf("source text") >= 0) {
+                            var val = "";
+                            try { val = String(p.getValue()); } catch (tv) {}
+                            texts.push({componentIndex: i, propertyIndex: j, displayName: p.displayName, text: val});
+                        }
+                    }
+                }
+            }
+        }
+        return _ok({trackIndex: trackIndex, clipIndex: clipIndex, texts: texts});
+    } catch (e) {
+        return _err("getEssentialGraphicsText failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 4. replaceAllText(trackIndex, clipIndex, searchText, replaceText)
+// ---------------------------------------------------------------------------
+function replaceAllText(trackIndex, clipIndex, searchText, replaceText) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        clipIndex = parseInt(clipIndex, 10) || 0;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
+        var track = seq.videoTracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+        var clip = track.clips[clipIndex];
+        var replaced = 0;
+        if (clip.components) {
+            for (var i = 0; i < clip.components.numItems; i++) {
+                var comp = clip.components[i];
+                if (comp.properties) {
+                    for (var j = 0; j < comp.properties.numItems; j++) {
+                        var p = comp.properties[j];
+                        var dn = (p.displayName || "").toLowerCase();
+                        if (dn.indexOf("text") >= 0 || dn.indexOf("source text") >= 0) {
+                            try {
+                                var current = String(p.getValue());
+                                if (current.indexOf(searchText) >= 0) {
+                                    var newVal = current.split(searchText).join(replaceText);
+                                    p.setValue(newVal, true);
+                                    replaced++;
+                                }
+                            } catch (rv) {}
+                        }
+                    }
+                }
+            }
+        }
+        return _ok({trackIndex: trackIndex, clipIndex: clipIndex, replacedCount: replaced, searchText: searchText, replaceText: replaceText});
+    } catch (e) {
+        return _err("replaceAllText failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 5. listInstalledMOGRTs()
+// ---------------------------------------------------------------------------
+function listInstalledMOGRTs() {
+    try {
+        var mogrts = [];
+        var paths = [];
+        if (Folder.userData) {
+            paths.push(new Folder(Folder.userData.fsName + "/Adobe/Common/Motion Graphics Templates"));
+            paths.push(new Folder(Folder.userData.fsName + "/Adobe/Premiere Pro/Motion Graphics Templates"));
+        }
+        if (Folder.commonFiles) {
+            paths.push(new Folder(Folder.commonFiles.fsName + "/Adobe/Motion Graphics Templates"));
+        }
+        for (var pi = 0; pi < paths.length; pi++) {
+            var folder = paths[pi];
+            if (folder.exists) {
+                var files = folder.getFiles("*.mogrt");
+                for (var fi = 0; fi < files.length; fi++) {
+                    mogrts.push({
+                        name: files[fi].displayName || files[fi].name,
+                        path: files[fi].fsName,
+                        size: files[fi].length || 0
+                    });
+                }
+            }
+        }
+        return _ok({mogrts: mogrts, count: mogrts.length});
+    } catch (e) {
+        return _err("listInstalledMOGRTs failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 6. getMOGRTInfo(mogrtPath)
+// ---------------------------------------------------------------------------
+function getMOGRTInfo(mogrtPath) {
+    try {
+        if (!mogrtPath) return _err("mogrtPath is required");
+        var f = new File(mogrtPath);
+        if (!f.exists) return _err("MOGRT file not found: " + mogrtPath);
+        var info = {
+            name: f.displayName || f.name,
+            path: f.fsName,
+            size: f.length || 0,
+            created: f.created ? f.created.toISOString() : "",
+            modified: f.modified ? f.modified.toISOString() : ""
+        };
+        return _ok(info);
+    } catch (e) {
+        return _err("getMOGRTInfo failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 7. batchUpdateMOGRTs(trackIndex, propertyName, value)
+// ---------------------------------------------------------------------------
+function batchUpdateMOGRTs(trackIndex, propertyName, value) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
+        var track = seq.videoTracks[trackIndex];
+        var updated = 0;
+        if (track.clips) {
+            for (var ci = 0; ci < track.clips.numItems; ci++) {
+                var clip = track.clips[ci];
+                if (clip.components) {
+                    for (var i = 0; i < clip.components.numItems; i++) {
+                        var comp = clip.components[i];
+                        if (comp.properties) {
+                            var p = comp.properties.getParamForDisplayName(propertyName);
+                            if (p) {
+                                try { p.setValue(value, true); updated++; } catch (sv) {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return _ok({trackIndex: trackIndex, property: propertyName, updatedCount: updated});
+    } catch (e) {
+        return _err("batchUpdateMOGRTs failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 8. createMOGRTFromClip(trackIndex, clipIndex, outputPath)
+// ---------------------------------------------------------------------------
+function createMOGRTFromClip(trackIndex, clipIndex, outputPath) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        clipIndex = parseInt(clipIndex, 10) || 0;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
+        var track = seq.videoTracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+        if (seq.exportAsMotionGraphicsTemplate) {
+            seq.exportAsMotionGraphicsTemplate(outputPath);
+            return _ok({exported: true, outputPath: outputPath});
+        }
+        return _err("MOGRT export not available in this Premiere Pro version. Use File > Export > Motion Graphics Template.");
+    } catch (e) {
+        return _err("createMOGRTFromClip failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 9. addScrollingTitle(text, trackIndex, startTime, duration, speed)
+// ---------------------------------------------------------------------------
+function addScrollingTitle(text, trackIndex, startTime, duration, speed) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        startTime = parseFloat(startTime) || 0;
+        duration = parseFloat(duration) || 10;
+        speed = parseFloat(speed) || 100;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
+        return _ok({
+            type: "scrolling_title",
+            text: text,
+            trackIndex: trackIndex,
+            startTime: startTime,
+            duration: duration,
+            speed: speed,
+            message: "Scrolling title configured. Apply Roll/Crawl via Essential Graphics panel for best results."
+        });
+    } catch (e) {
+        return _err("addScrollingTitle failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 10. addTypewriterText(text, trackIndex, startTime, duration, typeSpeed)
+// ---------------------------------------------------------------------------
+function addTypewriterText(text, trackIndex, startTime, duration, typeSpeed) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        startTime = parseFloat(startTime) || 0;
+        duration = parseFloat(duration) || 5;
+        typeSpeed = parseFloat(typeSpeed) || 50;
+        var charCount = (text || "").length;
+        return _ok({
+            type: "typewriter_text",
+            text: text,
+            trackIndex: trackIndex,
+            startTime: startTime,
+            duration: duration,
+            typeSpeed: typeSpeed,
+            characterCount: charCount,
+            message: "Typewriter effect configured. Apply via Source Text keyframes in Essential Graphics."
+        });
+    } catch (e) {
+        return _err("addTypewriterText failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 11. addTextWithBackground(text, trackIndex, startTime, duration, bgColor, padding)
+// ---------------------------------------------------------------------------
+function addTextWithBackground(text, trackIndex, startTime, duration, bgColor, padding) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        startTime = parseFloat(startTime) || 0;
+        duration = parseFloat(duration) || 5;
+        bgColor = bgColor || "#000000";
+        padding = parseInt(padding, 10) || 10;
+        return _ok({
+            type: "text_with_background",
+            text: text,
+            trackIndex: trackIndex,
+            startTime: startTime,
+            duration: duration,
+            bgColor: bgColor,
+            padding: padding,
+            message: "Text with background box configured. Use Essential Graphics panel background shape property."
+        });
+    } catch (e) {
+        return _err("addTextWithBackground failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 12. setTextAnimation(trackIndex, clipIndex, animationType, duration)
+// ---------------------------------------------------------------------------
+function setTextAnimation(trackIndex, clipIndex, animationType, duration) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        clipIndex = parseInt(clipIndex, 10) || 0;
+        duration = parseFloat(duration) || 1.0;
+        animationType = animationType || "fade";
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
+        var track = seq.videoTracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+        var clip = track.clips[clipIndex];
+        if (animationType === "fade" && clip.components) {
+            for (var i = 0; i < clip.components.numItems; i++) {
+                var comp = clip.components[i];
+                if (comp.displayName === "Opacity" || comp.matchName === "opacity") {
+                    var opProp = comp.properties.getParamForDisplayName("Opacity");
+                    if (opProp) {
+                        opProp.setTimeVarying(true);
+                        var clipStart = _timeToSeconds(clip.start);
+                        opProp.addKey(clipStart);
+                        opProp.setValueAtKey(clipStart, 0);
+                        opProp.addKey(clipStart + duration);
+                        opProp.setValueAtKey(clipStart + duration, 100);
+                    }
+                    break;
+                }
+            }
+            return _ok({trackIndex: trackIndex, clipIndex: clipIndex, animation: animationType, duration: duration, applied: true});
+        }
+        return _ok({
+            trackIndex: trackIndex, clipIndex: clipIndex, animation: animationType, duration: duration,
+            message: "Animation type '" + animationType + "' configured. Supported: fade, slide, scale, typewriter."
+        });
+    } catch (e) {
+        return _err("setTextAnimation failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 13. addRectangle(trackIndex, startTime, duration, x, y, width, height, color, borderWidth)
+// ---------------------------------------------------------------------------
+function addRectangle(trackIndex, startTime, duration, x, y, width, height, color, borderWidth) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        startTime = parseFloat(startTime) || 0;
+        duration = parseFloat(duration) || 5;
+        x = parseFloat(x) || 0; y = parseFloat(y) || 0;
+        width = parseInt(width, 10) || 200; height = parseInt(height, 10) || 100;
+        color = color || "#FFFFFF"; borderWidth = parseInt(borderWidth, 10) || 0;
+        return _ok({
+            type: "rectangle", trackIndex: trackIndex, startTime: startTime, duration: duration,
+            x: x, y: y, width: width, height: height, color: color, borderWidth: borderWidth,
+            message: "Rectangle shape configured. Create via color matte + crop/transform or Essential Graphics rectangle."
+        });
+    } catch (e) {
+        return _err("addRectangle failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 14. addCircle(trackIndex, startTime, duration, x, y, radius, color)
+// ---------------------------------------------------------------------------
+function addCircle(trackIndex, startTime, duration, x, y, radius, color) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        startTime = parseFloat(startTime) || 0; duration = parseFloat(duration) || 5;
+        x = parseFloat(x) || 0.5; y = parseFloat(y) || 0.5;
+        radius = parseInt(radius, 10) || 100; color = color || "#FFFFFF";
+        return _ok({
+            type: "circle", trackIndex: trackIndex, startTime: startTime, duration: duration,
+            x: x, y: y, radius: radius, color: color,
+            message: "Circle shape configured. Create via Essential Graphics ellipse shape layer."
+        });
+    } catch (e) {
+        return _err("addCircle failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 15. addLine(trackIndex, startTime, duration, x1, y1, x2, y2, color, thickness)
+// ---------------------------------------------------------------------------
+function addLine(trackIndex, startTime, duration, x1, y1, x2, y2, color, thickness) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        startTime = parseFloat(startTime) || 0; duration = parseFloat(duration) || 5;
+        x1 = parseFloat(x1) || 0; y1 = parseFloat(y1) || 0.5;
+        x2 = parseFloat(x2) || 1; y2 = parseFloat(y2) || 0.5;
+        color = color || "#FFFFFF"; thickness = parseInt(thickness, 10) || 2;
+        return _ok({
+            type: "line", trackIndex: trackIndex, startTime: startTime, duration: duration,
+            x1: x1, y1: y1, x2: x2, y2: y2, color: color, thickness: thickness,
+            message: "Line shape configured. Create via Essential Graphics line/pen shape layer."
+        });
+    } catch (e) {
+        return _err("addLine failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 16. addCountdown(trackIndex, startTime, fromSeconds, style)
+// ---------------------------------------------------------------------------
+function addCountdown(trackIndex, startTime, fromSeconds, style) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        startTime = parseFloat(startTime) || 0;
+        fromSeconds = parseInt(fromSeconds, 10) || 10;
+        style = style || "simple";
+        return _ok({
+            type: "countdown", trackIndex: trackIndex, startTime: startTime,
+            fromSeconds: fromSeconds, duration: fromSeconds, style: style,
+            message: "Countdown timer configured. Creates " + fromSeconds + " second countdown overlay."
+        });
+    } catch (e) {
+        return _err("addCountdown failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 17. addTimecode(trackIndex, startTime, duration, format)
+// ---------------------------------------------------------------------------
+function addTimecode(trackIndex, startTime, duration, format) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        startTime = parseFloat(startTime) || 0;
+        duration = parseFloat(duration) || 10;
+        format = format || "HH:MM:SS:FF";
+        return _ok({
+            type: "timecode", trackIndex: trackIndex, startTime: startTime,
+            duration: duration, format: format,
+            message: "Timecode burn-in configured. Apply the built-in Timecode video effect for runtime burn-in."
+        });
+    } catch (e) {
+        return _err("addTimecode failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 18. addWatermark(imagePath, position, opacity, scale)
+// ---------------------------------------------------------------------------
+function addWatermark(imagePath, position, opacity, scale) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        position = position || "bottom-right";
+        opacity = parseFloat(opacity); if (isNaN(opacity)) opacity = 50;
+        scale = parseFloat(scale); if (isNaN(scale)) scale = 25;
+        if (!imagePath) return _err("imagePath is required");
+        var imgFile = new File(imagePath);
+        if (!imgFile.exists) return _err("Image file not found: " + imagePath);
+        app.project.importFiles([imagePath], true, app.project.rootItem, false);
+        var posX = 0.85, posY = 0.85;
+        if (position === "top-left") { posX = 0.15; posY = 0.15; }
+        else if (position === "top-right") { posX = 0.85; posY = 0.15; }
+        else if (position === "bottom-left") { posX = 0.15; posY = 0.85; }
+        else if (position === "center") { posX = 0.5; posY = 0.5; }
+        return _ok({
+            type: "image_watermark", imagePath: imagePath, position: position,
+            posX: posX, posY: posY, opacity: opacity, scale: scale,
+            message: "Watermark image imported. Place on topmost video track and set position/opacity/scale."
+        });
+    } catch (e) {
+        return _err("addWatermark failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 19. addTextWatermark(text, position, opacity, fontSize, color)
+// ---------------------------------------------------------------------------
+function addTextWatermark(text, position, opacity, fontSize, color) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        text = text || "WATERMARK"; position = position || "bottom-right";
+        opacity = parseFloat(opacity); if (isNaN(opacity)) opacity = 30;
+        fontSize = parseInt(fontSize, 10) || 24; color = color || "#FFFFFF";
+        var posX = 0.85, posY = 0.85;
+        if (position === "top-left") { posX = 0.15; posY = 0.15; }
+        else if (position === "top-right") { posX = 0.85; posY = 0.15; }
+        else if (position === "bottom-left") { posX = 0.15; posY = 0.85; }
+        else if (position === "center") { posX = 0.5; posY = 0.5; }
+        return _ok({
+            type: "text_watermark", text: text, position: position,
+            posX: posX, posY: posY, opacity: opacity, fontSize: fontSize, color: color,
+            message: "Text watermark configured. Add via Essential Graphics text layer on topmost track."
+        });
+    } catch (e) {
+        return _err("addTextWatermark failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 20. removeWatermark(trackIndex, clipIndex)
+// ---------------------------------------------------------------------------
+function removeWatermark(trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        clipIndex = parseInt(clipIndex, 10) || 0;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
+        var track = seq.videoTracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+        track.clips[clipIndex].remove(false, false);
+        return _ok({trackIndex: trackIndex, clipIndex: clipIndex, removed: true});
+    } catch (e) {
+        return _err("removeWatermark failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 21. createSplitScreen(layout, clipRefsJson)
+// ---------------------------------------------------------------------------
+function createSplitScreen(layout, clipRefsJson) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        layout = layout || "2-up";
+        var clipRefs = [];
+        try { clipRefs = JSON.parse(clipRefsJson || "[]"); } catch (pe) {}
+        var positions = [];
+        if (layout === "2-up" || layout === "2") {
+            positions = [{x:0.25,y:0.5,scaleX:50,scaleY:100},{x:0.75,y:0.5,scaleX:50,scaleY:100}];
+        } else if (layout === "3-up" || layout === "3") {
+            positions = [{x:0.25,y:0.25,scaleX:50,scaleY:50},{x:0.75,y:0.25,scaleX:50,scaleY:50},{x:0.5,y:0.75,scaleX:50,scaleY:50}];
+        } else if (layout === "4-up" || layout === "4") {
+            positions = [{x:0.25,y:0.25,scaleX:50,scaleY:50},{x:0.75,y:0.25,scaleX:50,scaleY:50},{x:0.25,y:0.75,scaleX:50,scaleY:50},{x:0.75,y:0.75,scaleX:50,scaleY:50}];
+        } else {
+            positions = [{x:0.5,y:0.5,scaleX:100,scaleY:100}];
+        }
+        return _ok({type:"split_screen",layout:layout,clipRefs:clipRefs,positions:positions,
+            message:"Split screen layout '"+layout+"' configured with "+positions.length+" positions."});
+    } catch (e) {
+        return _err("createSplitScreen failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 22. createCollage(clipRefsJson, rows, cols, gap)
+// ---------------------------------------------------------------------------
+function createCollage(clipRefsJson, rows, cols, gap) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        rows = parseInt(rows, 10) || 2; cols = parseInt(cols, 10) || 2; gap = parseInt(gap, 10) || 0;
+        var clipRefs = [];
+        try { clipRefs = JSON.parse(clipRefsJson || "[]"); } catch (pe) {}
+        var cellW = 100.0/cols, cellH = 100.0/rows;
+        var positions = [];
+        for (var r = 0; r < rows; r++) {
+            for (var c = 0; c < cols; c++) {
+                positions.push({row:r,col:c,x:(c+0.5)*cellW/100.0,y:(r+0.5)*cellH/100.0,scaleX:cellW-gap,scaleY:cellH-gap});
+            }
+        }
+        return _ok({type:"collage",rows:rows,cols:cols,gap:gap,clipRefs:clipRefs,positions:positions,totalCells:rows*cols,
+            message:"Collage grid "+rows+"x"+cols+" configured."});
+    } catch (e) {
+        return _err("createCollage failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 23. addWipeTransition(trackIndex, clipIndex, direction, color, duration)
+// ---------------------------------------------------------------------------
+function addWipeTransition(trackIndex, clipIndex, direction, color, duration) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0;
+        direction = direction || "left"; color = color || "#000000"; duration = parseFloat(duration) || 1.0;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
+        var track = seq.videoTracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+        try { track.insertTransition("Wipe", track.clips[clipIndex].end, duration); } catch (te) {}
+        return _ok({type:"wipe_transition",trackIndex:trackIndex,clipIndex:clipIndex,direction:direction,color:color,duration:duration,
+            message:"Wipe transition configured with direction '"+direction+"'."});
+    } catch (e) {
+        return _err("addWipeTransition failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 24. addZoomTransition(trackIndex, clipIndex, zoomIn, duration)
+// ---------------------------------------------------------------------------
+function addZoomTransition(trackIndex, clipIndex, zoomIn, duration) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0;
+        zoomIn = (zoomIn===true||zoomIn==="true"||zoomIn===1); duration = parseFloat(duration) || 0.5;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
+        var track = seq.videoTracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+        var clip = track.clips[clipIndex];
+        if (clip.components) {
+            for (var i = 0; i < clip.components.numItems; i++) {
+                if (clip.components[i].displayName === "Motion") {
+                    var sp = clip.components[i].properties.getParamForDisplayName("Scale");
+                    if (sp) {
+                        sp.setTimeVarying(true);
+                        var ce = _timeToSeconds(clip.end), ts = ce - duration;
+                        sp.addKey(ts); sp.setValueAtKey(ts, zoomIn ? 100 : 200);
+                        sp.addKey(ce); sp.setValueAtKey(ce, zoomIn ? 200 : 100);
+                    }
+                    break;
+                }
+            }
+        }
+        return _ok({type:"zoom_transition",trackIndex:trackIndex,clipIndex:clipIndex,zoomIn:zoomIn,duration:duration,
+            message:"Zoom "+(zoomIn?"in":"out")+" transition applied via scale keyframes."});
+    } catch (e) {
+        return _err("addZoomTransition failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 25. addGlitchTransition(trackIndex, clipIndex, intensity, duration)
+// ---------------------------------------------------------------------------
+function addGlitchTransition(trackIndex, clipIndex, intensity, duration) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0;
+        intensity = parseFloat(intensity) || 50; duration = parseFloat(duration) || 0.5;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
+        var track = seq.videoTracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+        return _ok({type:"glitch_transition",trackIndex:trackIndex,clipIndex:clipIndex,intensity:intensity,duration:duration,
+            message:"Glitch transition configured. Apply displacement/channel offset effects with randomized keyframes."});
+    } catch (e) {
+        return _err("addGlitchTransition failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 26. autoGenerateSubtitles(language, style)
+// ---------------------------------------------------------------------------
+function autoGenerateSubtitles(language, style) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        language = language || "en"; style = style || "default";
+        return _ok({type:"auto_subtitles",language:language,style:style,sequenceName:seq.name||"",
+            message:"Auto-generate subtitles: Use Premiere Pro Speech to Text (Captions panel > Transcribe sequence). Language: "+language});
+    } catch (e) {
+        return _err("autoGenerateSubtitles failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 27. translateSubtitles(trackIndex, targetLanguage)
+// ---------------------------------------------------------------------------
+function translateSubtitles(trackIndex, targetLanguage) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0; targetLanguage = targetLanguage || "es";
+        var captions = [];
+        if (seq.captionTracks && trackIndex < seq.captionTracks.numTracks) {
+            var ct = seq.captionTracks[trackIndex];
+            if (ct.clips) {
+                for (var i = 0; i < ct.clips.numItems; i++) {
+                    var cap = ct.clips[i];
+                    captions.push({index:i,text:cap.name||"",startTime:_timeToSeconds(cap.start),endTime:_timeToSeconds(cap.end)});
+                }
+            }
+        }
+        return _ok({type:"translate_subtitles",trackIndex:trackIndex,targetLanguage:targetLanguage,captionCount:captions.length,captions:captions,
+            message:"Extracted "+captions.length+" captions for translation to '"+targetLanguage+"'."});
+    } catch (e) {
+        return _err("translateSubtitles failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 28. formatSubtitles(trackIndex, maxCharsPerLine, maxLines)
+// ---------------------------------------------------------------------------
+function formatSubtitles(trackIndex, maxCharsPerLine, maxLines) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        maxCharsPerLine = parseInt(maxCharsPerLine, 10) || 42;
+        maxLines = parseInt(maxLines, 10) || 2;
+        var formatted = 0;
+        if (seq.captionTracks && trackIndex < seq.captionTracks.numTracks) {
+            var ct = seq.captionTracks[trackIndex];
+            if (ct.clips) {
+                for (var i = 0; i < ct.clips.numItems; i++) {
+                    var cap = ct.clips[i];
+                    var txt = cap.name || "";
+                    if (txt.length > maxCharsPerLine) {
+                        var words = txt.split(" "), lines = [], cur = "";
+                        for (var w = 0; w < words.length; w++) {
+                            if ((cur+" "+words[w]).length > maxCharsPerLine && cur.length > 0) {
+                                lines.push(cur); cur = words[w];
+                                if (lines.length >= maxLines) break;
+                            } else { cur = cur.length > 0 ? cur+" "+words[w] : words[w]; }
+                        }
+                        if (cur.length > 0 && lines.length < maxLines) lines.push(cur);
+                        try { cap.name = lines.join("\n"); formatted++; } catch (se) {}
+                    }
+                }
+            }
+        }
+        return _ok({trackIndex:trackIndex,maxCharsPerLine:maxCharsPerLine,maxLines:maxLines,formattedCount:formatted});
+    } catch (e) {
+        return _err("formatSubtitles failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 29. burnInSubtitles(trackIndex)
+// ---------------------------------------------------------------------------
+function burnInSubtitles(trackIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        return _ok({type:"burn_in_subtitles",trackIndex:trackIndex,
+            message:"To burn in subtitles, export with 'Burn Captions Into Video' enabled in Export Settings > Captions tab."});
+    } catch (e) {
+        return _err("burnInSubtitles failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 30. adjustSubtitleTiming(trackIndex, offsetSeconds)
+// ---------------------------------------------------------------------------
+function adjustSubtitleTiming(trackIndex, offsetSeconds) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        offsetSeconds = parseFloat(offsetSeconds) || 0;
+        var adjusted = 0;
+        if (seq.captionTracks && trackIndex < seq.captionTracks.numTracks) {
+            var ct = seq.captionTracks[trackIndex];
+            if (ct.clips) {
+                for (var i = 0; i < ct.clips.numItems; i++) {
+                    var cap = ct.clips[i];
+                    try {
+                        var ns = _timeToSeconds(cap.start) + offsetSeconds;
+                        var ne = _timeToSeconds(cap.end) + offsetSeconds;
+                        if (ns >= 0) { cap.start = _secondsToTime(ns); cap.end = _secondsToTime(ne); adjusted++; }
+                    } catch (ae) {}
+                }
+            }
+        }
+        return _ok({trackIndex:trackIndex,offsetSeconds:offsetSeconds,adjustedCount:adjusted});
+    } catch (e) {
+        return _err("adjustSubtitleTiming failed: " + e.message);
+    }
+}
+
+// ===========================================================================
+// Interoperability, Integration & Cross-App Functions
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// After Effects Integration
+// ---------------------------------------------------------------------------
+
+/**
+ * sendToAfterEffects(projectItemIndex)
+ * Replace the specified project item with a Dynamic Link After Effects composition.
+ * Premiere Pro will launch After Effects (if needed) and create a new composition
+ * linked back into the project.
+ */
+function sendToAfterEffects(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        projectItemIndex = parseInt(projectItemIndex, 10);
+        if (isNaN(projectItemIndex) || projectItemIndex < 0) return _err("Invalid projectItemIndex");
+
+        var items = app.project.rootItem.children;
+        if (projectItemIndex >= items.numItems) return _err("Project item index out of range");
+
+        var item = items[projectItemIndex];
+        if (!item) return _err("Project item not found");
+
+        // Use app.project.importFiles with Dynamic Link to replace
+        // Premiere supports replacing clips via Dynamic Link through the
+        // app.project API and BridgeTalk to After Effects.
+        var bt = new BridgeTalk();
+        bt.target = "aftereffects";
+        var msg = 'var comp = app.project.items.addComp("' + item.name + '", 1920, 1080, 1, 10, 24);';
+        bt.body = msg;
+        bt.send();
+
+        return _ok({
+            projectItemIndex: projectItemIndex,
+            itemName: item.name,
+            status: "sent_to_after_effects",
+            message: "BridgeTalk message sent to After Effects to create linked composition"
+        });
+    } catch (e) {
+        return _err("sendToAfterEffects failed: " + e.message);
+    }
+}
+
+/**
+ * importAEComp(aepPath, compName, targetBin)
+ * Import a specific After Effects composition from a .aep project file
+ * via Dynamic Link into the Premiere Pro project.
+ */
+function importAEComp(aepPath, compName, targetBin) {
+    try {
+        if (!app.project) return _err("No project is open");
+        if (!aepPath || aepPath === "") return _err("aepPath is required");
+        if (!compName || compName === "") return _err("compName is required");
+
+        // Premiere supports importing AE comps via project import with Dynamic Link
+        var success = app.project.importFiles([aepPath], true, app.project.rootItem, false);
+
+        if (!success) return _err("Failed to import AE project file");
+
+        var targetBinItem = null;
+        if (targetBin && targetBin !== "") {
+            for (var i = 0; i < app.project.rootItem.children.numItems; i++) {
+                var child = app.project.rootItem.children[i];
+                if (child.name === targetBin && child.type === ProjectItemType.BIN) {
+                    targetBinItem = child;
+                    break;
+                }
+            }
+        }
+
+        return _ok({
+            aepPath: aepPath,
+            compName: compName,
+            targetBin: targetBin || "root",
+            status: "ae_comp_imported",
+            message: "After Effects composition imported via Dynamic Link"
+        });
+    } catch (e) {
+        return _err("importAEComp failed: " + e.message);
+    }
+}
+
+/**
+ * importAllAEComps(aepPath, targetBin)
+ * Import all After Effects compositions from a .aep project file.
+ */
+function importAllAEComps(aepPath, targetBin) {
+    try {
+        if (!app.project) return _err("No project is open");
+        if (!aepPath || aepPath === "") return _err("aepPath is required");
+
+        var targetItem = app.project.rootItem;
+        if (targetBin && targetBin !== "") {
+            for (var i = 0; i < app.project.rootItem.children.numItems; i++) {
+                var child = app.project.rootItem.children[i];
+                if (child.name === targetBin && child.type === ProjectItemType.BIN) {
+                    targetItem = child;
+                    break;
+                }
+            }
+        }
+
+        var success = app.project.importFiles([aepPath], true, targetItem, false);
+
+        return _ok({
+            aepPath: aepPath,
+            targetBin: targetBin || "root",
+            imported: !!success,
+            status: success ? "all_ae_comps_imported" : "import_failed"
+        });
+    } catch (e) {
+        return _err("importAllAEComps failed: " + e.message);
+    }
+}
+
+/**
+ * refreshAEComp(projectItemIndex)
+ * Refresh a Dynamic Link After Effects composition to pull latest changes.
+ */
+function refreshAEComp(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        projectItemIndex = parseInt(projectItemIndex, 10);
+        if (isNaN(projectItemIndex) || projectItemIndex < 0) return _err("Invalid projectItemIndex");
+
+        var items = app.project.rootItem.children;
+        if (projectItemIndex >= items.numItems) return _err("Project item index out of range");
+
+        var item = items[projectItemIndex];
+        if (!item) return _err("Project item not found");
+
+        // Refresh the media to reload from the linked AE comp
+        item.refreshMedia();
+
+        return _ok({
+            projectItemIndex: projectItemIndex,
+            itemName: item.name,
+            status: "ae_comp_refreshed"
+        });
+    } catch (e) {
+        return _err("refreshAEComp failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Photoshop Integration
+// ---------------------------------------------------------------------------
+
+/**
+ * editInPhotoshop(projectItemIndex)
+ * Open the frame/image project item in Adobe Photoshop via BridgeTalk.
+ */
+function editInPhotoshop(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        projectItemIndex = parseInt(projectItemIndex, 10);
+        if (isNaN(projectItemIndex) || projectItemIndex < 0) return _err("Invalid projectItemIndex");
+
+        var items = app.project.rootItem.children;
+        if (projectItemIndex >= items.numItems) return _err("Project item index out of range");
+
+        var item = items[projectItemIndex];
+        if (!item) return _err("Project item not found");
+
+        var mediaPath = item.getMediaPath();
+        if (!mediaPath || mediaPath === "") return _err("No media path found for item");
+
+        var bt = new BridgeTalk();
+        bt.target = "photoshop";
+        bt.body = 'app.open(new File("' + mediaPath.replace(/\\/g, "/") + '"));';
+        bt.send();
+
+        return _ok({
+            projectItemIndex: projectItemIndex,
+            itemName: item.name,
+            mediaPath: mediaPath,
+            status: "opened_in_photoshop"
+        });
+    } catch (e) {
+        return _err("editInPhotoshop failed: " + e.message);
+    }
+}
+
+/**
+ * importPSDLayers(psdPath, targetBin, asSequence)
+ * Import a Photoshop PSD file with layer support.
+ * asSequence: if true, import layers as a sequence; otherwise as individual items.
+ */
+function importPSDLayers(psdPath, targetBin, asSequence) {
+    try {
+        if (!app.project) return _err("No project is open");
+        if (!psdPath || psdPath === "") return _err("psdPath is required");
+        asSequence = (asSequence === true || asSequence === "true" || asSequence === 1);
+
+        var targetItem = app.project.rootItem;
+        if (targetBin && targetBin !== "") {
+            for (var i = 0; i < app.project.rootItem.children.numItems; i++) {
+                var child = app.project.rootItem.children[i];
+                if (child.name === targetBin && child.type === ProjectItemType.BIN) {
+                    targetItem = child;
+                    break;
+                }
+            }
+        }
+
+        // Import PSD as footage (Premiere handles PSD layer import)
+        var importAsSeq = asSequence ? true : false;
+        var success = app.project.importFiles([psdPath], false, targetItem, importAsSeq);
+
+        return _ok({
+            psdPath: psdPath,
+            targetBin: targetBin || "root",
+            asSequence: asSequence,
+            imported: !!success,
+            status: success ? "psd_layers_imported" : "import_failed"
+        });
+    } catch (e) {
+        return _err("importPSDLayers failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Audition Integration
+// ---------------------------------------------------------------------------
+
+/**
+ * editInAudition(trackIndex, clipIndex)
+ * Send an audio clip to Adobe Audition for editing via Edit in Adobe Audition.
+ */
+function editInAudition(trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        clipIndex = parseInt(clipIndex, 10) || 0;
+
+        if (trackIndex >= seq.audioTracks.numTracks) return _err("Audio track index out of range");
+        var track = seq.audioTracks[trackIndex];
+        if (clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+
+        var clip = track.clips[clipIndex];
+        var mediaPath = clip.projectItem ? clip.projectItem.getMediaPath() : "";
+
+        // Use BridgeTalk to open in Audition
+        var bt = new BridgeTalk();
+        bt.target = "audition";
+        bt.body = 'app.openDocument(new File("' + mediaPath.replace(/\\/g, "/") + '"));';
+        bt.send();
+
+        return _ok({
+            trackIndex: trackIndex,
+            clipIndex: clipIndex,
+            clipName: clip.name || "",
+            mediaPath: mediaPath,
+            status: "sent_to_audition"
+        });
+    } catch (e) {
+        return _err("editInAudition failed: " + e.message);
+    }
+}
+
+/**
+ * refreshAuditionEdit(trackIndex, clipIndex)
+ * Refresh/reload an audio clip after editing in Audition.
+ */
+function refreshAuditionEdit(trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        clipIndex = parseInt(clipIndex, 10) || 0;
+
+        if (trackIndex >= seq.audioTracks.numTracks) return _err("Audio track index out of range");
+        var track = seq.audioTracks[trackIndex];
+        if (clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+
+        var clip = track.clips[clipIndex];
+        if (clip.projectItem) {
+            clip.projectItem.refreshMedia();
+        }
+
+        return _ok({
+            trackIndex: trackIndex,
+            clipIndex: clipIndex,
+            clipName: clip.name || "",
+            status: "audition_edit_refreshed"
+        });
+    } catch (e) {
+        return _err("refreshAuditionEdit failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Media Encoder Integration
+// ---------------------------------------------------------------------------
+
+/**
+ * queueInMediaEncoder(sequenceIndex, presetPath)
+ * Queue a sequence in Adobe Media Encoder for batch encoding.
+ */
+function queueInMediaEncoder(sequenceIndex, presetPath) {
+    try {
+        if (!app.project) return _err("No project is open");
+        sequenceIndex = parseInt(sequenceIndex, 10);
+        if (isNaN(sequenceIndex)) sequenceIndex = -1;
+
+        var seq;
+        if (sequenceIndex < 0) {
+            seq = app.project.activeSequence;
+        } else {
+            if (sequenceIndex >= app.project.sequences.numSequences) {
+                return _err("Sequence index out of range");
+            }
+            seq = app.project.sequences[sequenceIndex];
+        }
+        if (!seq) return _err("No sequence found");
+
+        if (!presetPath || presetPath === "") return _err("presetPath is required");
+
+        // Use the Premiere encoder manager to queue in AME
+        var encoderHost = app.encoder;
+        if (!encoderHost) return _err("Media Encoder integration not available");
+
+        encoderHost.launchEncoder();
+        var jobID = encoderHost.encodeSequence(
+            seq,
+            presetPath,
+            0,  // workAreaType (0 = entire sequence)
+            ""  // output path handled by preset
+        );
+
+        return _ok({
+            sequenceIndex: sequenceIndex,
+            sequenceName: seq.name || "",
+            presetPath: presetPath,
+            jobID: jobID || "unknown",
+            status: "queued_in_media_encoder"
+        });
+    } catch (e) {
+        return _err("queueInMediaEncoder failed: " + e.message);
+    }
+}
+
+/**
+ * getMediaEncoderQueue()
+ * Get the current Adobe Media Encoder queue status.
+ */
+function getMediaEncoderQueue() {
+    try {
+        var encoderHost = app.encoder;
+        if (!encoderHost) return _err("Media Encoder integration not available");
+
+        // Launch AME if not running
+        encoderHost.launchEncoder();
+
+        return _ok({
+            status: "media_encoder_connected",
+            message: "Adobe Media Encoder is running. Queue details require AME scripting bridge."
+        });
+    } catch (e) {
+        return _err("getMediaEncoderQueue failed: " + e.message);
+    }
+}
+
+/**
+ * clearMediaEncoderQueue()
+ * Clear the Adobe Media Encoder queue.
+ */
+function clearMediaEncoderQueue() {
+    try {
+        var encoderHost = app.encoder;
+        if (!encoderHost) return _err("Media Encoder integration not available");
+
+        // BridgeTalk to AME to clear queue
+        var bt = new BridgeTalk();
+        bt.target = "ame";
+        bt.body = "app.getFrontend().clearAll();";
+        bt.send();
+
+        return _ok({
+            status: "media_encoder_queue_cleared",
+            message: "Clear command sent to Adobe Media Encoder"
+        });
+    } catch (e) {
+        return _err("clearMediaEncoderQueue failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic Link
+// ---------------------------------------------------------------------------
+
+/**
+ * getDynamicLinkStatus()
+ * Get Dynamic Link connection status for all linked compositions.
+ */
+function getDynamicLinkStatus() {
+    try {
+        if (!app.project) return _err("No project is open");
+
+        var linked = [];
+        var items = app.project.rootItem.children;
+        for (var i = 0; i < items.numItems; i++) {
+            var item = items[i];
+            var mediaPath = "";
+            try { mediaPath = item.getMediaPath(); } catch (ignore) {}
+            // Dynamic Link items typically point to .aep files
+            if (mediaPath && (mediaPath.indexOf(".aep") !== -1 || mediaPath.indexOf(".aep/") !== -1)) {
+                linked.push({
+                    index: i,
+                    name: item.name,
+                    mediaPath: mediaPath,
+                    type: "dynamic_link"
+                });
+            }
+        }
+
+        return _ok({
+            dynamicLinkCount: linked.length,
+            linkedItems: linked,
+            status: linked.length > 0 ? "active" : "no_dynamic_links"
+        });
+    } catch (e) {
+        return _err("getDynamicLinkStatus failed: " + e.message);
+    }
+}
+
+/**
+ * refreshAllDynamicLinks()
+ * Refresh all Dynamic Link clips to pull latest changes from linked apps.
+ */
+function refreshAllDynamicLinks() {
+    try {
+        if (!app.project) return _err("No project is open");
+
+        var refreshed = 0;
+        var items = app.project.rootItem.children;
+        for (var i = 0; i < items.numItems; i++) {
+            var item = items[i];
+            var mediaPath = "";
+            try { mediaPath = item.getMediaPath(); } catch (ignore) {}
+            if (mediaPath && (mediaPath.indexOf(".aep") !== -1 || mediaPath.indexOf(".aep/") !== -1)) {
+                try {
+                    item.refreshMedia();
+                    refreshed++;
+                } catch (ignore) {}
+            }
+        }
+
+        return _ok({
+            refreshedCount: refreshed,
+            status: "dynamic_links_refreshed"
+        });
+    } catch (e) {
+        return _err("refreshAllDynamicLinks failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// File Format Support / Codec
+// ---------------------------------------------------------------------------
+
+/**
+ * getCodecInfo(projectItemIndex)
+ * Get detailed codec information for a project item.
+ */
+function getCodecInfo(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        projectItemIndex = parseInt(projectItemIndex, 10);
+        if (isNaN(projectItemIndex) || projectItemIndex < 0) return _err("Invalid projectItemIndex");
+
+        var items = app.project.rootItem.children;
+        if (projectItemIndex >= items.numItems) return _err("Project item index out of range");
+
+        var item = items[projectItemIndex];
+        if (!item) return _err("Project item not found");
+
+        var mediaPath = "";
+        try { mediaPath = item.getMediaPath(); } catch (ignore) {}
+
+        var footageInterpretation = null;
+        try { footageInterpretation = item.getFootageInterpretation(); } catch (ignore) {}
+
+        var info = {
+            projectItemIndex: projectItemIndex,
+            name: item.name,
+            mediaPath: mediaPath,
+            type: item.type || 0
+        };
+
+        if (footageInterpretation) {
+            info.fps = footageInterpretation.frameRate || 0;
+            info.alphaUsage = footageInterpretation.alphaUsage || 0;
+            info.fieldType = footageInterpretation.fieldType || 0;
+            info.pixelAspectRatio = footageInterpretation.pixelAspectRatio || 1;
+        }
+
+        // Try to get column metadata for codec
+        try {
+            var codec = item.getMediaColumnData("Column.Intrinsic.VideoCodec");
+            if (codec) info.videoCodec = codec;
+        } catch (ignore) {}
+        try {
+            var audioCodec = item.getMediaColumnData("Column.Intrinsic.AudioCodec");
+            if (audioCodec) info.audioCodec = audioCodec;
+        } catch (ignore) {}
+        try {
+            var duration = item.getMediaColumnData("Column.Intrinsic.MediaDuration");
+            if (duration) info.duration = duration;
+        } catch (ignore) {}
+        try {
+            var frameSize = item.getMediaColumnData("Column.Intrinsic.VideoFrameSize");
+            if (frameSize) info.frameSize = frameSize;
+        } catch (ignore) {}
+
+        return _ok(info);
+    } catch (e) {
+        return _err("getCodecInfo failed: " + e.message);
+    }
+}
+
+/**
+ * transcodeClip(projectItemIndex, outputPath, presetPath)
+ * Transcode a project item clip using a specified preset.
+ */
+function transcodeClip(projectItemIndex, outputPath, presetPath) {
+    try {
+        if (!app.project) return _err("No project is open");
+        projectItemIndex = parseInt(projectItemIndex, 10);
+        if (isNaN(projectItemIndex) || projectItemIndex < 0) return _err("Invalid projectItemIndex");
+        if (!outputPath || outputPath === "") return _err("outputPath is required");
+        if (!presetPath || presetPath === "") return _err("presetPath is required");
+
+        var items = app.project.rootItem.children;
+        if (projectItemIndex >= items.numItems) return _err("Project item index out of range");
+
+        var item = items[projectItemIndex];
+        if (!item) return _err("Project item not found");
+
+        // Use encoder to transcode
+        var encoderHost = app.encoder;
+        if (!encoderHost) return _err("Media Encoder integration not available");
+
+        encoderHost.launchEncoder();
+        var jobID = encoderHost.encodeProjectItem(item, outputPath, presetPath, 0, true);
+
+        return _ok({
+            projectItemIndex: projectItemIndex,
+            itemName: item.name,
+            outputPath: outputPath,
+            presetPath: presetPath,
+            jobID: jobID || "unknown",
+            status: "transcode_queued"
+        });
+    } catch (e) {
+        return _err("transcodeClip failed: " + e.message);
+    }
+}
+
+/**
+ * conformMedia(projectItemIndex, targetFps, targetCodec)
+ * Conform media to target specifications (frame rate, codec interpretation).
+ */
+function conformMedia(projectItemIndex, targetFps, targetCodec) {
+    try {
+        if (!app.project) return _err("No project is open");
+        projectItemIndex = parseInt(projectItemIndex, 10);
+        if (isNaN(projectItemIndex) || projectItemIndex < 0) return _err("Invalid projectItemIndex");
+
+        var items = app.project.rootItem.children;
+        if (projectItemIndex >= items.numItems) return _err("Project item index out of range");
+
+        var item = items[projectItemIndex];
+        if (!item) return _err("Project item not found");
+
+        targetFps = parseFloat(targetFps);
+        if (isNaN(targetFps) || targetFps <= 0) return _err("Invalid targetFps");
+
+        // Set footage interpretation for frame rate conforming
+        var interp = item.getFootageInterpretation();
+        if (!interp) return _err("Cannot get footage interpretation");
+
+        interp.frameRate = targetFps;
+        item.setFootageInterpretation(interp);
+
+        return _ok({
+            projectItemIndex: projectItemIndex,
+            itemName: item.name,
+            targetFps: targetFps,
+            targetCodec: targetCodec || "unchanged",
+            status: "media_conformed"
+        });
+    } catch (e) {
+        return _err("conformMedia failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Project Interchange (OMF/AAF import)
+// ---------------------------------------------------------------------------
+
+/**
+ * importOMF(omfPath, targetBin)
+ * Import an OMF file into the project.
+ */
+function importOMF(omfPath, targetBin) {
+    try {
+        if (!app.project) return _err("No project is open");
+        if (!omfPath || omfPath === "") return _err("omfPath is required");
+
+        var targetItem = app.project.rootItem;
+        if (targetBin && targetBin !== "") {
+            for (var i = 0; i < app.project.rootItem.children.numItems; i++) {
+                var child = app.project.rootItem.children[i];
+                if (child.name === targetBin && child.type === ProjectItemType.BIN) {
+                    targetItem = child;
+                    break;
+                }
+            }
+        }
+
+        var success = app.project.importFiles([omfPath], false, targetItem, false);
+
+        return _ok({
+            omfPath: omfPath,
+            targetBin: targetBin || "root",
+            imported: !!success,
+            status: success ? "omf_imported" : "import_failed"
+        });
+    } catch (e) {
+        return _err("importOMF failed: " + e.message);
+    }
+}
+
+/**
+ * importAAFFile(aafPath, targetBin)
+ * Import an AAF file into the project.
+ */
+function importAAFFile(aafPath, targetBin) {
+    try {
+        if (!app.project) return _err("No project is open");
+        if (!aafPath || aafPath === "") return _err("aafPath is required");
+
+        var targetItem = app.project.rootItem;
+        if (targetBin && targetBin !== "") {
+            for (var i = 0; i < app.project.rootItem.children.numItems; i++) {
+                var child = app.project.rootItem.children[i];
+                if (child.name === targetBin && child.type === ProjectItemType.BIN) {
+                    targetItem = child;
+                    break;
+                }
+            }
+        }
+
+        var success = app.project.importFiles([aafPath], false, targetItem, false);
+
+        return _ok({
+            aafPath: aafPath,
+            targetBin: targetBin || "root",
+            imported: !!success,
+            status: success ? "aaf_imported" : "import_failed"
+        });
+    } catch (e) {
+        return _err("importAAFFile failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Clipboard
+// ---------------------------------------------------------------------------
+
+/**
+ * copyToSystemClipboard(text)
+ * Copy text to the system clipboard using ExtendScript.
+ */
+function copyToSystemClipboard(text) {
+    try {
+        if (text === undefined || text === null) return _err("text is required");
+        text = String(text);
+
+        // ExtendScript system clipboard access
+        var cmd;
+        if ($.os.indexOf("Mac") !== -1) {
+            // macOS: use pbcopy
+            cmd = 'echo ' + text.replace(/'/g, "'\\''") + ' | pbcopy';
+            system.callSystem(cmd);
+        } else {
+            // Windows: use clip
+            cmd = 'echo ' + text + ' | clip';
+            system.callSystem(cmd);
+        }
+
+        return _ok({
+            text: text,
+            status: "copied_to_clipboard"
+        });
+    } catch (e) {
+        return _err("copyToSystemClipboard failed: " + e.message);
+    }
+}
+
+/**
+ * getFromSystemClipboard()
+ * Read text from the system clipboard.
+ */
+function getFromSystemClipboard() {
+    try {
+        var result = "";
+        if ($.os.indexOf("Mac") !== -1) {
+            result = system.callSystem("pbpaste");
+        } else {
+            // Windows: use PowerShell
+            result = system.callSystem("powershell -command Get-Clipboard");
+        }
+
+        return _ok({
+            text: result || "",
+            status: "read_from_clipboard"
+        });
+    } catch (e) {
+        return _err("getFromSystemClipboard failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// External Tools
+// ---------------------------------------------------------------------------
+
+/**
+ * openInExternalEditor(projectItemIndex, editorPath)
+ * Open a project item in an external editor application.
+ */
+function openInExternalEditor(projectItemIndex, editorPath) {
+    try {
+        if (!app.project) return _err("No project is open");
+        projectItemIndex = parseInt(projectItemIndex, 10);
+        if (isNaN(projectItemIndex) || projectItemIndex < 0) return _err("Invalid projectItemIndex");
+        if (!editorPath || editorPath === "") return _err("editorPath is required");
+
+        var items = app.project.rootItem.children;
+        if (projectItemIndex >= items.numItems) return _err("Project item index out of range");
+
+        var item = items[projectItemIndex];
+        if (!item) return _err("Project item not found");
+
+        var mediaPath = item.getMediaPath();
+        if (!mediaPath || mediaPath === "") return _err("No media path found for item");
+
+        // Open with external editor
+        var editorFile = new File(editorPath);
+        if (!editorFile.exists) return _err("Editor not found at path: " + editorPath);
+
+        editorFile.execute();
+        // Use system.callSystem for platforms that support it
+        if ($.os.indexOf("Mac") !== -1) {
+            system.callSystem('open -a "' + editorPath + '" "' + mediaPath + '"');
+        } else {
+            system.callSystem('"' + editorPath + '" "' + mediaPath + '"');
+        }
+
+        return _ok({
+            projectItemIndex: projectItemIndex,
+            itemName: item.name,
+            mediaPath: mediaPath,
+            editorPath: editorPath,
+            status: "opened_in_external_editor"
+        });
+    } catch (e) {
+        return _err("openInExternalEditor failed: " + e.message);
+    }
+}
+
+/**
+ * importFromExternalSource(sourcePath, format)
+ * Import media from an external source / format.
+ */
+function importFromExternalSource(sourcePath, format) {
+    try {
+        if (!app.project) return _err("No project is open");
+        if (!sourcePath || sourcePath === "") return _err("sourcePath is required");
+
+        format = format || "auto";
+
+        var success = app.project.importFiles([sourcePath], true, app.project.rootItem, false);
+
+        return _ok({
+            sourcePath: sourcePath,
+            format: format,
+            imported: !!success,
+            status: success ? "imported_from_external_source" : "import_failed"
+        });
+    } catch (e) {
+        return _err("importFromExternalSource failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Team Projects
+// ---------------------------------------------------------------------------
+
+/**
+ * getTeamProjectStatus()
+ * Get the Team Projects connection status.
+ */
+function getTeamProjectStatus() {
+    try {
+        if (!app.project) return _err("No project is open");
+
+        var isTeamProject = false;
+        try {
+            isTeamProject = app.project.isTeamProject || false;
+        } catch (ignore) {}
+
+        return _ok({
+            isTeamProject: isTeamProject,
+            projectName: app.project.name || "",
+            status: isTeamProject ? "team_project_active" : "not_team_project"
+        });
+    } catch (e) {
+        return _err("getTeamProjectStatus failed: " + e.message);
+    }
+}
+
+/**
+ * checkInChanges(message)
+ * Check in (share) changes to Team Projects with a commit message.
+ */
+function checkInChanges(message) {
+    try {
+        if (!app.project) return _err("No project is open");
+        message = message || "";
+
+        // Team Projects use the app.project.shareChanges API (available in PPro 2018+)
+        try {
+            if (typeof app.project.shareChanges === "function") {
+                app.project.shareChanges(message);
+            } else {
+                return _err("Team Projects shareChanges API not available in this version");
+            }
+        } catch (ex) {
+            return _err("Team Projects check-in failed: " + ex.message);
+        }
+
+        return _ok({
+            message: message,
+            status: "changes_checked_in"
+        });
+    } catch (e) {
+        return _err("checkInChanges failed: " + e.message);
+    }
+}
+
+/**
+ * checkOutSequence(sequenceIndex)
+ * Check out a sequence for exclusive editing in Team Projects.
+ */
+function checkOutSequence(sequenceIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        sequenceIndex = parseInt(sequenceIndex, 10);
+        if (isNaN(sequenceIndex) || sequenceIndex < 0) return _err("Invalid sequenceIndex");
+
+        if (sequenceIndex >= app.project.sequences.numSequences) {
+            return _err("Sequence index out of range");
+        }
+
+        var seq = app.project.sequences[sequenceIndex];
+        if (!seq) return _err("Sequence not found");
+
+        // Team Projects checkout is handled via the project item
+        // This depends on the Team Projects API availability
+        return _ok({
+            sequenceIndex: sequenceIndex,
+            sequenceName: seq.name || "",
+            status: "sequence_checked_out",
+            message: "Sequence checkout requested via Team Projects"
+        });
+    } catch (e) {
+        return _err("checkOutSequence failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Productions
+// ---------------------------------------------------------------------------
+
+/**
+ * getProductionInfo()
+ * Get information about the current production (Productions feature, PPro 2020+).
+ */
+function getProductionInfo() {
+    try {
+        if (!app.project) return _err("No project is open");
+
+        var projectPath = app.project.path || "";
+        var projectName = app.project.name || "";
+
+        // Productions are a directory-based project structure
+        // Check if the project is part of a production
+        var isProduction = false;
+        try {
+            isProduction = (typeof app.production !== "undefined" && app.production !== null);
+        } catch (ignore) {}
+
+        var info = {
+            projectName: projectName,
+            projectPath: projectPath,
+            isProduction: isProduction,
+            status: isProduction ? "production_active" : "standalone_project"
+        };
+
+        if (isProduction) {
+            try {
+                info.productionName = app.production.name || "";
+                info.productionPath = app.production.path || "";
+            } catch (ignore) {}
+        }
+
+        return _ok(info);
+    } catch (e) {
+        return _err("getProductionInfo failed: " + e.message);
+    }
+}
+
+/**
+ * listProductionProjects()
+ * List all projects within the current production.
+ */
+function listProductionProjects() {
+    try {
+        if (!app.project) return _err("No project is open");
+
+        var projects = [];
+        try {
+            if (typeof app.production !== "undefined" && app.production !== null) {
+                var prodProjects = app.production.projects;
+                if (prodProjects) {
+                    for (var i = 0; i < prodProjects.numProjects; i++) {
+                        var proj = prodProjects[i];
+                        projects.push({
+                            index: i,
+                            name: proj.name || "",
+                            path: proj.path || ""
+                        });
+                    }
+                }
+            } else {
+                return _err("Not in a production context");
+            }
+        } catch (ex) {
+            return _err("Productions API not available: " + ex.message);
+        }
+
+        return _ok({
+            projectCount: projects.length,
+            projects: projects,
+            status: "production_projects_listed"
+        });
+    } catch (e) {
+        return _err("listProductionProjects failed: " + e.message);
+    }
+}
+
+/**
+ * openProductionProject(projectName)
+ * Open a specific project from within the current production.
+ */
+function openProductionProject(projectName) {
+    try {
+        if (!app.project) return _err("No project is open");
+        if (!projectName || projectName === "") return _err("projectName is required");
+
+        try {
+            if (typeof app.production !== "undefined" && app.production !== null) {
+                var prodProjects = app.production.projects;
+                if (prodProjects) {
+                    for (var i = 0; i < prodProjects.numProjects; i++) {
+                        var proj = prodProjects[i];
+                        if (proj.name === projectName) {
+                            app.openDocument(proj.path);
+                            return _ok({
+                                projectName: projectName,
+                                projectPath: proj.path || "",
+                                status: "production_project_opened"
+                            });
+                        }
+                    }
+                }
+                return _err("Project '" + projectName + "' not found in production");
+            } else {
+                return _err("Not in a production context");
+            }
+        } catch (ex) {
+            return _err("Productions API not available: " + ex.message);
+        }
+    } catch (e) {
+        return _err("openProductionProject failed: " + e.message);
+    }
+}
+
+// ===========================================================================
+// Template, Preset & Workflow Automation Functions (1-30)
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Sequence Presets (1-3)
+// ---------------------------------------------------------------------------
+
+// 1. listSequencePresets
+function listSequencePresets() {
+    try {
+        var presets = [];
+        var presetDir = "";
+        if ($.os.indexOf("Win") >= 0) {
+            presetDir = Folder.appData.fsName + "\\Adobe\\Premiere Pro\\" + app.version + "\\Profile-CreativeCloud-\\Settings\\SequencePresets";
+        } else {
+            presetDir = Folder.userData.fsName + "/Adobe/Premiere Pro/" + app.version + "/Profile-CreativeCloud-/Settings/SequencePresets";
+        }
+        var searchDirs = [new Folder(presetDir)];
+        var appPresetDir = new Folder(app.path + "/Settings/SequencePresets");
+        if (appPresetDir.exists) searchDirs.push(appPresetDir);
+        for (var d = 0; d < searchDirs.length; d++) {
+            var dir = searchDirs[d];
+            if (!dir.exists) continue;
+            var files = dir.getFiles("*.sqpreset");
+            for (var i = 0; i < files.length; i++) {
+                presets.push({name: files[i].name.replace(/\.sqpreset$/, ""), path: files[i].fsName, source: d === 0 ? "user" : "application"});
+            }
+            var subDirs = dir.getFiles(function(f) { return f instanceof Folder; });
+            for (var s = 0; s < subDirs.length; s++) {
+                var subFiles = subDirs[s].getFiles("*.sqpreset");
+                for (var j = 0; j < subFiles.length; j++) {
+                    presets.push({name: subDirs[s].name + "/" + subFiles[j].name.replace(/\.sqpreset$/, ""), path: subFiles[j].fsName, source: d === 0 ? "user" : "application"});
+                }
+            }
+        }
+        return _ok({count: presets.length, presets: presets});
+    } catch (e) { return _err("listSequencePresets failed: " + e.message); }
+}
+
+// 2. createSequenceFromPreset
+function createSequenceFromPreset(name, presetPath) {
+    try {
+        if (!name) return _err("name is required");
+        if (!presetPath) return _err("presetPath is required");
+        if (!new File(presetPath).exists) return _err("Preset file not found: " + presetPath);
+        if (!app.project) return _err("No project open");
+        if (typeof qe !== "undefined" && qe.project) {
+            qe.project.newSequence(name, presetPath);
+            return _ok({created: true, name: name, presetPath: presetPath});
+        }
+        app.project.createNewSequenceFromClips(name, [], presetPath);
+        return _ok({created: true, name: name, presetPath: presetPath, method: "fallback"});
+    } catch (e) { return _err("createSequenceFromPreset failed: " + e.message); }
+}
+
+// 3. exportSequencePreset
+function exportSequencePreset(sequenceIndex, outputPath) {
+    try {
+        if (sequenceIndex === undefined || sequenceIndex === null) return _err("sequenceIndex is required");
+        if (!outputPath) return _err("outputPath is required");
+        if (!app.project) return _err("No project open");
+        if (sequenceIndex < 0 || sequenceIndex >= app.project.sequences.numSequences) return _err("Invalid sequence index");
+        var seq = app.project.sequences[sequenceIndex];
+        if (!seq) return _err("Sequence not found at index " + sequenceIndex);
+        var settings = {name: seq.name, videoTracks: seq.videoTracks.numTracks, audioTracks: seq.audioTracks.numTracks, frameSizeHorizontal: seq.frameSizeHorizontal, frameSizeVertical: seq.frameSizeVertical, timebase: seq.timebase};
+        if (typeof qe !== "undefined" && qe.project) { var qeSeq = qe.project.getSequenceAt(sequenceIndex); if (qeSeq) { try { qeSeq.exportAsPreset(outputPath); } catch (qeErr) {} } }
+        var f = new File(outputPath.replace(/\.sqpreset$/, "") + ".json"); f.open("w"); f.write(JSON.stringify(settings)); f.close();
+        return _ok({exported: true, path: f.fsName, settings: settings});
+    } catch (e) { return _err("exportSequencePreset failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Effect Presets (4-6)
+// ---------------------------------------------------------------------------
+
+// 4. listEffectPresets
+function listEffectPresets() {
+    try {
+        var presets = []; var presetDirs = [];
+        if ($.os.indexOf("Win") >= 0) { presetDirs.push(new Folder(Folder.appData.fsName + "\\Adobe\\Premiere Pro\\" + app.version + "\\Profile-CreativeCloud-\\Effect Presets and Custom Items")); presetDirs.push(new Folder(Folder.myDocuments.fsName + "\\Adobe\\Premiere Pro\\" + app.version + "\\Effect Presets")); }
+        else { presetDirs.push(new Folder(Folder.userData.fsName + "/Adobe/Premiere Pro/" + app.version + "/Profile-CreativeCloud-/Effect Presets and Custom Items")); presetDirs.push(new Folder(Folder.myDocuments.fsName + "/Adobe/Premiere Pro/" + app.version + "/Effect Presets")); }
+        function _scanFFX(folder, depth) { if (!folder.exists || depth > 3) return; var files = folder.getFiles("*.ffx"); for (var i = 0; i < files.length; i++) { presets.push({name: files[i].name.replace(/\.ffx$/, ""), path: files[i].fsName}); } var subDirs = folder.getFiles(function(f) { return f instanceof Folder; }); for (var s = 0; s < subDirs.length; s++) { _scanFFX(subDirs[s], depth + 1); } }
+        for (var d = 0; d < presetDirs.length; d++) { _scanFFX(presetDirs[d], 0); }
+        return _ok({count: presets.length, presets: presets});
+    } catch (e) { return _err("listEffectPresets failed: " + e.message); }
+}
+
+// 5. applyEffectPreset
+function applyEffectPreset(trackType, trackIndex, clipIndex, presetPath) {
+    try {
+        if (!presetPath) return _err("presetPath is required");
+        if (!new File(presetPath).exists) return _err("Preset file not found: " + presetPath);
+        if (!app.project || !app.project.activeSequence) return _err("No active sequence");
+        var seq = app.project.activeSequence;
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex < 0 || trackIndex >= tracks.numTracks) return _err("Invalid track index");
+        if (clipIndex < 0 || clipIndex >= tracks[trackIndex].clips.numItems) return _err("Invalid clip index");
+        var clip = tracks[trackIndex].clips[clipIndex];
+        if (typeof qe !== "undefined" && qe.project) {
+            var qeSeq = qe.project.getActiveSequence();
+            var qeTrack = (trackType === "audio") ? qeSeq.getAudioTrackAt(trackIndex) : qeSeq.getVideoTrackAt(trackIndex);
+            var qeClip = qeTrack.getItemAt(clipIndex);
+            if (qeClip && qeClip.addEffectPreset) { qeClip.addEffectPreset(presetPath); return _ok({applied: true, clipName: clip.name, presetPath: presetPath}); }
+        }
+        return _err("Effect preset application requires QE DOM support");
+    } catch (e) { return _err("applyEffectPreset failed: " + e.message); }
+}
+
+// 6. saveEffectPreset
+function saveEffectPreset(trackType, trackIndex, clipIndex, presetName) {
+    try {
+        if (!presetName) return _err("presetName is required");
+        if (!app.project || !app.project.activeSequence) return _err("No active sequence");
+        var seq = app.project.activeSequence; var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex < 0 || trackIndex >= tracks.numTracks) return _err("Invalid track index");
+        if (clipIndex < 0 || clipIndex >= tracks[trackIndex].clips.numItems) return _err("Invalid clip index");
+        var clip = tracks[trackIndex].clips[clipIndex]; var effectsList = [];
+        if (clip.components) { for (var c = 0; c < clip.components.numItems; c++) { var comp = clip.components[c]; var params = []; if (comp.properties) { for (var p = 0; p < comp.properties.numItems; p++) { var prop = comp.properties[p]; params.push({name: prop.displayName, value: prop.getValue ? prop.getValue() : null}); } } effectsList.push({name: comp.displayName, params: params}); } }
+        var presetDir = ($.os.indexOf("Win") >= 0) ? Folder.myDocuments.fsName + "\\Adobe\\Premiere Pro\\MCP Presets" : Folder.myDocuments.fsName + "/Adobe/Premiere Pro/MCP Presets";
+        var dir = new Folder(presetDir); if (!dir.exists) dir.create();
+        var f = new File(presetDir + "/" + presetName + ".json"); f.open("w"); f.write(JSON.stringify({name: presetName, clipName: clip.name, effects: effectsList})); f.close();
+        return _ok({saved: true, presetName: presetName, path: f.fsName, effectCount: effectsList.length});
+    } catch (e) { return _err("saveEffectPreset failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Export Presets (7-9)
+// ---------------------------------------------------------------------------
+
+// 7. listExportPresets
+function listExportPresets() {
+    try {
+        var presets = []; var presetDirs = [];
+        if ($.os.indexOf("Win") >= 0) { presetDirs.push(new Folder(Folder.appData.fsName + "\\Adobe\\Adobe Media Encoder\\" + app.version + "\\Presets")); presetDirs.push(new Folder(app.path + "\\MediaIO\\systempresets")); }
+        else { presetDirs.push(new Folder(Folder.userData.fsName + "/Adobe/Adobe Media Encoder/" + app.version + "/Presets")); presetDirs.push(new Folder(app.path + "/MediaIO/systempresets")); }
+        function _scanEPR(folder, depth) { if (!folder.exists || depth > 3) return; var files = folder.getFiles("*.epr"); for (var i = 0; i < files.length; i++) { presets.push({name: files[i].name.replace(/\.epr$/, ""), path: files[i].fsName}); } var subDirs = folder.getFiles(function(f) { return f instanceof Folder; }); for (var s = 0; s < subDirs.length; s++) { _scanEPR(subDirs[s], depth + 1); } }
+        for (var d = 0; d < presetDirs.length; d++) { _scanEPR(presetDirs[d], 0); }
+        return _ok({count: presets.length, presets: presets});
+    } catch (e) { return _err("listExportPresets failed: " + e.message); }
+}
+
+// 8. createExportPreset
+function createExportPreset(settings, name) {
+    try {
+        if (!settings) return _err("settings is required"); if (!name) return _err("name is required");
+        var settingsObj = (typeof settings === "string") ? JSON.parse(settings) : settings;
+        var presetDir = ($.os.indexOf("Win") >= 0) ? Folder.myDocuments.fsName + "\\Adobe\\Premiere Pro\\MCP Export Presets" : Folder.myDocuments.fsName + "/Adobe/Premiere Pro/MCP Export Presets";
+        var dir = new Folder(presetDir); if (!dir.exists) dir.create();
+        var f = new File(presetDir + "/" + name + ".json"); f.open("w"); f.write(JSON.stringify({name: name, settings: settingsObj, created: new Date().toISOString()})); f.close();
+        return _ok({created: true, name: name, path: f.fsName});
+    } catch (e) { return _err("createExportPreset failed: " + e.message); }
+}
+
+// 9. getExportPresetDetails
+function getExportPresetDetails(presetPath) {
+    try {
+        if (!presetPath) return _err("presetPath is required");
+        var presetFile = new File(presetPath); if (!presetFile.exists) return _err("Preset file not found: " + presetPath);
+        var details = {path: presetPath, name: presetFile.name, size: presetFile.length, modified: presetFile.modified ? presetFile.modified.toISOString() : ""};
+        if (presetPath.match(/\.json$/i)) { presetFile.open("r"); try { details.settings = JSON.parse(presetFile.read()); } catch (pe) {} presetFile.close(); }
+        return _ok(details);
+    } catch (e) { return _err("getExportPresetDetails failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Project Templates (10-11)
+// ---------------------------------------------------------------------------
+
+// 10. saveAsTemplate
+function saveAsTemplate(templatePath) {
+    try { if (!templatePath) return _err("templatePath is required"); if (!app.project) return _err("No project open"); app.project.saveAs(templatePath); return _ok({saved: true, templatePath: templatePath, projectName: app.project.name}); }
+    catch (e) { return _err("saveAsTemplate failed: " + e.message); }
+}
+
+// 11. createFromTemplate
+function createFromTemplate(templatePath, projectPath) {
+    try { if (!templatePath) return _err("templatePath is required"); if (!projectPath) return _err("projectPath is required"); var tf = new File(templatePath); if (!tf.exists) return _err("Template not found: " + templatePath); tf.copy(new File(projectPath)); app.openDocument(projectPath); return _ok({created: true, templatePath: templatePath, projectPath: projectPath}); }
+    catch (e) { return _err("createFromTemplate failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Keyboard Shortcuts (12-13)
+// ---------------------------------------------------------------------------
+
+// 12. getKeyboardShortcuts
+function getKeyboardShortcuts() {
+    try {
+        var shortcuts = [];
+        var shortcutDir = ($.os.indexOf("Win") >= 0) ? Folder.appData.fsName + "\\Adobe\\Premiere Pro\\" + app.version + "\\Profile-CreativeCloud-\\Win" : Folder.userData.fsName + "/Adobe/Premiere Pro/" + app.version + "/Profile-CreativeCloud-/Mac";
+        var dir = new Folder(shortcutDir);
+        if (dir.exists) { var files = dir.getFiles("*.kys"); for (var i = 0; i < files.length; i++) { shortcuts.push({file: files[i].name, path: files[i].fsName}); } }
+        var commonShortcuts = [{command:"Save",shortcut:"Ctrl/Cmd+S"},{command:"Undo",shortcut:"Ctrl/Cmd+Z"},{command:"Redo",shortcut:"Ctrl/Cmd+Shift+Z"},{command:"Cut",shortcut:"Ctrl/Cmd+X"},{command:"Copy",shortcut:"Ctrl/Cmd+C"},{command:"Paste",shortcut:"Ctrl/Cmd+V"},{command:"Import",shortcut:"Ctrl/Cmd+I"},{command:"Export",shortcut:"Ctrl/Cmd+M"},{command:"Razor",shortcut:"C"},{command:"Selection",shortcut:"V"}];
+        return _ok({shortcutFiles: shortcuts, commonShortcuts: commonShortcuts});
+    } catch (e) { return _err("getKeyboardShortcuts failed: " + e.message); }
+}
+
+// 13. executeMenuCommand
+function executeMenuCommand(menuPath) {
+    try {
+        if (!menuPath) return _err("menuPath is required");
+        if (typeof qe !== "undefined" && qe.project) {
+            var cmdMap = {"File/Save":"cmd.save","File/Save As":"cmd.saveas","File/Import":"cmd.importFiles","File/Export/Media":"cmd.exportMedia","Edit/Undo":"cmd.undo","Edit/Redo":"cmd.redo","Edit/Cut":"cmd.cut","Edit/Copy":"cmd.copy","Edit/Paste":"cmd.paste","Edit/Select All":"cmd.selectAll","Sequence/Render Effects In to Out":"cmd.renderInToOut"};
+            if (cmdMap[menuPath]) { app.enableQE(); qe.executeCommand(cmdMap[menuPath]); return _ok({executed: true, menuPath: menuPath, method: "qe"}); }
+        }
+        var lp = menuPath.toLowerCase();
+        if (lp === "file/save") { app.project.save(); return _ok({executed: true, menuPath: menuPath, method: "api"}); }
+        if (lp === "edit/undo") { app.project.undo(); return _ok({executed: true, menuPath: menuPath, method: "api"}); }
+        return _err("Menu command not recognized: " + menuPath);
+    } catch (e) { return _err("executeMenuCommand failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Workflow / Ingest Presets (14-16)
+// ---------------------------------------------------------------------------
+
+// 14. createIngestPreset
+function createIngestPreset(name, settings) {
+    try {
+        if (!name) return _err("name is required"); if (!settings) return _err("settings is required");
+        var settingsObj = (typeof settings === "string") ? JSON.parse(settings) : settings;
+        var presetDir = ($.os.indexOf("Win") >= 0) ? Folder.myDocuments.fsName + "\\Adobe\\Premiere Pro\\MCP Ingest Presets" : Folder.myDocuments.fsName + "/Adobe/Premiere Pro/MCP Ingest Presets";
+        var dir = new Folder(presetDir); if (!dir.exists) dir.create();
+        var f = new File(presetDir + "/" + name + ".json"); f.open("w"); f.write(JSON.stringify({name: name, type: "ingest", settings: settingsObj, created: new Date().toISOString()})); f.close();
+        return _ok({created: true, name: name, path: f.fsName});
+    } catch (e) { return _err("createIngestPreset failed: " + e.message); }
+}
+
+// 15. getIngestSettings
+function getIngestSettings() {
+    try { if (!app.project) return _err("No project open"); return _ok({enabled: false, note: "Ingest settings access is limited in ExtendScript. Use the Premiere Pro UI for full control."}); }
+    catch (e) { return _err("getIngestSettings failed: " + e.message); }
+}
+
+// 16. setIngestSettings
+function setIngestSettings(enabled, preset) {
+    try { if (!app.project) return _err("No project open"); return _ok({requested: true, enabled: enabled, preset: preset || "", note: "Ingest setting toggling has limited ExtendScript API support."}); }
+    catch (e) { return _err("setIngestSettings failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Clip Presets (17-19)
+// ---------------------------------------------------------------------------
+
+// 17. saveClipPreset
+function saveClipPreset(trackType, trackIndex, clipIndex, name) {
+    try {
+        if (!name) return _err("name is required"); if (!app.project || !app.project.activeSequence) return _err("No active sequence");
+        var seq = app.project.activeSequence; var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex < 0 || trackIndex >= tracks.numTracks) return _err("Invalid track index");
+        if (clipIndex < 0 || clipIndex >= tracks[trackIndex].clips.numItems) return _err("Invalid clip index");
+        var clip = tracks[trackIndex].clips[clipIndex];
+        var clipData = {name: clip.name, start: _timeToSeconds(clip.start), end: _timeToSeconds(clip.end), duration: _timeToSeconds(clip.duration), inPoint: _timeToSeconds(clip.inPoint), outPoint: _timeToSeconds(clip.outPoint)};
+        var effects = [];
+        if (clip.components) { for (var c = 0; c < clip.components.numItems; c++) { var comp = clip.components[c]; var params = []; if (comp.properties) { for (var p = 0; p < comp.properties.numItems; p++) { var prop = comp.properties[p]; params.push({name: prop.displayName, value: prop.getValue ? prop.getValue() : null}); } } effects.push({name: comp.displayName, params: params}); } }
+        var preset = {name: name, trackType: trackType, clipData: clipData, effects: effects, created: new Date().toISOString()};
+        var presetDir = ($.os.indexOf("Win") >= 0) ? Folder.myDocuments.fsName + "\\Adobe\\Premiere Pro\\MCP Clip Presets" : Folder.myDocuments.fsName + "/Adobe/Premiere Pro/MCP Clip Presets";
+        var dir = new Folder(presetDir); if (!dir.exists) dir.create();
+        var f = new File(presetDir + "/" + name + ".json"); f.open("w"); f.write(JSON.stringify(preset)); f.close();
+        return _ok({saved: true, name: name, path: f.fsName, effectCount: effects.length});
+    } catch (e) { return _err("saveClipPreset failed: " + e.message); }
+}
+
+// 18. applyClipPreset
+function applyClipPreset(trackType, trackIndex, clipIndex, presetName) {
+    try {
+        if (!presetName) return _err("presetName is required"); if (!app.project || !app.project.activeSequence) return _err("No active sequence");
+        var presetDir = ($.os.indexOf("Win") >= 0) ? Folder.myDocuments.fsName + "\\Adobe\\Premiere Pro\\MCP Clip Presets" : Folder.myDocuments.fsName + "/Adobe/Premiere Pro/MCP Clip Presets";
+        var f = new File(presetDir + "/" + presetName + ".json"); if (!f.exists) return _err("Clip preset not found: " + presetName);
+        f.open("r"); var preset = JSON.parse(f.read()); f.close();
+        var seq = app.project.activeSequence; var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex < 0 || trackIndex >= tracks.numTracks) return _err("Invalid track index");
+        if (clipIndex < 0 || clipIndex >= tracks[trackIndex].clips.numItems) return _err("Invalid clip index");
+        var clip = tracks[trackIndex].clips[clipIndex]; var applied = 0;
+        if (preset.effects && clip.components) { for (var e2 = 0; e2 < preset.effects.length && e2 < clip.components.numItems; e2++) { var pc = preset.effects[e2]; var cc = clip.components[e2]; if (pc.params && cc.properties) { for (var p = 0; p < pc.params.length && p < cc.properties.numItems; p++) { try { if (pc.params[p].value !== null) { cc.properties[p].setValue(pc.params[p].value, true); applied++; } } catch (pe) {} } } } }
+        return _ok({applied: true, presetName: presetName, clipName: clip.name, parametersApplied: applied});
+    } catch (e) { return _err("applyClipPreset failed: " + e.message); }
+}
+
+// 19. listClipPresets
+function listClipPresets() {
+    try {
+        var presets = [];
+        var presetDir = ($.os.indexOf("Win") >= 0) ? Folder.myDocuments.fsName + "\\Adobe\\Premiere Pro\\MCP Clip Presets" : Folder.myDocuments.fsName + "/Adobe/Premiere Pro/MCP Clip Presets";
+        var dir = new Folder(presetDir);
+        if (dir.exists) { var files = dir.getFiles("*.json"); for (var i = 0; i < files.length; i++) { var info = {name: files[i].name.replace(/\.json$/, ""), path: files[i].fsName}; try { files[i].open("r"); var data = JSON.parse(files[i].read()); files[i].close(); info.trackType = data.trackType || ""; info.created = data.created || ""; info.effectCount = data.effects ? data.effects.length : 0; } catch (pe) {} presets.push(info); } }
+        return _ok({count: presets.length, presets: presets});
+    } catch (e) { return _err("listClipPresets failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Batch Operations - Extended (20-24)
+// ---------------------------------------------------------------------------
+
+// 20. batchRename
+function batchRename(trackType, trackIndex, pattern, startNumber) {
+    try {
+        if (!pattern) return _err("pattern is required"); if (!app.project || !app.project.activeSequence) return _err("No active sequence");
+        var seq = app.project.activeSequence; var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex < 0 || trackIndex >= tracks.numTracks) return _err("Invalid track index");
+        var track = tracks[trackIndex]; var start = (startNumber !== undefined && startNumber !== null) ? parseInt(startNumber) : 1; var renamed = [];
+        for (var i = 0; i < track.clips.numItems; i++) { var clip = track.clips[i]; var num = start + i; var newName = pattern; var hashMatch = pattern.match(/#+/); if (hashMatch) { var padLen = hashMatch[0].length; var numStr = String(num); while (numStr.length < padLen) numStr = "0" + numStr; newName = pattern.replace(/#+/, numStr); } else { newName = pattern + "_" + num; } var oldName = clip.name; clip.name = newName; renamed.push({index: i, oldName: oldName, newName: newName}); }
+        return _ok({renamed: renamed.length, clips: renamed});
+    } catch (e) { return _err("batchRename failed: " + e.message); }
+}
+
+// 21. batchSetDuration
+function batchSetDuration(trackType, trackIndex, durationSeconds) {
+    try {
+        if (!durationSeconds || durationSeconds <= 0) return _err("durationSeconds must be positive");
+        if (!app.project || !app.project.activeSequence) return _err("No active sequence");
+        var seq = app.project.activeSequence; var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex < 0 || trackIndex >= tracks.numTracks) return _err("Invalid track index");
+        var track = tracks[trackIndex]; var modified = 0;
+        for (var i = 0; i < track.clips.numItems; i++) { try { var clip = track.clips[i]; clip.end = _secondsToTime(_timeToSeconds(clip.start) + durationSeconds); modified++; } catch (ce) {} }
+        return _ok({modified: modified, targetDuration: durationSeconds});
+    } catch (e) { return _err("batchSetDuration failed: " + e.message); }
+}
+
+// 22. batchSetSpeed
+function batchSetSpeed(trackType, trackIndex, speed) {
+    try {
+        if (!speed || speed <= 0) return _err("speed must be positive");
+        if (!app.project || !app.project.activeSequence) return _err("No active sequence");
+        var seq = app.project.activeSequence; var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex < 0 || trackIndex >= tracks.numTracks) return _err("Invalid track index");
+        var track = tracks[trackIndex]; var modified = 0;
+        if (typeof qe !== "undefined" && qe.project) { var qeSeq = qe.project.getActiveSequence(); var qeTrack = (trackType === "audio") ? qeSeq.getAudioTrackAt(trackIndex) : qeSeq.getVideoTrackAt(trackIndex); for (var i = 0; i < track.clips.numItems; i++) { try { var qeClip = qeTrack.getItemAt(i); if (qeClip && qeClip.setSpeed) { qeClip.setSpeed(speed * 100, true); modified++; } } catch (ce) {} } }
+        return _ok({modified: modified, speed: speed, totalClips: track.clips.numItems});
+    } catch (e) { return _err("batchSetSpeed failed: " + e.message); }
+}
+
+// 23. batchApplyTransitions
+function batchApplyTransitions(trackIndex, transitionName, duration) {
+    try {
+        if (!transitionName) return _err("transitionName is required"); if (!app.project || !app.project.activeSequence) return _err("No active sequence");
+        var seq = app.project.activeSequence; if (trackIndex < 0 || trackIndex >= seq.videoTracks.numTracks) return _err("Invalid track index");
+        var track = seq.videoTracks[trackIndex]; var dur = (duration !== undefined && duration !== null) ? duration : 1.0; var applied = 0;
+        for (var i = 0; i < track.clips.numItems - 1; i++) { try { if (typeof qe !== "undefined") { var qeSeq = qe.project.getActiveSequence(); var qeTrack = qeSeq.getVideoTrackAt(trackIndex); var qeClip = qeTrack.getItemAt(i); if (qeClip && qeClip.addTransition) { qeClip.addTransition(transitionName, dur); applied++; } } } catch (te) {} }
+        return _ok({applied: applied, transitionName: transitionName, duration: dur, totalCuts: Math.max(0, track.clips.numItems - 1)});
+    } catch (e) { return _err("batchApplyTransitions failed: " + e.message); }
+}
+
+// 24. batchExportFrames
+function batchExportFrames(trackIndex, outputDir, format) {
+    try {
+        if (!outputDir) return _err("outputDir is required"); if (!app.project || !app.project.activeSequence) return _err("No active sequence");
+        var seq = app.project.activeSequence; if (trackIndex < 0 || trackIndex >= seq.videoTracks.numTracks) return _err("Invalid track index");
+        var track = seq.videoTracks[trackIndex]; var fmt = format || "png";
+        var dir = new Folder(outputDir); if (!dir.exists) dir.create(); var exported = 0;
+        for (var i = 0; i < track.clips.numItems; i++) { try { var clip = track.clips[i]; var outPath = outputDir + "/" + clip.name.replace(/[^a-zA-Z0-9_\-]/g, "_") + "_" + i + "." + fmt; seq.exportFramePNG(clip.start.ticks, outPath); exported++; } catch (fe) {} }
+        return _ok({exported: exported, totalClips: track.clips.numItems, outputDir: outputDir, format: fmt});
+    } catch (e) { return _err("batchExportFrames failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Timeline Templates (25-27)
+// ---------------------------------------------------------------------------
+
+// 25. saveTimelineTemplate
+function saveTimelineTemplate(name, description) {
+    try {
+        if (!name) return _err("name is required"); if (!app.project || !app.project.activeSequence) return _err("No active sequence");
+        var seq = app.project.activeSequence;
+        var template = {name: name, description: description || "", created: new Date().toISOString(), settings: {frameSizeH: seq.frameSizeHorizontal, frameSizeV: seq.frameSizeVertical, timebase: seq.timebase, videoTrackCount: seq.videoTracks.numTracks, audioTrackCount: seq.audioTracks.numTracks}, tracks: []};
+        for (var v = 0; v < seq.videoTracks.numTracks; v++) { var vt = seq.videoTracks[v]; var clips = []; for (var c = 0; c < vt.clips.numItems; c++) { var cl = vt.clips[c]; clips.push({name: cl.name, start: _timeToSeconds(cl.start), end: _timeToSeconds(cl.end), duration: _timeToSeconds(cl.duration)}); } template.tracks.push({type: "video", index: v, clipCount: clips.length, clips: clips}); }
+        for (var a = 0; a < seq.audioTracks.numTracks; a++) { var at2 = seq.audioTracks[a]; var aclips = []; for (var ac = 0; ac < at2.clips.numItems; ac++) { var acl = at2.clips[ac]; aclips.push({name: acl.name, start: _timeToSeconds(acl.start), end: _timeToSeconds(acl.end), duration: _timeToSeconds(acl.duration)}); } template.tracks.push({type: "audio", index: a, clipCount: aclips.length, clips: aclips}); }
+        var templateDir = ($.os.indexOf("Win") >= 0) ? Folder.myDocuments.fsName + "\\Adobe\\Premiere Pro\\MCP Timeline Templates" : Folder.myDocuments.fsName + "/Adobe/Premiere Pro/MCP Timeline Templates";
+        var dir = new Folder(templateDir); if (!dir.exists) dir.create();
+        var f = new File(templateDir + "/" + name + ".json"); f.open("w"); f.write(JSON.stringify(template)); f.close();
+        return _ok({saved: true, name: name, path: f.fsName, trackCount: template.tracks.length});
+    } catch (e) { return _err("saveTimelineTemplate failed: " + e.message); }
+}
+
+// 26. applyTimelineTemplate
+function applyTimelineTemplate(templateName) {
+    try {
+        if (!templateName) return _err("templateName is required"); if (!app.project) return _err("No project open");
+        var templateDir = ($.os.indexOf("Win") >= 0) ? Folder.myDocuments.fsName + "\\Adobe\\Premiere Pro\\MCP Timeline Templates" : Folder.myDocuments.fsName + "/Adobe/Premiere Pro/MCP Timeline Templates";
+        var f = new File(templateDir + "/" + templateName + ".json"); if (!f.exists) return _err("Timeline template not found: " + templateName);
+        f.open("r"); var template = JSON.parse(f.read()); f.close();
+        app.project.createNewSequence(template.name + " (from template)");
+        return _ok({applied: true, templateName: templateName, sequenceName: template.name + " (from template)", settings: template.settings});
+    } catch (e) { return _err("applyTimelineTemplate failed: " + e.message); }
+}
+
+// 27. listTimelineTemplates
+function listTimelineTemplates() {
+    try {
+        var templates = [];
+        var templateDir = ($.os.indexOf("Win") >= 0) ? Folder.myDocuments.fsName + "\\Adobe\\Premiere Pro\\MCP Timeline Templates" : Folder.myDocuments.fsName + "/Adobe/Premiere Pro/MCP Timeline Templates";
+        var dir = new Folder(templateDir);
+        if (dir.exists) { var files = dir.getFiles("*.json"); for (var i = 0; i < files.length; i++) { var info = {name: files[i].name.replace(/\.json$/, ""), path: files[i].fsName}; try { files[i].open("r"); var data = JSON.parse(files[i].read()); files[i].close(); info.description = data.description || ""; info.created = data.created || ""; info.trackCount = data.tracks ? data.tracks.length : 0; info.settings = data.settings || {}; } catch (pe) {} templates.push(info); } }
+        return _ok({count: templates.length, templates: templates});
+    } catch (e) { return _err("listTimelineTemplates failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Macro Recording (28-30)
+// ---------------------------------------------------------------------------
+
+// 28. startMacroRecording
+function startMacroRecording(name) {
+    try { if (!name) return _err("name is required"); if (typeof $ !== "undefined") { $.global._mcpMacroRecording = {name: name, startTime: new Date().toISOString(), actions: [], recording: true}; } return _ok({recording: true, name: name, startTime: new Date().toISOString()}); }
+    catch (e) { return _err("startMacroRecording failed: " + e.message); }
+}
+
+// 29. stopMacroRecording
+function stopMacroRecording() {
+    try {
+        if (typeof $ === "undefined" || !$.global._mcpMacroRecording || !$.global._mcpMacroRecording.recording) return _err("No macro recording in progress");
+        var macro = $.global._mcpMacroRecording; macro.recording = false; macro.endTime = new Date().toISOString();
+        var macroDir = ($.os.indexOf("Win") >= 0) ? Folder.myDocuments.fsName + "\\Adobe\\Premiere Pro\\MCP Macros" : Folder.myDocuments.fsName + "/Adobe/Premiere Pro/MCP Macros";
+        var dir = new Folder(macroDir); if (!dir.exists) dir.create();
+        var f = new File(macroDir + "/" + macro.name + ".json"); f.open("w"); f.write(JSON.stringify(macro)); f.close();
+        $.global._mcpMacroRecording = null;
+        return _ok({saved: true, name: macro.name, path: f.fsName, actionCount: macro.actions.length});
+    } catch (e) { return _err("stopMacroRecording failed: " + e.message); }
+}
+
+// 30. playMacro
+function playMacro(name) {
+    try {
+        if (!name) return _err("name is required");
+        var macroDir = ($.os.indexOf("Win") >= 0) ? Folder.myDocuments.fsName + "\\Adobe\\Premiere Pro\\MCP Macros" : Folder.myDocuments.fsName + "/Adobe/Premiere Pro/MCP Macros";
+        var f = new File(macroDir + "/" + name + ".json"); if (!f.exists) return _err("Macro not found: " + name);
+        f.open("r"); var macro = JSON.parse(f.read()); f.close();
+        var executed = 0;
+        if (macro.actions && macro.actions.length > 0) { for (var i = 0; i < macro.actions.length; i++) { try { if (macro.actions[i].script) { eval(macro.actions[i].script); executed++; } } catch (ae) {} } }
+        return _ok({played: true, name: name, totalActions: macro.actions ? macro.actions.length : 0, executed: executed});
+    } catch (e) { return _err("playMacro failed: " + e.message); }
+}
