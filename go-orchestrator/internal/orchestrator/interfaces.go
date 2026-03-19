@@ -1411,4 +1411,23 @@ type Orchestrator interface {
 	GetStockPreview(ctx context.Context, stockID int) (*GenericResult, error)
 	DownloadStock(ctx context.Context, stockID int, licensePath string) (*GenericResult, error)
 	ImportStock(ctx context.Context, stockID int, downloadPath, targetBin string) (*GenericResult, error)
+
+	// --- Timeline Panel Menu (QE DOM) ---
+	SetAudioWaveformLabelColor(ctx context.Context, enabled bool) (*GenericResult, error)
+	SetLogarithmicWaveformScaling(ctx context.Context, enabled bool) (*GenericResult, error)
+	SetTimeRulerNumbers(ctx context.Context, enabled bool) (*GenericResult, error)
+	SetMultiCameraAudioFollowsVideo(ctx context.Context, enabled bool) (*GenericResult, error)
+	SetMultiCameraSelectionTopPanel(ctx context.Context, enabled bool) (*GenericResult, error)
+	SetMultiCameraFollowsNestSetting(ctx context.Context, enabled bool) (*GenericResult, error)
+	SetRectifiedAudioWaveforms(ctx context.Context, enabled bool) (*GenericResult, error)
+
+	// --- Panel Docking (macOS Accessibility / AppleScript) ---
+	UndockPanel(ctx context.Context, panelName string) (*GenericResult, error)
+	CloseOtherPanelsInGroup(ctx context.Context, panelName string) (*GenericResult, error)
+	ClosePanelGroup(ctx context.Context, panelName string) (*GenericResult, error)
+	UndockPanelGroup(ctx context.Context, panelName string) (*GenericResult, error)
+	MaximizePanelGroup(ctx context.Context, panelName string) (*GenericResult, error)
+	SetStackedPanels(ctx context.Context, enabled bool) (*GenericResult, error)
+	SetSmallTabs(ctx context.Context, enabled bool) (*GenericResult, error)
+	SimulateMenuClick(ctx context.Context, menuPath string) (*GenericResult, error)
 }

@@ -508,3 +508,104 @@ function getRecentLocations() {
         return _ok({ premiere_projects_folder: ppFolder.fsName, versions: versions });
     } catch(e) { return _err(e.message); }
 }
+
+// ── Timeline Panel Menu Items ─────────────────────────────────────────
+
+function setAudioWaveformLabelColor(argsJson) {
+    try {
+        var args = argsJson ? JSON.parse(argsJson) : {};
+        // Toggle via QE DOM or menu command simulation
+        app.enableQE();
+        qe.project.getActiveSequence().setAudioWaveformsUseLabelColor(args.enabled !== false);
+        return _ok({ message: "Audio waveform label color " + (args.enabled !== false ? "enabled" : "disabled") });
+    } catch(e) { return _err(e.message); }
+}
+
+function setLogarithmicWaveformScaling(argsJson) {
+    try {
+        var args = argsJson ? JSON.parse(argsJson) : {};
+        app.enableQE();
+        qe.project.getActiveSequence().setLogarithmicWaveformScaling(args.enabled !== false);
+        return _ok({ message: "Logarithmic waveform scaling " + (args.enabled !== false ? "enabled" : "disabled") });
+    } catch(e) { return _err(e.message); }
+}
+
+function setTimeRulerNumbers(argsJson) {
+    try {
+        var args = argsJson ? JSON.parse(argsJson) : {};
+        app.enableQE();
+        // Try QE DOM or app properties
+        try { qe.project.getActiveSequence().setTimeRulerNumbersEnabled(args.enabled !== false); }
+        catch(e2) { return _err("Time ruler numbers toggle not available via scripting: " + e2.message); }
+        return _ok({ message: "Time ruler numbers " + (args.enabled !== false ? "shown" : "hidden") });
+    } catch(e) { return _err(e.message); }
+}
+
+function setMultiCameraAudioFollowsVideo(argsJson) {
+    try {
+        var args = argsJson ? JSON.parse(argsJson) : {};
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        qeSeq.setMultiCameraAudioFollowsVideo(args.enabled !== false);
+        return _ok({ message: "Multi-camera audio follows video " + (args.enabled !== false ? "enabled" : "disabled") });
+    } catch(e) { return _err(e.message); }
+}
+
+function setMultiCameraSelectionTopPanel(argsJson) {
+    try {
+        var args = argsJson ? JSON.parse(argsJson) : {};
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        qeSeq.setMultiCameraSelectionTopPanel(args.enabled !== false);
+        return _ok({ message: "Multi-camera selection top panel " + (args.enabled !== false ? "enabled" : "disabled") });
+    } catch(e) { return _err(e.message); }
+}
+
+function setMultiCameraFollowsNestSetting(argsJson) {
+    try {
+        var args = argsJson ? JSON.parse(argsJson) : {};
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        qeSeq.setMultiCameraFollowsNestSetting(args.enabled !== false);
+        return _ok({ message: "Multi-camera follows nest setting " + (args.enabled !== false ? "enabled" : "disabled") });
+    } catch(e) { return _err(e.message); }
+}
+
+function setRectifiedAudioWaveforms(argsJson) {
+    try {
+        var args = argsJson ? JSON.parse(argsJson) : {};
+        app.enableQE();
+        qe.project.getActiveSequence().setRectifiedWaveforms(args.enabled !== false);
+        return _ok({ message: "Rectified audio waveforms " + (args.enabled !== false ? "enabled" : "disabled") });
+    } catch(e) { return _err(e.message); }
+}
+
+// ── Panel Docking via macOS Accessibility (AppleScript) ───────────────
+// These use System Events to simulate clicking Premiere Pro's UI menus
+// since Adobe doesn't expose panel docking via ExtendScript.
+
+function simulateMenuClick(argsJson) {
+    try {
+        var args = JSON.parse(argsJson);
+        var menuPath = args.menu_path; // e.g., "Window/Extensions/PremierPro MCP Bridge"
+        if (!menuPath) return _err("menu_path is required");
+
+        // Build AppleScript to click the menu item
+        var parts = menuPath.split("/");
+        var script = 'tell application "System Events"\n';
+        script += '  tell process "Adobe Premiere Pro 2026"\n';
+        script += '    set frontmost to true\n';
+
+        if (parts.length === 2) {
+            script += '    click menu item "' + parts[1] + '" of menu 1 of menu bar item "' + parts[0] + '" of menu bar 1\n';
+        } else if (parts.length === 3) {
+            script += '    click menu item "' + parts[2] + '" of menu 1 of menu item "' + parts[1] + '" of menu 1 of menu bar item "' + parts[0] + '" of menu bar 1\n';
+        }
+
+        script += '  end tell\n';
+        script += 'end tell';
+
+        app.doScript(script, ScriptLanguage.APPLESCRIPT);
+        return _ok({ message: "Menu clicked: " + menuPath });
+    } catch(e) { return _err(e.message); }
+}
