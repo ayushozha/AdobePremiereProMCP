@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
-    "@modelcontextprotocol/sdk": "^1.12.1"
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "openai": "^6.32.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

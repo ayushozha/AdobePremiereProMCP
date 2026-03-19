@@ -10,6 +10,7 @@ import * as path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type Anthropic from "@anthropic-ai/sdk";
+import type OpenAI from "openai";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -117,6 +118,20 @@ export class MCPClient {
       name: tool.name,
       description: tool.description,
       input_schema: tool.inputSchema as Anthropic.Messages.Tool["input_schema"],
+    }));
+  }
+
+  /**
+   * Convert MCP tool definitions to the OpenAI function-calling format.
+   */
+  getOpenAITools(): OpenAI.Chat.Completions.ChatCompletionTool[] {
+    return this.tools.map((tool) => ({
+      type: "function" as const,
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.inputSchema,
+      },
     }));
   }
 
