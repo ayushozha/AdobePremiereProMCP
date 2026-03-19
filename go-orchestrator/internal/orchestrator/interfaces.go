@@ -602,4 +602,54 @@ type Orchestrator interface {
 	RunExtendScript(ctx context.Context, script string) (*GenericResult, error)
 	GetSystemInfo(ctx context.Context) (*GenericResult, error)
 	GetRecentProjects(ctx context.Context) (*GenericResult, error)
+
+	// --- Sequence Presets ---
+	ListSequencePresets(ctx context.Context) (*GenericResult, error)
+	CreateSequenceFromPreset(ctx context.Context, name, presetPath string) (*GenericResult, error)
+	ExportSequencePreset(ctx context.Context, sequenceIndex int, outputPath string) (*GenericResult, error)
+
+	// --- Effect Presets ---
+	ListEffectPresets(ctx context.Context) (*GenericResult, error)
+	ApplyEffectPreset(ctx context.Context, trackType string, trackIndex, clipIndex int, presetPath string) (*GenericResult, error)
+	SaveEffectPreset(ctx context.Context, trackType string, trackIndex, clipIndex int, presetName string) (*GenericResult, error)
+
+	// --- Export Presets (disk) ---
+	ListExportPresetsFromDisk(ctx context.Context) (*GenericResult, error)
+	CreateExportPreset(ctx context.Context, settingsJSON, name string) (*GenericResult, error)
+	GetExportPresetDetails(ctx context.Context, presetPath string) (*GenericResult, error)
+
+	// --- Project Templates ---
+	SaveAsTemplate(ctx context.Context, templatePath string) (*GenericResult, error)
+	CreateFromTemplate(ctx context.Context, templatePath, projectPath string) (*GenericResult, error)
+
+	// --- Keyboard Shortcuts ---
+	GetKeyboardShortcuts(ctx context.Context) (*GenericResult, error)
+	ExecuteMenuCommand(ctx context.Context, menuPath string) (*GenericResult, error)
+
+	// --- Workflow / Ingest Presets ---
+	CreateIngestPreset(ctx context.Context, name, settingsJSON string) (*GenericResult, error)
+	GetIngestSettings(ctx context.Context) (*GenericResult, error)
+	SetIngestSettings(ctx context.Context, enabled bool, preset string) (*GenericResult, error)
+
+	// --- Clip Presets ---
+	SaveClipPreset(ctx context.Context, trackType string, trackIndex, clipIndex int, name string) (*GenericResult, error)
+	ApplyClipPreset(ctx context.Context, trackType string, trackIndex, clipIndex int, presetName string) (*GenericResult, error)
+	ListClipPresets(ctx context.Context) (*GenericResult, error)
+
+	// --- Batch Operations (extended) ---
+	BatchRename(ctx context.Context, trackType string, trackIndex int, pattern string, startNumber int) (*GenericResult, error)
+	BatchSetDuration(ctx context.Context, trackType string, trackIndex int, durationSeconds float64) (*GenericResult, error)
+	BatchSetSpeed(ctx context.Context, trackType string, trackIndex int, speed float64) (*GenericResult, error)
+	BatchApplyTransitions(ctx context.Context, trackIndex int, transitionName string, duration float64) (*GenericResult, error)
+	BatchExportFrames(ctx context.Context, trackIndex int, outputDir, format string) (*GenericResult, error)
+
+	// --- Timeline Templates ---
+	SaveTimelineTemplate(ctx context.Context, name, description string) (*GenericResult, error)
+	ApplyTimelineTemplate(ctx context.Context, templateName string) (*GenericResult, error)
+	ListTimelineTemplates(ctx context.Context) (*GenericResult, error)
+
+	// --- Macro Recording ---
+	StartMacroRecording(ctx context.Context, name string) (*GenericResult, error)
+	StopMacroRecording(ctx context.Context) (*GenericResult, error)
+	PlayMacro(ctx context.Context, name string) (*GenericResult, error)
 }

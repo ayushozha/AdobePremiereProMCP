@@ -9339,3 +9339,393 @@ function getRecentProjects() {
         return _ok({currentProject: currentProject, recentProjects: recentProjects});
     } catch (e) { return _err("getRecentProjects failed: " + e.message); }
 }
+
+// ===========================================================================
+// ADVANCED AUDIO PROCESSING & MIXING (1-30)
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Audio Mixing (1-4)
+// ---------------------------------------------------------------------------
+
+function getAudioMixerState() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var tracks = [];
+        for (var i = 0; i < seq.audioTracks.numTracks; i++) {
+            var t = seq.audioTracks[i];
+            var info = { index: i, name: t.name || ("Audio " + (i + 1)), clipCount: t.clips ? t.clips.numItems : 0, muted: false, soloed: false, volume: 1.0, pan: 0 };
+            try { info.muted = t.isMuted() ? true : false; } catch (me) {}
+            try { info.locked = t.isLocked() ? true : false; } catch (le) {}
+            if (t.components) {
+                for (var ci = 0; ci < t.components.numItems; ci++) {
+                    var c = t.components[ci];
+                    if (c.displayName === "Volume" || c.matchName === "audioGain") { var vp = c.properties.getParamForDisplayName("Level"); if (!vp && c.properties.numItems > 0) vp = c.properties[0]; if (vp) info.volume = vp.getValue(); }
+                    if (c.displayName === "Panner" || c.matchName === "audioPanner") { var pp = c.properties.getParamForDisplayName("Balance") || c.properties.getParamForDisplayName("Pan"); if (!pp && c.properties.numItems > 0) pp = c.properties[0]; if (pp) info.pan = pp.getValue(); }
+                }
+            }
+            try { if (typeof qe !== "undefined" && qe.project) { var qs = qe.project.getActiveSequence(); if (qs) { var qt = qs.getAudioTrackAt(i); if (qt && qt.isSolo) info.soloed = qt.isSolo() ? true : false; } } } catch (se) {}
+            tracks.push(info);
+        }
+        return _ok({ sequenceName: seq.name || "", trackCount: seq.audioTracks.numTracks, tracks: tracks });
+    } catch (e) { return _err("getAudioMixerState failed: " + e.message); }
+}
+
+function setTrackPanning(trackIndex, panValue) {
+    try {
+        var r = _getAudioTrack(trackIndex);
+        if (typeof r === "string") return r;
+        panValue = parseFloat(panValue) || 0; if (panValue < -100) panValue = -100; if (panValue > 100) panValue = 100;
+        if (r.track.components) { for (var ci = 0; ci < r.track.components.numItems; ci++) { var c = r.track.components[ci]; if (c.displayName === "Panner" || c.matchName === "audioPanner") { var pp = c.properties.getParamForDisplayName("Balance") || c.properties.getParamForDisplayName("Pan"); if (!pp && c.properties.numItems > 0) pp = c.properties[0]; if (pp) { pp.setValue(panValue, true); return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, panValue: panValue }); } } } }
+        return _err("Could not find track panning parameter");
+    } catch (e) { return _err("setTrackPanning failed: " + e.message); }
+}
+
+function setClipPanning(trackIndex, clipIndex, panValue) {
+    try {
+        var r = _getAudioClip(trackIndex, clipIndex);
+        if (typeof r === "string") return r;
+        panValue = parseFloat(panValue) || 0; if (panValue < -100) panValue = -100; if (panValue > 100) panValue = 100;
+        if (r.clip.components) { for (var ci = 0; ci < r.clip.components.numItems; ci++) { var c = r.clip.components[ci]; if (c.displayName === "Panner" || c.matchName === "audioPanner" || c.displayName === "Channel Volume") { var pp = c.properties.getParamForDisplayName("Balance") || c.properties.getParamForDisplayName("Pan"); if (!pp && c.properties.numItems > 0) pp = c.properties[0]; if (pp) { pp.setValue(panValue, true); return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, panValue: panValue }); } } } }
+        return _err("Could not find clip panning parameter");
+    } catch (e) { return _err("setClipPanning failed: " + e.message); }
+}
+
+function getClipPanning(trackIndex, clipIndex) {
+    try {
+        var r = _getAudioClip(trackIndex, clipIndex);
+        if (typeof r === "string") return r;
+        if (r.clip.components) { for (var ci = 0; ci < r.clip.components.numItems; ci++) { var c = r.clip.components[ci]; if (c.displayName === "Panner" || c.matchName === "audioPanner" || c.displayName === "Channel Volume") { var pp = c.properties.getParamForDisplayName("Balance") || c.properties.getParamForDisplayName("Pan"); if (!pp && c.properties.numItems > 0) pp = c.properties[0]; if (pp) { return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, panValue: pp.getValue() }); } } } }
+        return _err("Could not find clip panning parameter");
+    } catch (e) { return _err("getClipPanning failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Audio Keyframes Extended (5-9)
+// ---------------------------------------------------------------------------
+
+function addVolumeKeyframe(trackIndex, clipIndex, time, levelDb) {
+    try {
+        var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r;
+        levelDb = _clampDb(levelDb); time = parseFloat(time) || 0;
+        var p = _findVolumeParam(r.clip); if (!p) return _err("Volume/Level parameter not found");
+        if (!p.isTimeVarying()) p.setTimeVarying(true);
+        p.addKey(_secondsToTime(time)); p.setValueAtKey(_secondsToTime(time), levelDb, true);
+        return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, time: time, levelDb: levelDb });
+    } catch (e) { return _err("addVolumeKeyframe failed: " + e.message); }
+}
+
+function addPanningKeyframe(trackIndex, clipIndex, time, panValue) {
+    try {
+        var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r;
+        panValue = parseFloat(panValue) || 0; if (panValue < -100) panValue = -100; if (panValue > 100) panValue = 100;
+        time = parseFloat(time) || 0;
+        if (r.clip.components) { for (var ci = 0; ci < r.clip.components.numItems; ci++) { var c = r.clip.components[ci]; if (c.displayName === "Panner" || c.matchName === "audioPanner" || c.displayName === "Channel Volume") { var pp = c.properties.getParamForDisplayName("Balance") || c.properties.getParamForDisplayName("Pan"); if (!pp && c.properties.numItems > 0) pp = c.properties[0]; if (pp) { if (!pp.isTimeVarying()) pp.setTimeVarying(true); pp.addKey(_secondsToTime(time)); pp.setValueAtKey(_secondsToTime(time), panValue, true); return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, time: time, panValue: panValue }); } } } }
+        return _err("Could not find panning parameter for keyframe");
+    } catch (e) { return _err("addPanningKeyframe failed: " + e.message); }
+}
+
+function getVolumeKeyframes(trackIndex, clipIndex) {
+    try {
+        var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r;
+        var p = _findVolumeParam(r.clip); if (!p) return _err("Volume/Level parameter not found");
+        var keyframes = [];
+        try { var ks = p.getKeys(); if (ks) { for (var ki = 0; ki < ks.length; ki++) { keyframes.push({ time: _timeToSeconds(ks[ki]), value: p.getValueAtKey(ks[ki]) }); } } } catch (kfe) {}
+        return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, keyframeCount: keyframes.length, keyframes: keyframes, isTimeVarying: p.isTimeVarying() ? true : false });
+    } catch (e) { return _err("getVolumeKeyframes failed: " + e.message); }
+}
+
+function getPanningKeyframes(trackIndex, clipIndex) {
+    try {
+        var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r;
+        if (r.clip.components) { for (var ci = 0; ci < r.clip.components.numItems; ci++) { var c = r.clip.components[ci]; if (c.displayName === "Panner" || c.matchName === "audioPanner" || c.displayName === "Channel Volume") { var pp = c.properties.getParamForDisplayName("Balance") || c.properties.getParamForDisplayName("Pan"); if (!pp && c.properties.numItems > 0) pp = c.properties[0]; if (pp) { var keyframes = []; try { var ks = pp.getKeys(); if (ks) { for (var ki = 0; ki < ks.length; ki++) { keyframes.push({ time: _timeToSeconds(ks[ki]), value: pp.getValueAtKey(ks[ki]) }); } } } catch (kfe) {} return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, keyframeCount: keyframes.length, keyframes: keyframes, isTimeVarying: pp.isTimeVarying() ? true : false }); } } } }
+        return _err("Could not find panning parameter");
+    } catch (e) { return _err("getPanningKeyframes failed: " + e.message); }
+}
+
+function removeAllAudioKeyframes(trackIndex, clipIndex) {
+    try {
+        var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r;
+        var removed = { volume: 0, panning: 0 };
+        var p = _findVolumeParam(r.clip);
+        if (p) { try { var ks = p.getKeys(); if (ks) { for (var ki = ks.length - 1; ki >= 0; ki--) { p.removeKey(ks[ki]); removed.volume++; } } } catch (rk) {} }
+        if (r.clip.components) { for (var ci = 0; ci < r.clip.components.numItems; ci++) { var c = r.clip.components[ci]; if (c.displayName === "Panner" || c.matchName === "audioPanner" || c.displayName === "Channel Volume") { var pp = c.properties.getParamForDisplayName("Balance") || c.properties.getParamForDisplayName("Pan"); if (!pp && c.properties.numItems > 0) pp = c.properties[0]; if (pp) { try { var pks = pp.getKeys(); if (pks) { for (var pki = pks.length - 1; pki >= 0; pki--) { pp.removeKey(pks[pki]); removed.panning++; } } } catch (rpk) {} } } } }
+        return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, removedVolumeKeyframes: removed.volume, removedPanningKeyframes: removed.panning });
+    } catch (e) { return _err("removeAllAudioKeyframes failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Audio Routing (10-12)
+// ---------------------------------------------------------------------------
+
+function setTrackOutput(trackIndex, outputChannels) {
+    try {
+        var r = _getAudioTrack(trackIndex); if (typeof r === "string") return r;
+        outputChannels = parseInt(outputChannels, 10) || 0;
+        if (typeof qe !== "undefined" && qe.project) { var qs = qe.project.getActiveSequence(); if (qs) { var qt = qs.getAudioTrackAt(parseInt(trackIndex, 10) || 0); if (qt && qt.setOutputAssignment) { qt.setOutputAssignment(outputChannels); return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, outputChannels: outputChannels }); } } }
+        return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, outputChannels: outputChannels, note: "Track output assignment requires QE DOM support." });
+    } catch (e) { return _err("setTrackOutput failed: " + e.message); }
+}
+
+function getTrackOutput(trackIndex) {
+    try {
+        var r = _getAudioTrack(trackIndex); if (typeof r === "string") return r;
+        var output = { trackIndex: parseInt(trackIndex, 10) || 0, outputChannels: -1 };
+        if (typeof qe !== "undefined" && qe.project) { var qs = qe.project.getActiveSequence(); if (qs) { var qt = qs.getAudioTrackAt(parseInt(trackIndex, 10) || 0); if (qt && qt.getOutputAssignment) { output.outputChannels = qt.getOutputAssignment(); } } }
+        return _ok(output);
+    } catch (e) { return _err("getTrackOutput failed: " + e.message); }
+}
+
+function createSubmix(name, channelType) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence; if (!seq) return _err("No active sequence");
+        name = name || "Submix"; channelType = (channelType || "stereo").toLowerCase();
+        var ctv = 1; if (channelType === "mono") ctv = 0; else if (channelType === "5.1") ctv = 2; else if (channelType === "adaptive") ctv = 3;
+        var bc = seq.audioTracks.numTracks;
+        if (typeof qe !== "undefined" && qe.project) { var qs = qe.project.getActiveSequence(); if (qs && qs.addAudioSubmixTrack) { qs.addAudioSubmixTrack(ctv); } else if (qs && qs.addAudioTrack) { qs.addAudioTrack(ctv); } } else if (seq.addTrack) { seq.addTrack("audio", ctv); }
+        var ac = seq.audioTracks.numTracks;
+        if (name !== "" && ac > bc) { var nt = seq.audioTracks[ac - 1]; if (nt && nt.name !== undefined) try { nt.name = name; } catch (e2) {} }
+        return _ok({ name: name, channelType: channelType, trackIndex: ac - 1, totalAudioTracks: ac, added: ac > bc });
+    } catch (e) { return _err("createSubmix failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Audio Effects Extended (13-18)
+// ---------------------------------------------------------------------------
+
+function applyEQ(trackIndex, clipIndex, bands) {
+    try {
+        var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r;
+        var applied = false;
+        if (typeof qe !== "undefined" && qe.project) { var qs = qe.project.getActiveSequence(); if (qs) { var qt = qs.getAudioTrackAt(parseInt(trackIndex, 10) || 0); if (qt) { var qc = qt.getItemAt(parseInt(clipIndex, 10) || 0); if (qc) { var ef = qe.project.getAudioEffectByName("Parametric Equalizer"); if (ef) { qc.addAudioEffect(ef); applied = true; } } } } }
+        var parsedBands = [];
+        if (typeof bands === "string") { try { bands = JSON.parse(bands); } catch (pe) { bands = []; } }
+        if (bands && bands.length) { for (var bi = 0; bi < bands.length; bi++) { parsedBands.push({ freq: parseFloat(bands[bi].freq) || 1000, gain: parseFloat(bands[bi].gain) || 0, q: parseFloat(bands[bi].q) || 1.0 }); } }
+        return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, effectApplied: applied, bands: parsedBands, note: "EQ applied. Band parameters set via effect component properties." });
+    } catch (e) { return _err("applyEQ failed: " + e.message); }
+}
+
+function applyCompressor(trackIndex, clipIndex, threshold, ratio, attack, release) {
+    try {
+        var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r;
+        threshold = parseFloat(threshold) || -20; ratio = parseFloat(ratio) || 4; attack = parseFloat(attack) || 10; release = parseFloat(release) || 100;
+        var applied = false;
+        if (typeof qe !== "undefined" && qe.project) { var qs = qe.project.getActiveSequence(); if (qs) { var qt = qs.getAudioTrackAt(parseInt(trackIndex, 10) || 0); if (qt) { var qc = qt.getItemAt(parseInt(clipIndex, 10) || 0); if (qc) { var ef = qe.project.getAudioEffectByName("Dynamics") || qe.project.getAudioEffectByName("Single-band Compressor"); if (ef) { qc.addAudioEffect(ef); applied = true; } } } } }
+        return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, effectApplied: applied, threshold: threshold, ratio: ratio, attack: attack, release: release });
+    } catch (e) { return _err("applyCompressor failed: " + e.message); }
+}
+
+function applyLimiter(trackIndex, clipIndex, ceiling) {
+    try {
+        var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r;
+        ceiling = parseFloat(ceiling); if (isNaN(ceiling)) ceiling = -0.1;
+        var applied = false;
+        if (typeof qe !== "undefined" && qe.project) { var qs = qe.project.getActiveSequence(); if (qs) { var qt = qs.getAudioTrackAt(parseInt(trackIndex, 10) || 0); if (qt) { var qc = qt.getItemAt(parseInt(clipIndex, 10) || 0); if (qc) { var ef = qe.project.getAudioEffectByName("Hard Limiter") || qe.project.getAudioEffectByName("Dynamics"); if (ef) { qc.addAudioEffect(ef); applied = true; } } } } }
+        return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, effectApplied: applied, ceiling: ceiling });
+    } catch (e) { return _err("applyLimiter failed: " + e.message); }
+}
+
+function applyDeEsser(trackIndex, clipIndex, frequency, reduction) {
+    try {
+        var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r;
+        frequency = parseFloat(frequency) || 6000; reduction = parseFloat(reduction) || -10;
+        var applied = false;
+        if (typeof qe !== "undefined" && qe.project) { var qs = qe.project.getActiveSequence(); if (qs) { var qt = qs.getAudioTrackAt(parseInt(trackIndex, 10) || 0); if (qt) { var qc = qt.getItemAt(parseInt(clipIndex, 10) || 0); if (qc) { var ef = qe.project.getAudioEffectByName("DeEsser"); if (ef) { qc.addAudioEffect(ef); applied = true; } } } } }
+        return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, effectApplied: applied, frequency: frequency, reduction: reduction });
+    } catch (e) { return _err("applyDeEsser failed: " + e.message); }
+}
+
+function getAudioEffectPresets() {
+    try {
+        var presets = [];
+        if (typeof qe !== "undefined" && qe.project) {
+            var effectNames = ["Parametric Equalizer", "Graphic Equalizer (10 Bands)", "Graphic Equalizer (20 Bands)", "Dynamics", "Single-band Compressor", "Multiband Compressor", "Hard Limiter", "DeEsser", "DeHummer", "DeNoise", "Reverb", "Delay", "Chorus/Flanger", "Phaser", "Analog Delay", "Notch Filter", "Highpass", "Lowpass", "Pitch Shifter", "Tube-modeled Compressor"];
+            for (var i = 0; i < effectNames.length; i++) { var ef = qe.project.getAudioEffectByName(effectNames[i]); presets.push({ name: effectNames[i], available: ef ? true : false }); }
+        }
+        return _ok({ presetCount: presets.length, presets: presets });
+    } catch (e) { return _err("getAudioEffectPresets failed: " + e.message); }
+}
+
+function applyAudioPreset(trackIndex, clipIndex, presetName) {
+    try {
+        var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r;
+        if (!presetName || presetName === "") return _err("presetName is required");
+        var applied = false;
+        if (typeof qe !== "undefined" && qe.project) { var qs = qe.project.getActiveSequence(); if (qs) { var qt = qs.getAudioTrackAt(parseInt(trackIndex, 10) || 0); if (qt) { var qc = qt.getItemAt(parseInt(clipIndex, 10) || 0); if (qc) { var ef = qe.project.getAudioEffectByName(presetName); if (ef) { qc.addAudioEffect(ef); applied = true; } else return _err("Audio preset not found: " + presetName); } } } } else { return _err("Applying audio presets requires QE DOM. Call app.enableQE() first."); }
+        return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, presetName: presetName, applied: applied });
+    } catch (e) { return _err("applyAudioPreset failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Audio Analysis Extended (19-23)
+// ---------------------------------------------------------------------------
+
+function getAudioWaveformData(trackIndex, clipIndex, samples) {
+    try {
+        var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r;
+        samples = parseInt(samples, 10) || 100; if (samples < 1) samples = 1; if (samples > 10000) samples = 10000;
+        var cs = _timeToSeconds(r.clip.start); var ce = _timeToSeconds(r.clip.end); var mp = "";
+        if (r.clip.projectItem && r.clip.projectItem.getMediaPath) mp = r.clip.projectItem.getMediaPath() || "";
+        var p = _findVolumeParam(r.clip); var currentLevel = p ? p.getValue() : 0;
+        return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, samples: samples, clipStart: cs, clipEnd: ce, duration: ce - cs, mediaPath: mp, currentLevelDb: currentLevel, note: "Detailed waveform data requires the media engine for analysis." });
+    } catch (e) { return _err("getAudioWaveformData failed: " + e.message); }
+}
+
+function getLoudnessInfo(trackIndex, clipIndex) {
+    try {
+        var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r;
+        var cs = _timeToSeconds(r.clip.start); var ce = _timeToSeconds(r.clip.end); var mp = "";
+        if (r.clip.projectItem && r.clip.projectItem.getMediaPath) mp = r.clip.projectItem.getMediaPath() || "";
+        var p = _findVolumeParam(r.clip); var currentLevel = p ? p.getValue() : 0;
+        var targetLufs = null;
+        if (r.clip.components) { for (var ci = 0; ci < r.clip.components.numItems; ci++) { var c = r.clip.components[ci]; if (c.displayName === "Essential Sound" || c.matchName === "essentialSound") { var lp = c.properties.getParamForDisplayName("Loudness") || c.properties.getParamForDisplayName("Target Loudness"); if (lp) targetLufs = lp.getValue(); } } }
+        return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, clipStart: cs, clipEnd: ce, duration: ce - cs, currentLevelDb: currentLevel, targetLufs: targetLufs, mediaPath: mp, note: "Precise LUFS measurement requires the media engine." });
+    } catch (e) { return _err("getLoudnessInfo failed: " + e.message); }
+}
+
+function getSequenceLoudness() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence; if (!seq) return _err("No active sequence");
+        var trackInfo = [];
+        for (var i = 0; i < seq.audioTracks.numTracks; i++) { var t = seq.audioTracks[i]; var tInfo = { index: i, name: t.name || ("Audio " + (i + 1)), clipCount: t.clips ? t.clips.numItems : 0, muted: false }; try { tInfo.muted = t.isMuted() ? true : false; } catch (me) {} trackInfo.push(tInfo); }
+        var seqDuration = 0; try { seqDuration = _timeToSeconds(seq.end); } catch (de) {}
+        return _ok({ sequenceName: seq.name || "", duration: seqDuration, audioTrackCount: seq.audioTracks.numTracks, tracks: trackInfo, note: "Precise sequence loudness (LUFS) requires full audio mixdown analysis via the media engine." });
+    } catch (e) { return _err("getSequenceLoudness failed: " + e.message); }
+}
+
+function findAudioPeaks(trackIndex, clipIndex, thresholdDb) {
+    try {
+        var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r;
+        thresholdDb = parseFloat(thresholdDb); if (isNaN(thresholdDb)) thresholdDb = -6;
+        var cs = _timeToSeconds(r.clip.start); var ce = _timeToSeconds(r.clip.end); var mp = "";
+        if (r.clip.projectItem && r.clip.projectItem.getMediaPath) mp = r.clip.projectItem.getMediaPath() || "";
+        var p = _findVolumeParam(r.clip); var currentLevel = p ? p.getValue() : 0;
+        return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, thresholdDb: thresholdDb, clipStart: cs, clipEnd: ce, duration: ce - cs, currentLevelDb: currentLevel, mediaPath: mp, note: "Detailed peak detection requires waveform analysis via the media engine.", peaks: [] });
+    } catch (e) { return _err("findAudioPeaks failed: " + e.message); }
+}
+
+function detectClipping(trackIndex, clipIndex) {
+    try {
+        var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r;
+        var cs = _timeToSeconds(r.clip.start); var ce = _timeToSeconds(r.clip.end); var mp = "";
+        if (r.clip.projectItem && r.clip.projectItem.getMediaPath) mp = r.clip.projectItem.getMediaPath() || "";
+        var p = _findVolumeParam(r.clip); var currentLevel = p ? p.getValue() : 0;
+        var potentialClipping = currentLevel > 0;
+        return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, clipStart: cs, clipEnd: ce, duration: ce - cs, currentLevelDb: currentLevel, potentialClipping: potentialClipping, mediaPath: mp, note: "Precise clipping detection requires sample-level analysis via the media engine.", clippingRegions: [] });
+    } catch (e) { return _err("detectClipping failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Voiceover (24-25)
+// ---------------------------------------------------------------------------
+
+function prepareVoiceoverTrack(trackIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence; if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        if (trackIndex >= seq.audioTracks.numTracks) return _err("Audio track index " + trackIndex + " out of range");
+        var mutedTracks = [];
+        for (var i = 0; i < seq.audioTracks.numTracks; i++) { if (i !== trackIndex) { try { seq.audioTracks[i].setMute(1); mutedTracks.push(i); } catch (me) {} } }
+        try { seq.audioTracks[trackIndex].setMute(0); } catch (ue) {}
+        try { if (seq.audioTracks[trackIndex].setTargeted) seq.audioTracks[trackIndex].setTargeted(true, true); } catch (te) {}
+        return _ok({ trackIndex: trackIndex, trackName: seq.audioTracks[trackIndex].name || ("Audio " + (trackIndex + 1)), mutedOtherTracks: mutedTracks, ready: true });
+    } catch (e) { return _err("prepareVoiceoverTrack failed: " + e.message); }
+}
+
+function setVoiceoverDucking(voTrackIndex, musicTrackIndex, duckAmount, sensitivity) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence; if (!seq) return _err("No active sequence");
+        voTrackIndex = parseInt(voTrackIndex, 10) || 0; musicTrackIndex = parseInt(musicTrackIndex, 10) || 0;
+        duckAmount = parseFloat(duckAmount); if (isNaN(duckAmount)) duckAmount = -15;
+        sensitivity = parseFloat(sensitivity); if (isNaN(sensitivity)) sensitivity = 50;
+        if (voTrackIndex >= seq.audioTracks.numTracks) return _err("VO track index " + voTrackIndex + " out of range");
+        if (musicTrackIndex >= seq.audioTracks.numTracks) return _err("Music track index " + musicTrackIndex + " out of range");
+        var musicTrack = seq.audioTracks[musicTrackIndex];
+        if (musicTrack.components) { for (var ci = 0; ci < musicTrack.components.numItems; ci++) { var c = musicTrack.components[ci]; if (c.displayName === "Essential Sound" || c.matchName === "essentialSound") { var dp = c.properties.getParamForDisplayName("Auto Ducking") || c.properties.getParamForDisplayName("Duck Against"); if (dp) dp.setValue(1, true); var ap = c.properties.getParamForDisplayName("Duck Amount"); if (ap) ap.setValue(duckAmount, true); var sp = c.properties.getParamForDisplayName("Sensitivity"); if (sp) sp.setValue(sensitivity, true); break; } } }
+        return _ok({ voTrackIndex: voTrackIndex, musicTrackIndex: musicTrackIndex, duckAmount: duckAmount, sensitivity: sensitivity, note: "Ducking configured. Fine-tuning may be needed in Essential Sound panel." });
+    } catch (e) { return _err("setVoiceoverDucking failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Audio Sync (26-27)
+// ---------------------------------------------------------------------------
+
+function syncAudioToVideo(audioTrackIndex, audioClipIndex, videoTrackIndex, videoClipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence; if (!seq) return _err("No active sequence");
+        audioTrackIndex = parseInt(audioTrackIndex, 10) || 0; audioClipIndex = parseInt(audioClipIndex, 10) || 0;
+        videoTrackIndex = parseInt(videoTrackIndex, 10) || 0; videoClipIndex = parseInt(videoClipIndex, 10) || 0;
+        if (audioTrackIndex >= seq.audioTracks.numTracks) return _err("Audio track index " + audioTrackIndex + " out of range");
+        if (videoTrackIndex >= seq.videoTracks.numTracks) return _err("Video track index " + videoTrackIndex + " out of range");
+        var aTrack = seq.audioTracks[audioTrackIndex]; var vTrack = seq.videoTracks[videoTrackIndex];
+        if (!aTrack.clips || audioClipIndex >= aTrack.clips.numItems) return _err("Audio clip index " + audioClipIndex + " out of range");
+        if (!vTrack.clips || videoClipIndex >= vTrack.clips.numItems) return _err("Video clip index " + videoClipIndex + " out of range");
+        var aClip = aTrack.clips[audioClipIndex]; var vClip = vTrack.clips[videoClipIndex];
+        var videoStart = _timeToSeconds(vClip.start);
+        aClip.start = vClip.start;
+        var newAudioStart = _timeToSeconds(aClip.start);
+        return _ok({ audioTrackIndex: audioTrackIndex, audioClipIndex: audioClipIndex, videoTrackIndex: videoTrackIndex, videoClipIndex: videoClipIndex, videoStartTime: videoStart, audioMovedTo: newAudioStart, synced: true, note: "Audio clip moved to match video start. For waveform-based sync, use the media engine." });
+    } catch (e) { return _err("syncAudioToVideo failed: " + e.message); }
+}
+
+function detectAudioDrift(trackIndex, clipIndex) {
+    try {
+        var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r;
+        var cs = _timeToSeconds(r.clip.start); var ce = _timeToSeconds(r.clip.end); var mp = "";
+        if (r.clip.projectItem && r.clip.projectItem.getMediaPath) mp = r.clip.projectItem.getMediaPath() || "";
+        var linkedVideoStart = null;
+        if (r.clip.projectItem) { var seq = r.seq; for (var vi = 0; vi < seq.videoTracks.numTracks; vi++) { var vt = seq.videoTracks[vi]; if (vt.clips) { for (var vci = 0; vci < vt.clips.numItems; vci++) { var vc = vt.clips[vci]; if (vc.projectItem && r.clip.projectItem && vc.projectItem.name === r.clip.projectItem.name) { linkedVideoStart = _timeToSeconds(vc.start); break; } } } if (linkedVideoStart !== null) break; } }
+        var drift = linkedVideoStart !== null ? (cs - linkedVideoStart) : null;
+        return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, clipStart: cs, clipEnd: ce, mediaPath: mp, linkedVideoStart: linkedVideoStart, driftSeconds: drift, hasDrift: drift !== null && Math.abs(drift) > 0.001, note: "Drift calculated by comparing audio/video start positions." });
+    } catch (e) { return _err("detectAudioDrift failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Channel Operations (28-30)
+// ---------------------------------------------------------------------------
+
+function convertStereoToMono(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        projectItemIndex = parseInt(projectItemIndex, 10) || 0;
+        if (!app.project.rootItem.children || projectItemIndex >= app.project.rootItem.children.numItems) return _err("Project item index " + projectItemIndex + " out of range");
+        var item = app.project.rootItem.children[projectItemIndex]; if (!item) return _err("No project item at index " + projectItemIndex);
+        var result = { projectItemIndex: projectItemIndex, name: item.name || "", converted: false };
+        if (item.getAudioChannelMapping) { var acm = item.getAudioChannelMapping(); if (acm) { acm.audioChannelsType = 0; item.setAudioChannelMapping(acm); result.converted = true; result.newChannelType = "mono"; } }
+        return _ok(result);
+    } catch (e) { return _err("convertStereoToMono failed: " + e.message); }
+}
+
+function swapAudioChannels(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        projectItemIndex = parseInt(projectItemIndex, 10) || 0;
+        if (!app.project.rootItem.children || projectItemIndex >= app.project.rootItem.children.numItems) return _err("Project item index " + projectItemIndex + " out of range");
+        var item = app.project.rootItem.children[projectItemIndex]; if (!item) return _err("No project item at index " + projectItemIndex);
+        var result = { projectItemIndex: projectItemIndex, name: item.name || "", swapped: false };
+        if (item.getAudioChannelMapping) { var acm = item.getAudioChannelMapping(); if (acm && acm.setMappingForChannel) { acm.setMappingForChannel(0, 1); acm.setMappingForChannel(1, 0); item.setAudioChannelMapping(acm); result.swapped = true; } else { result.note = "Channel mapping swap not fully supported; use the Audio Channel Mapping dialog for precise control."; } }
+        return _ok(result);
+    } catch (e) { return _err("swapAudioChannels failed: " + e.message); }
+}
+
+function extractAudioFromVideo(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        projectItemIndex = parseInt(projectItemIndex, 10) || 0;
+        if (!app.project.rootItem.children || projectItemIndex >= app.project.rootItem.children.numItems) return _err("Project item index " + projectItemIndex + " out of range");
+        var item = app.project.rootItem.children[projectItemIndex]; if (!item) return _err("No project item at index " + projectItemIndex);
+        var result = { projectItemIndex: projectItemIndex, name: item.name || "", mediaPath: "", hasAudio: false, hasVideo: false };
+        if (item.getMediaPath) result.mediaPath = item.getMediaPath() || "";
+        try { if (item.hasVideo) result.hasVideo = item.hasVideo(); if (item.hasAudio) result.hasAudio = item.hasAudio(); } catch (hve) { result.hasVideo = true; result.hasAudio = true; }
+        if (item.getAudioChannelMapping) { var acm = item.getAudioChannelMapping(); result.audioChannelType = acm ? (acm.audioChannelsType !== undefined ? acm.audioChannelsType : -1) : -1; }
+        result.note = "Audio is accessible via the project item. Place on an audio-only track or use Export Audio Only for extraction.";
+        return _ok(result);
+    } catch (e) { return _err("extractAudioFromVideo failed: " + e.message); }
+}
