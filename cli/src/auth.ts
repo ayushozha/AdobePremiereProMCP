@@ -18,6 +18,12 @@ export interface AuthResult {
   model: string;
 }
 
+/** Returned when the user is logged in via OAuth but no API key is available. */
+export interface OAuthDetected {
+  kind: "oauth-no-key";
+  email: string | null;
+}
+
 // ── Default models per provider ───────────────────────────────────────
 
 const DEFAULT_MODELS: Record<Provider, string> = {
@@ -30,8 +36,10 @@ const DEFAULT_MODELS: Record<Provider, string> = {
 /**
  * Resolve authentication by checking all sources in priority order.
  * Returns the provider, API key, and default model — or null if nothing found.
+ * If an OAuth session is detected but no API key is extractable, returns an
+ * OAuthDetected object so the caller can show a helpful message.
  */
-export async function resolveAuth(): Promise<AuthResult | null> {
+export async function resolveAuth(): Promise<AuthResult | OAuthDetected | null> {
   // Priority 1: Explicit env vars
   if (process.env.ANTHROPIC_API_KEY) {
     return {
@@ -50,14 +58,16 @@ export async function resolveAuth(): Promise<AuthResult | null> {
   }
 
   // Priority 2: Claude Code auth (claude login)
-  const claudeKey = getClaudeAuthKey();
-  if (claudeKey) {
+  const claudeAuth = getClaudeAuth();
+  if (claudeAuth && "apiKey" in claudeAuth) {
     return {
       provider: "anthropic",
-      apiKey: claudeKey,
+      apiKey: claudeAuth.apiKey,
       model: process.env.MODEL || DEFAULT_MODELS.anthropic,
     };
   }
+  // If OAuth detected but no key, remember it but keep looking for other sources
+  const oauthDetected = claudeAuth as OAuthDetected | null;
 
   // Priority 3: Codex CLI auth
   const codexKey = getCodexAuthKey();
@@ -75,24 +85,46 @@ export async function resolveAuth(): Promise<AuthResult | null> {
     return configAuth;
   }
 
+  // If we detected an OAuth session earlier but found no usable API key
+  // anywhere, surface that so the caller can guide the user.
+  if (oauthDetected) {
+    return oauthDetected;
+  }
+
   return null;
 }
 
 // ── Claude Code auth ──────────────────────────────────────────────────
 
-function getClaudeAuthKey(): string | null {
-  // Try `claude auth print-api-key`
+interface ClaudeAuthStatus {
+  loggedIn?: boolean;
+  authMethod?: string;
+  email?: string;
+  subscriptionType?: string;
+  apiProvider?: string;
+}
+
+/**
+ * Try to obtain an API key from Claude Code.
+ * Returns { apiKey } if a key was found, an OAuthDetected sentinel if the user
+ * is logged in via OAuth (no key available), or null if Claude CLI isn't set up.
+ */
+function getClaudeAuth(): { apiKey: string } | OAuthDetected | null {
+  // Step 1: Check `claude auth status` to understand the login state.
+  let status: ClaudeAuthStatus | null = null;
   try {
-    const key = execSync("claude auth print-api-key 2>/dev/null", {
+    const raw = execSync("claude auth status 2>/dev/null", {
       encoding: "utf-8",
       timeout: 5000,
     }).trim();
-    if (key && key.startsWith("sk-ant-")) return key;
+    if (raw) {
+      status = JSON.parse(raw) as ClaudeAuthStatus;
+    }
   } catch {
-    // not available
+    // CLI not available or errored
   }
 
-  // Check Claude config files
+  // Step 2: Try to read an API key from Claude config files.
   const home = homedir();
   const candidates = [
     path.join(home, ".claude", "credentials.json"),
@@ -102,9 +134,18 @@ function getClaudeAuthKey(): string | null {
 
   for (const filePath of candidates) {
     const key = extractKeyFromJson(filePath, "sk-ant-");
-    if (key) return key;
+    if (key) return { apiKey: key };
   }
 
+  // Step 3: If the user is logged in via OAuth (claude.ai), there is no API key
+  // we can extract — the Anthropic SDK needs an sk-ant-* key. Surface this so
+  // the caller can show a helpful message.
+  if (status?.loggedIn && status.authMethod === "claude.ai") {
+    return { kind: "oauth-no-key", email: status.email ?? null };
+  }
+
+  // Step 4: If logged in via console (API key method), the key might be in the
+  // keychain and inaccessible to us. Nothing more we can do.
   return null;
 }
 
@@ -196,19 +237,40 @@ function extractKeyFromJson(filePath: string, prefix: string): string | null {
   return null;
 }
 
-// ── Auth help message ─────────────────────────────────────────────────
+// ── Auth help messages ────────────────────────────────────────────────
 
 export function printAuthHelp(color: { cyan: string; yellow: string; reset: string }): void {
   console.log();
   console.log("  Authenticate using any of these methods:");
   console.log();
   console.log(`  ${color.yellow}Anthropic (Claude):${color.reset}`);
-  console.log(`    ${color.cyan}claude login${color.reset}                        — browser OAuth`);
-  console.log(`    ${color.cyan}claude login --method api-key${color.reset}       — paste API key`);
   console.log(`    ${color.cyan}export ANTHROPIC_API_KEY="sk-ant-..."${color.reset}`);
+  console.log(`    ${color.cyan}claude auth login --console${color.reset}         — API key via Anthropic Console`);
   console.log();
   console.log(`  ${color.yellow}OpenAI / Codex:${color.reset}`);
   console.log(`    ${color.cyan}codex login${color.reset}                         — Codex CLI auth`);
   console.log(`    ${color.cyan}export OPENAI_API_KEY="sk-..."${color.reset}`);
+  console.log();
+}
+
+export function printOAuthHelp(
+  color: { cyan: string; yellow: string; red: string; reset: string },
+  email: string | null,
+): void {
+  console.log();
+  if (email) {
+    console.log(`  You are logged into Claude as ${color.cyan}${email}${color.reset}, but this`);
+  } else {
+    console.log(`  You are logged into Claude via ${color.cyan}claude.ai${color.reset} OAuth, but this`);
+  }
+  console.log(`  session does not provide an API key that the SDK can use.`);
+  console.log();
+  console.log(`  ${color.yellow}To fix this, do one of the following:${color.reset}`);
+  console.log();
+  console.log(`    1. ${color.cyan}export ANTHROPIC_API_KEY="sk-ant-..."${color.reset}`);
+  console.log(`       Get a key from ${color.cyan}https://console.anthropic.com/settings/keys${color.reset}`);
+  console.log();
+  console.log(`    2. ${color.cyan}claude auth login --console${color.reset}`);
+  console.log(`       Re-authenticate using Anthropic Console (API billing).`);
   console.log();
 }

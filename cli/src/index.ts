@@ -9,7 +9,8 @@
 
 import { MCPClient } from "./mcp-client.js";
 import { ChatLoop } from "./chat.js";
-import { resolveAuth, printAuthHelp } from "./auth.js";
+import { resolveAuth, printAuthHelp, printOAuthHelp } from "./auth.js";
+import type { AuthResult } from "./auth.js";
 import {
   banner,
   printAssistant,
@@ -26,12 +27,22 @@ async function main(): Promise<void> {
   banner();
 
   // 1. Resolve authentication (Anthropic or OpenAI)
-  const auth = await resolveAuth();
-  if (!auth) {
+  const authResult = await resolveAuth();
+
+  if (!authResult) {
     printError("No authentication found.");
     printAuthHelp(color);
     process.exit(1);
   }
+
+  // Handle OAuth detection (logged in via claude.ai but no API key)
+  if ("kind" in authResult && authResult.kind === "oauth-no-key") {
+    printError("Claude OAuth session detected, but no API key available.");
+    printOAuthHelp(color, authResult.email);
+    process.exit(1);
+  }
+
+  const auth = authResult as AuthResult;
 
   printInfo(
     `  Authenticated with ${auth.provider === "anthropic" ? "Claude" : "OpenAI"} (model: ${auth.model})`,
@@ -74,13 +85,39 @@ async function main(): Promise<void> {
   }
 
   printInfo(`  Connected. ${toolCount} tools available.`);
+
+  // 4. Auto-launch Premiere Pro if it is not already running
+  try {
+    const statusResult = await mcpClient.callTool("premiere_is_running", {});
+    const isRunning =
+      !statusResult.isError &&
+      statusResult.content.toLowerCase().includes("true");
+
+    if (!isRunning) {
+      printInfo("  Premiere Pro is not running. Launching...");
+      const launchResult = await mcpClient.callTool("premiere_open", {});
+      if (launchResult.isError) {
+        printError(`Failed to launch Premiere Pro: ${launchResult.content}`);
+      } else {
+        printInfo("  Premiere Pro launched.");
+      }
+    } else {
+      printInfo("  Premiere Pro is running.");
+    }
+  } catch (err) {
+    // Non-fatal: tools may not include premiere_is_running if the server
+    // is a different version. Continue into the chat loop regardless.
+    const msg = err instanceof Error ? err.message : String(err);
+    printInfo(`  (Could not check Premiere Pro status: ${msg})`);
+  }
+
   console.log();
 
-  // 4. Set up the chat loop with the resolved auth
+  // 5. Set up the chat loop with the resolved auth
   const chatLoop = new ChatLoop(mcpClient, auth);
   const rl = createReadlineInterface();
 
-  // 5. Handle graceful shutdown
+  // 6. Handle graceful shutdown
   const shutdown = async (): Promise<void> => {
     console.log();
     printInfo("  Shutting down...");
@@ -92,7 +129,7 @@ async function main(): Promise<void> {
   process.on("SIGINT", () => void shutdown());
   process.on("SIGTERM", () => void shutdown());
 
-  // 6. Interactive loop
+  // 7. Interactive loop
   while (true) {
     const input = await prompt(rl);
 
