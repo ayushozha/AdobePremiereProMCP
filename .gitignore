@@ -23,6 +23,10 @@ ts-bridge/node_modules/
 ts-bridge/dist/
 ts-bridge/*.tsbuildinfo
 
+# ─── CLI ───
+cli/node_modules/
+cli/dist/
+
 # ─── CEP Panel ───
 cep-panel/node_modules/
 cep-panel/dist/
