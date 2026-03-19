@@ -1392,4 +1392,23 @@ type Orchestrator interface {
 	GetClipNote(ctx context.Context, projectItemIndex int) (*GenericResult, error)
 	SearchClipNotes(ctx context.Context, searchText string) (*GenericResult, error)
 	ExportClipNotes(ctx context.Context, outputPath, format string) (*GenericResult, error)
+
+	// --- Media Browser ---
+	BrowsePath(ctx context.Context, path string) (*GenericResult, error)
+	BrowseMediaFiles(ctx context.Context, path string) (*GenericResult, error)
+	GetFavoriteLocations(ctx context.Context) (*GenericResult, error)
+	ImportFromMediaBrowser(ctx context.Context, paths []string) (*GenericResult, error)
+	GetRecentLocations(ctx context.Context) (*GenericResult, error)
+	BrowseLocalDrives(ctx context.Context) (*GenericResult, error)
+	BrowseCreativeCloud(ctx context.Context) (*GenericResult, error)
+
+	// --- Adobe Stock Search ---
+	SearchStock(ctx context.Context, query, mediaType string, limit int) (*StockSearchResponse, error)
+	GetStockCategories(ctx context.Context, mediaType string) (*GenericResult, error)
+	SearchStockVideo(ctx context.Context, query string, limit int) (*StockSearchResponse, error)
+	SearchStockAudio(ctx context.Context, query string, limit int) (*StockSearchResponse, error)
+	SearchStockTemplates(ctx context.Context, query string, limit int) (*StockSearchResponse, error)
+	GetStockPreview(ctx context.Context, stockID int) (*GenericResult, error)
+	DownloadStock(ctx context.Context, stockID int, licensePath string) (*GenericResult, error)
+	ImportStock(ctx context.Context, stockID int, downloadPath, targetBin string) (*GenericResult, error)
 }

@@ -412,7 +412,99 @@ function getToolCategories() {
             { tag: "diagnostics", name: "Diagnostics", description: "Performance monitoring, health checks, debugging", tool_count: 30 },
             { tag: "vr", name: "VR & Immersive", description: "360 video, HDR, stereoscopic 3D", tool_count: 30 },
             { tag: "integration", name: "App Integration", description: "After Effects, Photoshop, Audition, Media Encoder", tool_count: 28 },
-            { tag: "batch", name: "Batch Operations", description: "Batch import, export, effects, color, cleanup", tool_count: 30 }
+            { tag: "batch", name: "Batch Operations", description: "Batch import, export, effects, color, cleanup", tool_count: 30 },
+            { tag: "media_browser", name: "Media Browser & Stock", description: "Browse filesystem, find media, search Adobe Stock", tool_count: 15 }
         ]
     });
+}
+
+// ── Media Browser ─────────────────────────────────────────────────────
+
+function browsePath(argsJson) {
+    try {
+        var args = JSON.parse(argsJson);
+        var folder = new Folder(args.path);
+        if (!folder.exists) return _err("Path not found: " + args.path);
+        var items = [];
+        var files = folder.getFiles();
+        for (var i = 0; i < files.length; i++) {
+            var f = files[i];
+            items.push({
+                name: f.name,
+                path: f.fsName,
+                isFolder: f instanceof Folder,
+                size: f instanceof File ? f.length : 0,
+                modified: f.modified ? f.modified.toString() : ""
+            });
+        }
+        return _ok({ path: args.path, items: items, count: items.length });
+    } catch(e) { return _err(e.message); }
+}
+
+function browseMediaFiles(argsJson) {
+    try {
+        var args = JSON.parse(argsJson);
+        var folder = new Folder(args.path);
+        if (!folder.exists) return _err("Path not found: " + args.path);
+        var mediaExts = ["mp4","mov","avi","mkv","mxf","m4v","wmv","mpg","mpeg","m2t","mts","wav","mp3","aac","aif","aiff","flac","ogg","png","jpg","jpeg","tif","tiff","psd","ai","bmp","gif","webp","prproj","mogrt"];
+        var items = [];
+        var allFiles = folder.getFiles();
+        for (var i = 0; i < allFiles.length; i++) {
+            var f = allFiles[i];
+            if (f instanceof Folder) {
+                items.push({ name: f.name, path: f.fsName, isFolder: true, type: "folder" });
+            } else {
+                var ext = f.name.split(".").pop().toLowerCase();
+                var isMedia = false;
+                for (var j = 0; j < mediaExts.length; j++) {
+                    if (ext === mediaExts[j]) { isMedia = true; break; }
+                }
+                if (isMedia) {
+                    items.push({ name: f.name, path: f.fsName, isFolder: false, type: ext, size: f.length });
+                }
+            }
+        }
+        return _ok({ path: args.path, items: items, count: items.length });
+    } catch(e) { return _err(e.message); }
+}
+
+function getFavoriteLocations() {
+    try {
+        var locations = [
+            { name: "Home", path: Folder.myDocuments.parent.fsName },
+            { name: "Documents", path: Folder.myDocuments.fsName },
+            { name: "Desktop", path: Folder.desktop.fsName },
+            { name: "Movies", path: Folder.myDocuments.parent.fsName + "/Movies" },
+            { name: "Downloads", path: Folder.myDocuments.parent.fsName + "/Downloads" },
+            { name: "Premiere Projects", path: Folder.myDocuments.fsName + "/Adobe/Premiere Pro" }
+        ];
+        return _ok({ locations: locations });
+    } catch(e) { return _err(e.message); }
+}
+
+function importFromMediaBrowser(argsJson) {
+    try {
+        var args = JSON.parse(argsJson);
+        var paths = args.paths || [args.path];
+        app.project.importFiles(paths, true, app.project.getInsertionBin(), false);
+        return _ok({ message: "Imported " + paths.length + " files", count: paths.length });
+    } catch(e) { return _err(e.message); }
+}
+
+function getRecentLocations() {
+    try {
+        // Check default Premiere Pro project locations
+        var home = Folder.myDocuments.parent.fsName;
+        var ppFolder = new Folder(Folder.myDocuments.fsName + "/Adobe/Premiere Pro");
+        var versions = [];
+        if (ppFolder.exists) {
+            var subFolders = ppFolder.getFiles();
+            for (var i = 0; i < subFolders.length; i++) {
+                if (subFolders[i] instanceof Folder) {
+                    versions.push({ name: subFolders[i].name, path: subFolders[i].fsName });
+                }
+            }
+        }
+        return _ok({ premiere_projects_folder: ppFolder.fsName, versions: versions });
+    } catch(e) { return _err(e.message); }
 }

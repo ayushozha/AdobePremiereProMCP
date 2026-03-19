@@ -79,4 +79,8 @@ type (
 	ProjectSettingsResult = orchestrator.ProjectSettingsResult
 	BinInfo               = orchestrator.BinInfo
 	ActiveSequenceInfo    = orchestrator.ActiveSequenceInfo
+
+	// Media browser & stock types
+	StockSearchResponse = orchestrator.StockSearchResponse
+	StockSearchResult   = orchestrator.StockSearchResult
 )
