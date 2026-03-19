@@ -874,4 +874,133 @@ type Orchestrator interface {
 	// --- Cleanup ---
 	CleanTempFiles(ctx context.Context) (*GenericResult, error)
 	OptimizeProject(ctx context.Context) (*GenericResult, error)
+
+	// --- UI Panel Control ---
+	OpenPanel(ctx context.Context, panelName string) (*GenericResult, error)
+	ClosePanel(ctx context.Context, panelName string) (*GenericResult, error)
+	GetOpenPanels(ctx context.Context) (*GenericResult, error)
+	ResetPanelLayout(ctx context.Context) (*GenericResult, error)
+	MaximizePanel(ctx context.Context, panelName string) (*GenericResult, error)
+
+	// --- Window Management ---
+	GetWindowInfo(ctx context.Context) (*GenericResult, error)
+	SetWindowSize(ctx context.Context, width, height int) (*GenericResult, error)
+	MinimizeWindow(ctx context.Context) (*GenericResult, error)
+	BringToFront(ctx context.Context) (*GenericResult, error)
+	EnterFullscreen(ctx context.Context) (*GenericResult, error)
+
+	// --- Timeline UI ---
+	SetTrackHeight(ctx context.Context, trackType string, trackIndex int, height int) (*GenericResult, error)
+	CollapseTrack(ctx context.Context, trackType string, trackIndex int) (*GenericResult, error)
+	ExpandTrack(ctx context.Context, trackType string, trackIndex int) (*GenericResult, error)
+	CollapseAllTracks(ctx context.Context) (*GenericResult, error)
+	ExpandAllTracks(ctx context.Context) (*GenericResult, error)
+
+	// --- Label Management ---
+	SetLabelPreferences(ctx context.Context, labelsJSON string) (*GenericResult, error)
+	GetActiveLabelFilter(ctx context.Context) (*GenericResult, error)
+	SetLabelFilter(ctx context.Context, colorIndex int) (*GenericResult, error)
+	ClearLabelFilter(ctx context.Context) (*GenericResult, error)
+
+	// --- Timeline Display ---
+	SetAudioWaveformDisplay(ctx context.Context, enabled bool) (*GenericResult, error)
+	SetVideoThumbnailDisplay(ctx context.Context, enabled bool) (*GenericResult, error)
+	SetTrackNameDisplay(ctx context.Context, enabled bool) (*GenericResult, error)
+
+	// --- User Feedback ---
+	ShowAlert(ctx context.Context, title, message string) (*GenericResult, error)
+	ShowConfirmDialog(ctx context.Context, title, message string) (*GenericResult, error)
+	ShowInputDialog(ctx context.Context, title, prompt, defaultValue string) (*GenericResult, error)
+	ShowProgressDialog(ctx context.Context, title, message string, progress float64) (*GenericResult, error)
+	WriteToConsole(ctx context.Context, message string) (*GenericResult, error)
+
+	// --- Accessibility ---
+	GetUIScaling(ctx context.Context) (*GenericResult, error)
+	SetHighContrastMode(ctx context.Context, enabled bool) (*GenericResult, error)
+
+	// --- Compound / Multi-Step Editing ---
+	CreateMontage(ctx context.Context, clipIndices []int, transitionName string, transitionDuration float64, musicPath string) (*GenericResult, error)
+	CreateSlideshow(ctx context.Context, imageIndices []int, slideDuration float64, transitionName string, musicPath string) (*GenericResult, error)
+	CreateHighlightReel(ctx context.Context, sequenceIndex int, markerColor string, outputName string) (*GenericResult, error)
+	RippleDeleteEmptySpaces(ctx context.Context) (*GenericResult, error)
+	AlignAllClipsToTrack(ctx context.Context, sourceTrack, destTrack int) (*GenericResult, error)
+
+	// --- Audio-Visual Sync ---
+	SyncAllAudioToVideo(ctx context.Context) (*GenericResult, error)
+	ReplaceAudio(ctx context.Context, videoTrackIndex, videoClipIndex int, audioPath string) (*GenericResult, error)
+	AddMusicBed(ctx context.Context, audioPath string, trackIndex int, startTime, endTime, fadeIn, fadeOut, volume float64) (*GenericResult, error)
+	DuckMusicUnderDialogue(ctx context.Context, musicTrackIndex, dialogueTrackIndex int, duckAmount float64) (*GenericResult, error)
+	AddSoundEffect(ctx context.Context, sfxPath string, trackIndex int, time, volume float64) (*GenericResult, error)
+
+	// --- Color Workflow ---
+	MatchColorBetweenClips(ctx context.Context, srcTrackIndex, srcClipIndex, destTrackIndex, destClipIndex int) (*GenericResult, error)
+	ApplyColorPreset(ctx context.Context, trackIndex, clipIndex int, presetName string) (*GenericResult, error)
+	CreateColorGradient(ctx context.Context, trackIndex, startClipIndex, endClipIndex int, startTemp, endTemp float64) (*GenericResult, error)
+	AutoCorrectAllClips(ctx context.Context, trackIndex int) (*GenericResult, error)
+
+	// --- Text Workflow ---
+	AddSubtitlesFromSRT(ctx context.Context, srtPath string, trackIndex int) (*GenericResult, error)
+	AddEndCredits(ctx context.Context, creditsJSON string, trackIndex int, scrollDuration float64, style string) (*GenericResult, error)
+	AddChapterMarkers(ctx context.Context, chaptersJSON string) (*GenericResult, error)
+	GenerateChaptersFromMarkers(ctx context.Context, outputPath string) (*GenericResult, error)
+
+	// --- Export Workflow ---
+	ExportForYouTube(ctx context.Context, outputPath, title, description string) (*GenericResult, error)
+	ExportForInstagram(ctx context.Context, outputPath, aspectRatio string) (*GenericResult, error)
+	ExportForTikTok(ctx context.Context, outputPath string) (*GenericResult, error)
+	ExportForTwitter(ctx context.Context, outputPath string) (*GenericResult, error)
+	ExportMultipleFormats(ctx context.Context, outputDir string, formats []string) (*GenericResult, error)
+
+	// --- Project Setup ---
+	SetupNewProject(ctx context.Context, name, path, resolution string, fps float64, audioSampleRate int) (*GenericResult, error)
+	SetupEditingWorkspace(ctx context.Context, projectPath, mediaFolder, sequenceName string) (*GenericResult, error)
+	ImportAndOrganize(ctx context.Context, mediaFolder string, autoCreateBins bool) (*GenericResult, error)
+	PrepareForDelivery(ctx context.Context, specsJSON string) (*GenericResult, error)
+
+	// --- Cleanup Workflow ---
+	ArchiveProject(ctx context.Context, outputPath string, includeMedia, includeRenders bool) (*GenericResult, error)
+	TrimProject(ctx context.Context) (*GenericResult, error)
+	ConsolidateAndTranscode(ctx context.Context, outputDir, codec, quality string) (*GenericResult, error)
+
+	// --- Event Monitoring ---
+	RegisterEventListener(ctx context.Context, eventName string) (*GenericResult, error)
+	UnregisterEventListener(ctx context.Context, eventName string) (*GenericResult, error)
+	GetRegisteredEvents(ctx context.Context) (*GenericResult, error)
+	GetEventHistory(ctx context.Context, count int) (*GenericResult, error)
+	ClearEventHistory(ctx context.Context) (*GenericResult, error)
+
+	// --- State Watching ---
+	WatchPlayheadPosition(ctx context.Context, intervalMs int) (*GenericResult, error)
+	StopWatchPlayhead(ctx context.Context) (*GenericResult, error)
+	WatchRenderProgress(ctx context.Context, intervalMs int) (*GenericResult, error)
+	StopWatchRender(ctx context.Context) (*GenericResult, error)
+	GetStateSnapshot(ctx context.Context) (*GenericResult, error)
+
+	// --- Project State (Monitoring) ---
+	IsProjectModified(ctx context.Context) (*GenericResult, error)
+	GetProjectDuration(ctx context.Context) (*GenericResult, error)
+	GetProjectStats(ctx context.Context) (*GenericResult, error)
+	GetRecentActions(ctx context.Context, count int) (*GenericResult, error)
+
+	// --- Sequence State (Extended Monitoring) ---
+	GetActiveTrackTargets(ctx context.Context) (*GenericResult, error)
+	SetActiveTrackTargets(ctx context.Context, videoTargets, audioTargets string) (*GenericResult, error)
+	GetTrackHeights(ctx context.Context) (*GenericResult, error)
+	SetTrackHeights(ctx context.Context, trackType, heights string) (*GenericResult, error)
+	IsSequenceModified(ctx context.Context) (*GenericResult, error)
+	GetSequenceHash(ctx context.Context) (*GenericResult, error)
+
+	// --- Clip State (Monitoring) ---
+	GetClipUnderPlayhead(ctx context.Context) (*GenericResult, error)
+	GetClipAtTime(ctx context.Context, trackType string, trackIndex int, seconds float64) (*GenericResult, error)
+	GetAdjacentClips(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error)
+	IsClipSelected(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error)
+	GetClipProperties(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error)
+
+	// --- Notifications ---
+	ShowNotification(ctx context.Context, title, message string) (*GenericResult, error)
+	LogToEventsPanel(ctx context.Context, message, level string) (*GenericResult, error)
+	ShowProgressBar(ctx context.Context, title string, current, total int) (*GenericResult, error)
+	HideProgressBar(ctx context.Context) (*GenericResult, error)
+	ShowDialog(ctx context.Context, title, message, buttons string) (*GenericResult, error)
 }
