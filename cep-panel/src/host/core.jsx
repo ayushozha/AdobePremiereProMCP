@@ -9,7 +9,7 @@ if (typeof JSON === "undefined") {
     JSON = {
         stringify: function(obj) {
             if (obj === null) return "null";
-            if (typeof obj === "string") return '"' + obj.replace(/"/g, '\\"') + '"';
+            if (typeof obj === "string") return '"' + obj.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n") + '"';
             if (typeof obj === "number" || typeof obj === "boolean") return String(obj);
             if (obj instanceof Array) {
                 var a = [];
@@ -27,18 +27,16 @@ if (typeof JSON === "undefined") {
     };
 }
 
+// ── Project ───────────────────────────────────────────────────────────
+
 function ping() {
     try {
         var ver = "unknown";
         try { ver = app.version; } catch(e) {}
         var projOpen = false;
-        try { projOpen = app.project && app.project.name ? true : false; } catch(e) {}
-        return _ok({
-            premiere_running: true,
-            premiere_version: ver,
-            project_open: projOpen,
-            project_name: projOpen ? app.project.name : ""
-        });
+        var projName = "";
+        try { projOpen = app.project && app.project.name ? true : false; projName = app.project.name; } catch(e) {}
+        return _ok({ premiere_running: true, premiere_version: ver, project_open: projOpen, project_name: projName });
     } catch(e) { return _err(e.message); }
 }
 
@@ -50,18 +48,11 @@ function getProjectInfo() {
             var s = app.project.sequences[i];
             seqs.push({ index: i, name: s.name, id: s.sequenceID });
         }
-        return _ok({
-            name: app.project.name,
-            path: app.project.path,
-            sequences: seqs,
-            sequence_count: app.project.sequences.numItems
-        });
+        return _ok({ name: app.project.name, path: app.project.path, sequences: seqs, sequence_count: app.project.sequences.numItems });
     } catch(e) { return _err(e.message); }
 }
 
-function getProjectState() {
-    return getProjectInfo();
-}
+function getProjectState() { return getProjectInfo(); }
 
 function newProject(argsJson) {
     try {
@@ -75,16 +66,32 @@ function openProject(argsJson) {
     try {
         var args = JSON.parse(argsJson);
         app.openDocument(args.path);
-        return _ok({ message: "Project opened", path: args.path });
+        return _ok({ message: "Project opened", path: args.path, name: app.project.name });
     } catch(e) { return _err(e.message); }
 }
 
 function saveProject() {
+    try { app.project.save(); return _ok({ message: "Project saved" }); }
+    catch(e) { return _err(e.message); }
+}
+
+function saveProjectAs(argsJson) {
     try {
-        app.project.save();
-        return _ok({ message: "Project saved" });
+        var args = JSON.parse(argsJson);
+        app.project.saveAs(args.path);
+        return _ok({ message: "Project saved as", path: args.path });
     } catch(e) { return _err(e.message); }
 }
+
+function closeProject(argsJson) {
+    try {
+        var args = argsJson ? JSON.parse(argsJson) : {};
+        app.project.closeDocument(args.save_first !== false, true);
+        return _ok({ message: "Project closed" });
+    } catch(e) { return _err(e.message); }
+}
+
+// ── Sequences ─────────────────────────────────────────────────────────
 
 function createSequence(argsJson) {
     try {
@@ -92,12 +99,7 @@ function createSequence(argsJson) {
         var name = args.name || "New Sequence";
         app.project.createNewSequence(name, name);
         var seq = app.project.activeSequence;
-        return _ok({
-            name: seq.name,
-            id: seq.sequenceID,
-            width: seq.frameSizeHorizontal,
-            height: seq.frameSizeVertical
-        });
+        return _ok({ name: seq.name, id: seq.sequenceID, width: seq.frameSizeHorizontal, height: seq.frameSizeVertical });
     } catch(e) { return _err(e.message); }
 }
 
@@ -105,22 +107,7 @@ function getActiveSequence() {
     try {
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
-        return _ok({
-            name: seq.name,
-            id: seq.sequenceID,
-            width: seq.frameSizeHorizontal,
-            height: seq.frameSizeVertical,
-            duration: seq.end
-        });
-    } catch(e) { return _err(e.message); }
-}
-
-function importFiles(argsJson) {
-    try {
-        var args = JSON.parse(argsJson);
-        var paths = args.paths || args.filePaths || [args.path || args.filePath];
-        app.project.importFiles(paths, true, app.project.getInsertionBin(), false);
-        return _ok({ message: "Imported " + paths.length + " files", count: paths.length });
+        return _ok({ name: seq.name, id: seq.sequenceID, width: seq.frameSizeHorizontal, height: seq.frameSizeVertical, end: seq.end });
     } catch(e) { return _err(e.message); }
 }
 
@@ -135,10 +122,297 @@ function getSequenceList() {
     } catch(e) { return _err(e.message); }
 }
 
-// Generic eval for any function not defined in core
-function evalDynamic(argsJson) {
+// ── Media Import ──────────────────────────────────────────────────────
+
+function importFiles(argsJson) {
     try {
         var args = JSON.parse(argsJson);
-        return eval(args.script);
+        var paths = args.paths || args.filePaths || [args.path || args.filePath];
+        app.project.importFiles(paths, true, app.project.getInsertionBin(), false);
+        return _ok({ message: "Imported " + paths.length + " files", count: paths.length });
     } catch(e) { return _err(e.message); }
+}
+
+function importFolder(argsJson) {
+    try {
+        var args = JSON.parse(argsJson);
+        var folder = new Folder(args.path || args.folderPath);
+        if (!folder.exists) return _err("Folder not found: " + args.path);
+        var files = folder.getFiles();
+        var paths = [];
+        for (var i = 0; i < files.length; i++) {
+            if (files[i] instanceof File) paths.push(files[i].fsName);
+        }
+        if (paths.length === 0) return _err("No files found in folder");
+        app.project.importFiles(paths, true, app.project.getInsertionBin(), false);
+        return _ok({ message: "Imported " + paths.length + " files from folder", count: paths.length });
+    } catch(e) { return _err(e.message); }
+}
+
+// ── Clips ─────────────────────────────────────────────────────────────
+
+function getTimelineState(argsJson) {
+    try {
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var tracks = [];
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            var clips = [];
+            for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                clips.push({ index: c, name: clip.name, start: clip.start.seconds, end: clip.end.seconds, duration: clip.duration.seconds });
+            }
+            tracks.push({ index: t, name: track.name, type: "video", clips: clips });
+        }
+        for (var t = 0; t < seq.audioTracks.numTracks; t++) {
+            var track = seq.audioTracks[t];
+            var clips = [];
+            for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                clips.push({ index: c, name: clip.name, start: clip.start.seconds, end: clip.end.seconds, duration: clip.duration.seconds });
+            }
+            tracks.push({ index: t, name: track.name, type: "audio", clips: clips });
+        }
+        return _ok({ sequence: seq.name, tracks: tracks });
+    } catch(e) { return _err(e.message); }
+}
+
+function insertClip(argsJson) {
+    try {
+        var args = JSON.parse(argsJson);
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var item = app.project.rootItem.children[args.projectItemIndex || 0];
+        if (!item) return _err("Project item not found");
+        seq.insertClip(item, args.time || 0, args.videoTrackIndex || 0, args.audioTrackIndex || 0);
+        return _ok({ message: "Clip inserted" });
+    } catch(e) { return _err(e.message); }
+}
+
+function placeClip(argsJson) {
+    try {
+        var args = JSON.parse(argsJson);
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var idx = args.projectItemIndex || 0;
+        var item = app.project.rootItem.children[idx];
+        if (!item) return _err("Project item " + idx + " not found");
+        var track = seq.videoTracks[args.trackIndex || 0];
+        if (!track) return _err("Video track not found");
+        track.overwriteClip(item, args.startTime || 0);
+        return _ok({ message: "Clip placed on track" });
+    } catch(e) { return _err(e.message); }
+}
+
+// ── Export ─────────────────────────────────────────────────────────────
+
+function exportSequence(argsJson) {
+    try {
+        var args = JSON.parse(argsJson);
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        seq.exportAsMediaDirect(args.outputPath, args.presetPath || "", 0);
+        return _ok({ message: "Export started", output: args.outputPath });
+    } catch(e) { return _err(e.message); }
+}
+
+// ── Bins ──────────────────────────────────────────────────────────────
+
+function createBin(argsJson) {
+    try {
+        var args = JSON.parse(argsJson);
+        var bin = app.project.rootItem.createBin(args.name || "New Bin");
+        return _ok({ message: "Bin created", name: args.name });
+    } catch(e) { return _err(e.message); }
+}
+
+function getProjectItems(argsJson) {
+    try {
+        var root = app.project.rootItem;
+        var items = [];
+        for (var i = 0; i < root.children.numItems; i++) {
+            var item = root.children[i];
+            items.push({ index: i, name: item.name, type: item.type, path: item.treePath });
+        }
+        return _ok({ items: items, count: items.length });
+    } catch(e) { return _err(e.message); }
+}
+
+// ── Markers ───────────────────────────────────────────────────────────
+
+function addSequenceMarker(argsJson) {
+    try {
+        var args = JSON.parse(argsJson);
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var marker = seq.markers.createMarker(args.time || 0);
+        if (args.name) marker.name = args.name;
+        if (args.comment) marker.comments = args.comment;
+        return _ok({ message: "Marker added at " + (args.time || 0) + "s" });
+    } catch(e) { return _err(e.message); }
+}
+
+// ── Playback ──────────────────────────────────────────────────────────
+
+function getPlayheadPosition() {
+    try {
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var pos = seq.getPlayerPosition();
+        return _ok({ seconds: pos.seconds, ticks: pos.ticks });
+    } catch(e) { return _err(e.message); }
+}
+
+function setPlayheadPosition(argsJson) {
+    try {
+        var args = JSON.parse(argsJson);
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        seq.setPlayerPosition(args.seconds + "254016000000");
+        return _ok({ message: "Playhead moved to " + args.seconds + "s" });
+    } catch(e) { return _err(e.message); }
+}
+
+// ── Audio ─────────────────────────────────────────────────────────────
+
+function setAudioLevel(argsJson) {
+    try {
+        var args = JSON.parse(argsJson);
+        var seq = app.project.activeSequence;
+        var clip = seq.audioTracks[args.trackIndex || 0].clips[args.clipIndex || 0];
+        var vol = clip.components[0].properties[0];
+        vol.setValue(args.levelDb || 0, true);
+        return _ok({ message: "Audio level set to " + args.levelDb + " dB" });
+    } catch(e) { return _err(e.message); }
+}
+
+// ── Effects ───────────────────────────────────────────────────────────
+
+function getClipEffects(argsJson) {
+    try {
+        var args = JSON.parse(argsJson);
+        var seq = app.project.activeSequence;
+        var track = args.trackType === "audio" ? seq.audioTracks[args.trackIndex || 0] : seq.videoTracks[args.trackIndex || 0];
+        var clip = track.clips[args.clipIndex || 0];
+        var effects = [];
+        for (var i = 0; i < clip.components.numItems; i++) {
+            var comp = clip.components[i];
+            effects.push({ index: i, name: comp.displayName, matchName: comp.matchName });
+        }
+        return _ok({ effects: effects, count: effects.length });
+    } catch(e) { return _err(e.message); }
+}
+
+// ── Transitions (QE DOM) ──────────────────────────────────────────────
+
+function addVideoTransition(argsJson) {
+    try {
+        var args = JSON.parse(argsJson);
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        var qeTrack = qeSeq.getVideoTrackAt(args.trackIndex || 0);
+        var qeClip = qeTrack.getItemAt(args.clipIndex || 0);
+        qeClip.addTransition(qe.project.getVideoTransitionByName(args.transitionName || "Cross Dissolve"), args.applyToEnd !== false, args.duration || 1);
+        return _ok({ message: "Transition added: " + (args.transitionName || "Cross Dissolve") });
+    } catch(e) { return _err(e.message); }
+}
+
+// ── Color ─────────────────────────────────────────────────────────────
+
+function setLumetriProperty(argsJson) {
+    try {
+        var args = JSON.parse(argsJson);
+        var seq = app.project.activeSequence;
+        var clip = seq.videoTracks[args.trackIndex || 0].clips[args.clipIndex || 0];
+        var lumetri = null;
+        for (var i = 0; i < clip.components.numItems; i++) {
+            if (clip.components[i].matchName === "AE.ADBE Lumetri") { lumetri = clip.components[i]; break; }
+        }
+        if (!lumetri) return _err("No Lumetri Color effect on clip. Apply it first.");
+        var prop = null;
+        for (var j = 0; j < lumetri.properties.numItems; j++) {
+            if (lumetri.properties[j].displayName === args.property) { prop = lumetri.properties[j]; break; }
+        }
+        if (!prop) return _err("Property not found: " + args.property);
+        prop.setValue(args.value, true);
+        return _ok({ message: args.property + " set to " + args.value });
+    } catch(e) { return _err(e.message); }
+}
+
+// ── Motion ────────────────────────────────────────────────────────────
+
+function setPosition(argsJson) {
+    try {
+        var args = JSON.parse(argsJson);
+        var seq = app.project.activeSequence;
+        var clip = seq.videoTracks[args.trackIndex || 0].clips[args.clipIndex || 0];
+        var motion = clip.components[0]; // Motion component
+        motion.properties[0].setValue(args.x || 0, true); // Position X
+        motion.properties[1].setValue(args.y || 0, true); // Position Y
+        return _ok({ message: "Position set" });
+    } catch(e) { return _err(e.message); }
+}
+
+function setScale(argsJson) {
+    try {
+        var args = JSON.parse(argsJson);
+        var seq = app.project.activeSequence;
+        var clip = seq.videoTracks[args.trackIndex || 0].clips[args.clipIndex || 0];
+        clip.components[0].properties[1].setValue(args.scale || 100, true);
+        return _ok({ message: "Scale set to " + args.scale });
+    } catch(e) { return _err(e.message); }
+}
+
+function setOpacity(argsJson) {
+    try {
+        var args = JSON.parse(argsJson);
+        var seq = app.project.activeSequence;
+        var clip = seq.videoTracks[args.trackIndex || 0].clips[args.clipIndex || 0];
+        clip.components[1].properties[0].setValue(args.opacity || 100, true);
+        return _ok({ message: "Opacity set to " + args.opacity });
+    } catch(e) { return _err(e.message); }
+}
+
+// ── System ────────────────────────────────────────────────────────────
+
+function getSystemInfo() {
+    try {
+        return _ok({
+            premiere_version: app.version,
+            premiere_build: app.build,
+            os: $.os,
+            engine: $.engineName || "ExtendScript",
+            locale: $.locale
+        });
+    } catch(e) { return _err(e.message); }
+}
+
+// ── Tool Categories (for discoverability) ─────────────────────────────
+
+function getToolCategories() {
+    return _ok({
+        categories: [
+            { tag: "effects", name: "Effects", description: "Apply and manage video/audio effects", tool_count: 66 },
+            { tag: "color", name: "Color", description: "Color grading, Lumetri Color, LUTs, color matching", tool_count: 30 },
+            { tag: "video_editing", name: "Video Editing", description: "Timeline editing, clip operations, trimming", tool_count: 91 },
+            { tag: "audio", name: "Audio", description: "Audio mixing, levels, effects, Essential Sound", tool_count: 62 },
+            { tag: "social_media", name: "Social Media Videos", description: "Export for YouTube, Instagram, TikTok, Twitter", tool_count: 15 },
+            { tag: "graphics", name: "Social Media Graphics", description: "Titles, lower thirds, MOGRTs, shapes", tool_count: 30 },
+            { tag: "get_started", name: "Get Started", description: "Open/create projects, import media, basic setup", tool_count: 23 },
+            { tag: "templates", name: "Templates", description: "Sequence, effect, export presets and templates", tool_count: 30 },
+            { tag: "collaboration", name: "Collaboration", description: "Review comments, delivery checklists, versioning", tool_count: 30 },
+            { tag: "text", name: "Text & Captions", description: "Subtitles, captions, SRT, text overlays", tool_count: 15 },
+            { tag: "export", name: "Export & Encoding", description: "Export, render, format conversion, Media Encoder", tool_count: 44 },
+            { tag: "ai", name: "AI Workflows", description: "Smart cut, auto-edit, script parsing, rough cut", tool_count: 25 },
+            { tag: "motion", name: "Motion & Transform", description: "Position, scale, rotation, crop, PIP, stabilization", tool_count: 30 },
+            { tag: "markers", name: "Markers & Metadata", description: "Add/edit markers, clip metadata, XMP data", tool_count: 30 },
+            { tag: "multicam", name: "Multicam & Proxy", description: "Multicam editing, proxy workflow", tool_count: 10 },
+            { tag: "playback", name: "Playback & Navigation", description: "Play, pause, seek, zoom, timeline navigation", tool_count: 30 },
+            { tag: "diagnostics", name: "Diagnostics", description: "Performance monitoring, health checks, debugging", tool_count: 30 },
+            { tag: "vr", name: "VR & Immersive", description: "360 video, HDR, stereoscopic 3D", tool_count: 30 },
+            { tag: "integration", name: "App Integration", description: "After Effects, Photoshop, Audition, Media Encoder", tool_count: 28 },
+            { tag: "batch", name: "Batch Operations", description: "Batch import, export, effects, color, cleanup", tool_count: 30 }
+        ]
+    });
 }
