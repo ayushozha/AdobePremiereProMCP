@@ -16727,3 +16727,601 @@ function showDialog(title, message, buttons) {
         return _ok(result);
     } catch (e) { return _err("showDialog failed: " + e.message); }
 }
+
+// ===========================================================================
+// UI Panel Control, Window Management, Timeline UI, Label Management,
+// Timeline Display, User Feedback, and Accessibility Functions
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// UI Panel Control (1-5)
+// ---------------------------------------------------------------------------
+
+/**
+ * openPanel — Open a Premiere Pro panel by name.
+ */
+function openPanel(panelName) {
+    try {
+        if (!panelName) {
+            return _err("openPanel: panelName is required");
+        }
+        if (app.enableQE) { app.enableQE(); }
+        // Use QE DOM to open panels by their menu command equivalents
+        var panelMap = {
+            "Effect Controls": "app.setSDKEventMessage('openPanel:Effect Controls', 'info')",
+            "Lumetri Color": "app.setSDKEventMessage('openPanel:Lumetri Color', 'info')",
+            "Audio Track Mixer": "app.setSDKEventMessage('openPanel:Audio Track Mixer', 'info')",
+            "Essential Graphics": "app.setSDKEventMessage('openPanel:Essential Graphics', 'info')",
+            "Essential Sound": "app.setSDKEventMessage('openPanel:Essential Sound', 'info')",
+            "Media Browser": "app.setSDKEventMessage('openPanel:Media Browser', 'info')",
+            "Metadata": "app.setSDKEventMessage('openPanel:Metadata', 'info')",
+            "History": "app.setSDKEventMessage('openPanel:History', 'info')"
+        };
+        if (panelMap[panelName]) {
+            eval(panelMap[panelName]);
+        }
+        // Try the general Window menu approach
+        if (typeof qe !== "undefined" && qe.project) {
+            qe.project.openPanel(panelName);
+        }
+        return _ok({ panel: panelName, action: "opened" });
+    } catch (e) { return _err("openPanel failed: " + e.message); }
+}
+
+/**
+ * closePanel — Close a Premiere Pro panel by name.
+ */
+function closePanel(panelName) {
+    try {
+        if (!panelName) {
+            return _err("closePanel: panelName is required");
+        }
+        if (app.enableQE) { app.enableQE(); }
+        if (typeof qe !== "undefined" && qe.project) {
+            qe.project.closePanel(panelName);
+        }
+        return _ok({ panel: panelName, action: "closed" });
+    } catch (e) { return _err("closePanel failed: " + e.message); }
+}
+
+/**
+ * getOpenPanels — List currently open panels.
+ */
+function getOpenPanels() {
+    try {
+        var panels = [];
+        if (app.enableQE) { app.enableQE(); }
+        if (typeof qe !== "undefined" && qe.project) {
+            try {
+                var panelList = qe.project.getOpenPanels();
+                if (panelList) {
+                    for (var i = 0; i < panelList.length; i++) {
+                        panels.push(String(panelList[i]));
+                    }
+                }
+            } catch (e2) {
+                // QE panel enumeration may not be available in all versions
+                panels.push("(panel enumeration not available in this version)");
+            }
+        }
+        return _ok({ panels: panels, count: panels.length });
+    } catch (e) { return _err("getOpenPanels failed: " + e.message); }
+}
+
+/**
+ * resetPanelLayout — Reset to default panel layout.
+ */
+function resetPanelLayout() {
+    try {
+        if (app.enableQE) { app.enableQE(); }
+        if (typeof qe !== "undefined" && qe.project) {
+            qe.project.resetLayout();
+        }
+        return _ok({ action: "panel_layout_reset" });
+    } catch (e) { return _err("resetPanelLayout failed: " + e.message); }
+}
+
+/**
+ * maximizePanel — Maximize a panel (full screen toggle).
+ */
+function maximizePanel(panelName) {
+    try {
+        if (!panelName) {
+            return _err("maximizePanel: panelName is required");
+        }
+        if (app.enableQE) { app.enableQE(); }
+        if (typeof qe !== "undefined" && qe.project) {
+            qe.project.maximizePanel(panelName);
+        }
+        return _ok({ panel: panelName, action: "maximized" });
+    } catch (e) { return _err("maximizePanel failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Window Management (6-10)
+// ---------------------------------------------------------------------------
+
+/**
+ * getWindowInfo — Get main window size and position.
+ */
+function getWindowInfo() {
+    try {
+        var info = {
+            appName: app.name || "Adobe Premiere Pro",
+            version: app.version || "unknown",
+            build: app.build || "unknown"
+        };
+        // Attempt to read window bounds via ScriptUI
+        try {
+            if (app.mainWindow) {
+                var bounds = app.mainWindow.bounds;
+                info.x = bounds.x;
+                info.y = bounds.y;
+                info.width = bounds.width;
+                info.height = bounds.height;
+            }
+        } catch (ignore) {}
+        // Screen resolution info
+        try {
+            if ($.screens && $.screens.length > 0) {
+                var scr = $.screens[0];
+                info.screenWidth = scr.right - scr.left;
+                info.screenHeight = scr.bottom - scr.top;
+            }
+        } catch (ignore) {}
+        return _ok(info);
+    } catch (e) { return _err("getWindowInfo failed: " + e.message); }
+}
+
+/**
+ * setWindowSize — Set main window size.
+ */
+function setWindowSize(width, height) {
+    try {
+        if (!width || !height || isNaN(width) || isNaN(height)) {
+            return _err("setWindowSize: width and height are required (positive integers)");
+        }
+        width = Math.round(width);
+        height = Math.round(height);
+        if (app.mainWindow) {
+            var b = app.mainWindow.bounds;
+            app.mainWindow.bounds = { x: b.x, y: b.y, width: width, height: height };
+        }
+        return _ok({ width: width, height: height, action: "window_resized" });
+    } catch (e) { return _err("setWindowSize failed: " + e.message); }
+}
+
+/**
+ * minimizeWindow — Minimize Premiere Pro.
+ */
+function minimizeWindow() {
+    try {
+        if (app.mainWindow) {
+            app.mainWindow.minimize();
+        }
+        return _ok({ action: "window_minimized" });
+    } catch (e) { return _err("minimizeWindow failed: " + e.message); }
+}
+
+/**
+ * bringToFront — Bring Premiere Pro window to front.
+ */
+function bringToFront() {
+    try {
+        if (app.mainWindow) {
+            app.mainWindow.active = true;
+        }
+        app.activate();
+        return _ok({ action: "window_brought_to_front" });
+    } catch (e) { return _err("bringToFront failed: " + e.message); }
+}
+
+/**
+ * enterFullscreen — Enter fullscreen mode.
+ */
+function enterFullscreen() {
+    try {
+        if (app.enableQE) { app.enableQE(); }
+        if (typeof qe !== "undefined" && qe.project) {
+            qe.project.enterFullscreen();
+        }
+        return _ok({ action: "fullscreen_entered" });
+    } catch (e) { return _err("enterFullscreen failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Timeline UI (11-15)
+// ---------------------------------------------------------------------------
+
+/**
+ * setTrackHeight — Set individual track height.
+ */
+function setTrackHeight(trackType, trackIndex, height) {
+    try {
+        if (!trackType) { return _err("setTrackHeight: trackType is required (video or audio)"); }
+        if (trackIndex === undefined || trackIndex === null) { return _err("setTrackHeight: trackIndex is required"); }
+        if (height === undefined || height === null || isNaN(height)) { return _err("setTrackHeight: height is required"); }
+        trackIndex = parseInt(trackIndex, 10);
+        height = parseInt(height, 10);
+        var seq = app.project.activeSequence;
+        if (!seq) { return _err("setTrackHeight: no active sequence"); }
+        if (app.enableQE) { app.enableQE(); }
+        var qeSeq = (typeof qe !== "undefined") ? qe.project.getActiveSequence() : null;
+        if (qeSeq) {
+            if (trackType === "video") {
+                var vTrack = qeSeq.getVideoTrackAt(trackIndex);
+                if (vTrack) { vTrack.setHeight(height); }
+            } else {
+                var aTrack = qeSeq.getAudioTrackAt(trackIndex);
+                if (aTrack) { aTrack.setHeight(height); }
+            }
+        }
+        return _ok({ trackType: trackType, trackIndex: trackIndex, height: height, action: "track_height_set" });
+    } catch (e) { return _err("setTrackHeight failed: " + e.message); }
+}
+
+/**
+ * collapseTrack — Collapse a track.
+ */
+function collapseTrack(trackType, trackIndex) {
+    try {
+        if (!trackType) { return _err("collapseTrack: trackType is required (video or audio)"); }
+        if (trackIndex === undefined || trackIndex === null) { return _err("collapseTrack: trackIndex is required"); }
+        trackIndex = parseInt(trackIndex, 10);
+        var seq = app.project.activeSequence;
+        if (!seq) { return _err("collapseTrack: no active sequence"); }
+        if (app.enableQE) { app.enableQE(); }
+        var qeSeq = (typeof qe !== "undefined") ? qe.project.getActiveSequence() : null;
+        if (qeSeq) {
+            if (trackType === "video") {
+                var vTrack = qeSeq.getVideoTrackAt(trackIndex);
+                if (vTrack) { vTrack.setHeight(0); }
+            } else {
+                var aTrack = qeSeq.getAudioTrackAt(trackIndex);
+                if (aTrack) { aTrack.setHeight(0); }
+            }
+        }
+        return _ok({ trackType: trackType, trackIndex: trackIndex, action: "track_collapsed" });
+    } catch (e) { return _err("collapseTrack failed: " + e.message); }
+}
+
+/**
+ * expandTrack — Expand a track.
+ */
+function expandTrack(trackType, trackIndex) {
+    try {
+        if (!trackType) { return _err("expandTrack: trackType is required (video or audio)"); }
+        if (trackIndex === undefined || trackIndex === null) { return _err("expandTrack: trackIndex is required"); }
+        trackIndex = parseInt(trackIndex, 10);
+        var seq = app.project.activeSequence;
+        if (!seq) { return _err("expandTrack: no active sequence"); }
+        if (app.enableQE) { app.enableQE(); }
+        var qeSeq = (typeof qe !== "undefined") ? qe.project.getActiveSequence() : null;
+        if (qeSeq) {
+            var defaultHeight = 50;
+            if (trackType === "video") {
+                var vTrack = qeSeq.getVideoTrackAt(trackIndex);
+                if (vTrack) { vTrack.setHeight(defaultHeight); }
+            } else {
+                var aTrack = qeSeq.getAudioTrackAt(trackIndex);
+                if (aTrack) { aTrack.setHeight(defaultHeight); }
+            }
+        }
+        return _ok({ trackType: trackType, trackIndex: trackIndex, action: "track_expanded" });
+    } catch (e) { return _err("expandTrack failed: " + e.message); }
+}
+
+/**
+ * collapseAllTracks — Collapse all tracks.
+ */
+function collapseAllTracks() {
+    try {
+        var seq = app.project.activeSequence;
+        if (!seq) { return _err("collapseAllTracks: no active sequence"); }
+        if (app.enableQE) { app.enableQE(); }
+        var qeSeq = (typeof qe !== "undefined") ? qe.project.getActiveSequence() : null;
+        var collapsed = 0;
+        if (qeSeq) {
+            var numV = seq.videoTracks ? seq.videoTracks.numTracks : 0;
+            for (var vi = 0; vi < numV; vi++) {
+                try { qeSeq.getVideoTrackAt(vi).setHeight(0); collapsed++; } catch (ignore) {}
+            }
+            var numA = seq.audioTracks ? seq.audioTracks.numTracks : 0;
+            for (var ai = 0; ai < numA; ai++) {
+                try { qeSeq.getAudioTrackAt(ai).setHeight(0); collapsed++; } catch (ignore) {}
+            }
+        }
+        return _ok({ action: "all_tracks_collapsed", tracksCollapsed: collapsed });
+    } catch (e) { return _err("collapseAllTracks failed: " + e.message); }
+}
+
+/**
+ * expandAllTracks — Expand all tracks.
+ */
+function expandAllTracks() {
+    try {
+        var seq = app.project.activeSequence;
+        if (!seq) { return _err("expandAllTracks: no active sequence"); }
+        if (app.enableQE) { app.enableQE(); }
+        var qeSeq = (typeof qe !== "undefined") ? qe.project.getActiveSequence() : null;
+        var expanded = 0;
+        var defaultHeight = 50;
+        if (qeSeq) {
+            var numV = seq.videoTracks ? seq.videoTracks.numTracks : 0;
+            for (var vi = 0; vi < numV; vi++) {
+                try { qeSeq.getVideoTrackAt(vi).setHeight(defaultHeight); expanded++; } catch (ignore) {}
+            }
+            var numA = seq.audioTracks ? seq.audioTracks.numTracks : 0;
+            for (var ai = 0; ai < numA; ai++) {
+                try { qeSeq.getAudioTrackAt(ai).setHeight(defaultHeight); expanded++; } catch (ignore) {}
+            }
+        }
+        return _ok({ action: "all_tracks_expanded", tracksExpanded: expanded });
+    } catch (e) { return _err("expandAllTracks failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Label Management (16-19)
+// ---------------------------------------------------------------------------
+
+/**
+ * setLabelPreferences — Set all label color names.
+ */
+function setLabelPreferences(labels) {
+    try {
+        if (!labels) {
+            return _err("setLabelPreferences: labels JSON string is required");
+        }
+        var labelMap;
+        if (typeof labels === "string") {
+            labelMap = JSON.parse(labels);
+        } else {
+            labelMap = labels;
+        }
+        var updated = 0;
+        if (app.properties) {
+            for (var idx in labelMap) {
+                if (labelMap.hasOwnProperty(idx)) {
+                    var propKey = "BE.Prefs.LabelColors.LabelName." + String(idx);
+                    app.properties.setProperty(propKey, String(labelMap[idx]), true);
+                    updated++;
+                }
+            }
+        }
+        return _ok({ action: "label_preferences_set", labelsUpdated: updated });
+    } catch (e) { return _err("setLabelPreferences failed: " + e.message); }
+}
+
+/**
+ * getActiveLabelFilter — Get active label filter in project panel.
+ */
+function getActiveLabelFilter() {
+    try {
+        var filterInfo = { active: false, colorIndex: -1 };
+        if (app.properties) {
+            try {
+                var filterVal = app.properties.getProperty("BE.Prefs.ProjectPanel.LabelFilter");
+                if (filterVal !== undefined && filterVal !== null && filterVal !== "" && filterVal !== "-1") {
+                    filterInfo.active = true;
+                    filterInfo.colorIndex = parseInt(filterVal, 10);
+                }
+            } catch (ignore) {}
+        }
+        return _ok(filterInfo);
+    } catch (e) { return _err("getActiveLabelFilter failed: " + e.message); }
+}
+
+/**
+ * setLabelFilter — Filter project panel by label color.
+ */
+function setLabelFilter(colorIndex) {
+    try {
+        if (colorIndex === undefined || colorIndex === null) {
+            return _err("setLabelFilter: colorIndex is required");
+        }
+        colorIndex = parseInt(colorIndex, 10);
+        if (app.properties) {
+            app.properties.setProperty("BE.Prefs.ProjectPanel.LabelFilter", String(colorIndex), true);
+        }
+        return _ok({ action: "label_filter_set", colorIndex: colorIndex });
+    } catch (e) { return _err("setLabelFilter failed: " + e.message); }
+}
+
+/**
+ * clearLabelFilter — Clear label filter.
+ */
+function clearLabelFilter() {
+    try {
+        if (app.properties) {
+            app.properties.setProperty("BE.Prefs.ProjectPanel.LabelFilter", "-1", true);
+        }
+        return _ok({ action: "label_filter_cleared" });
+    } catch (e) { return _err("clearLabelFilter failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Timeline Display (21-23)
+// ---------------------------------------------------------------------------
+// Note: setTimeDisplayFormat (item 20) already exists above in the preferences section.
+
+/**
+ * setAudioWaveformDisplay — Show/hide audio waveforms on timeline.
+ */
+function setAudioWaveformDisplay(enabled) {
+    try {
+        if (enabled === undefined || enabled === null) {
+            return _err("setAudioWaveformDisplay: enabled (boolean) is required");
+        }
+        var val = (enabled === true || enabled === "true" || enabled === 1) ? "true" : "false";
+        if (app.properties) {
+            app.properties.setProperty("Timeline.ShowAudioWaveforms", val, true);
+        }
+        return _ok({ audioWaveforms: val === "true", action: "audio_waveform_display_set" });
+    } catch (e) { return _err("setAudioWaveformDisplay failed: " + e.message); }
+}
+
+/**
+ * setVideoThumbnailDisplay — Show/hide video thumbnails on timeline.
+ */
+function setVideoThumbnailDisplay(enabled) {
+    try {
+        if (enabled === undefined || enabled === null) {
+            return _err("setVideoThumbnailDisplay: enabled (boolean) is required");
+        }
+        var val = (enabled === true || enabled === "true" || enabled === 1) ? "true" : "false";
+        if (app.properties) {
+            app.properties.setProperty("Timeline.ShowVideoThumbnails", val, true);
+        }
+        return _ok({ videoThumbnails: val === "true", action: "video_thumbnail_display_set" });
+    } catch (e) { return _err("setVideoThumbnailDisplay failed: " + e.message); }
+}
+
+/**
+ * setTrackNameDisplay — Show/hide track names.
+ */
+function setTrackNameDisplay(enabled) {
+    try {
+        if (enabled === undefined || enabled === null) {
+            return _err("setTrackNameDisplay: enabled (boolean) is required");
+        }
+        var val = (enabled === true || enabled === "true" || enabled === 1) ? "true" : "false";
+        if (app.properties) {
+            app.properties.setProperty("Timeline.ShowTrackNames", val, true);
+        }
+        return _ok({ trackNames: val === "true", action: "track_name_display_set" });
+    } catch (e) { return _err("setTrackNameDisplay failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// User Feedback (24-28)
+// ---------------------------------------------------------------------------
+
+/**
+ * showAlert — Show alert dialog.
+ */
+function showAlert(title, message) {
+    try {
+        if (!title) { return _err("showAlert: title is required"); }
+        if (!message) { return _err("showAlert: message is required"); }
+        alert(message, title);
+        return _ok({ action: "alert_shown", title: title });
+    } catch (e) { return _err("showAlert failed: " + e.message); }
+}
+
+/**
+ * showConfirmDialog — Show confirm dialog (yes/no).
+ */
+function showConfirmDialog(title, message) {
+    try {
+        if (!title) { return _err("showConfirmDialog: title is required"); }
+        if (!message) { return _err("showConfirmDialog: message is required"); }
+        var result = confirm(message, false, title);
+        return _ok({ action: "confirm_shown", title: title, confirmed: result });
+    } catch (e) { return _err("showConfirmDialog failed: " + e.message); }
+}
+
+/**
+ * showInputDialog — Show input dialog.
+ */
+function showInputDialog(title, promptText, defaultValue) {
+    try {
+        if (!title) { return _err("showInputDialog: title is required"); }
+        if (!promptText) { return _err("showInputDialog: prompt is required"); }
+        var defVal = defaultValue || "";
+        var result = prompt(promptText, defVal, title);
+        if (result === null) {
+            return _ok({ action: "input_cancelled", title: title, value: null });
+        }
+        return _ok({ action: "input_received", title: title, value: result });
+    } catch (e) { return _err("showInputDialog failed: " + e.message); }
+}
+
+/**
+ * showProgressDialog — Show progress dialog.
+ */
+function showProgressDialog(title, message, progress) {
+    try {
+        if (!title) { return _err("showProgressDialog: title is required"); }
+        if (!message) { return _err("showProgressDialog: message is required"); }
+        if (progress === undefined || progress === null) { progress = 0; }
+        progress = parseFloat(progress);
+        // Create a ScriptUI progress bar window
+        var w = new Window("palette", title, undefined, {closeButton: true});
+        w.orientation = "column";
+        w.alignChildren = ["fill", "top"];
+        w.add("statictext", undefined, message);
+        var pb = w.add("progressbar", undefined, Math.round(progress * 100), 0, 100);
+        pb.preferredSize = [300, 20];
+        w.add("statictext", undefined, Math.round(progress * 100) + "%");
+        w.show();
+        // Auto-close after a short time to avoid blocking
+        $.sleep(2000);
+        w.close();
+        return _ok({ action: "progress_shown", title: title, progress: progress });
+    } catch (e) { return _err("showProgressDialog failed: " + e.message); }
+}
+
+/**
+ * writeToConsole — Write to ExtendScript console.
+ */
+function writeToConsole(message) {
+    try {
+        if (!message) { return _err("writeToConsole: message is required"); }
+        $.writeln(message);
+        return _ok({ action: "console_write", message: message });
+    } catch (e) { return _err("writeToConsole failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Accessibility (29-30)
+// ---------------------------------------------------------------------------
+
+/**
+ * getUIScaling — Get current UI scaling factor.
+ */
+function getUIScaling() {
+    try {
+        var info = { scaleFactor: 1.0 };
+        try {
+            if ($.screens && $.screens.length > 0) {
+                var scr = $.screens[0];
+                // On HiDPI displays the scaleFactor is typically > 1
+                if (scr.scaleFactor) {
+                    info.scaleFactor = scr.scaleFactor;
+                }
+                info.screenWidth = scr.right - scr.left;
+                info.screenHeight = scr.bottom - scr.top;
+            }
+        } catch (ignore) {}
+        // Try to get the Premiere-specific UI scale setting
+        if (app.properties) {
+            try {
+                var uiScale = app.properties.getProperty("BE.Prefs.UIScaling");
+                if (uiScale) {
+                    info.premiereUIScale = uiScale;
+                }
+            } catch (ignore) {}
+        }
+        return _ok(info);
+    } catch (e) { return _err("getUIScaling failed: " + e.message); }
+}
+
+/**
+ * setHighContrastMode — Toggle high contrast mode.
+ */
+function setHighContrastMode(enabled) {
+    try {
+        if (enabled === undefined || enabled === null) {
+            return _err("setHighContrastMode: enabled (boolean) is required");
+        }
+        var val = (enabled === true || enabled === "true" || enabled === 1) ? "true" : "false";
+        if (app.properties) {
+            app.properties.setProperty("BE.Prefs.Appearance.HighContrast", val, true);
+            // Also adjust the brightness for high contrast
+            if (val === "true") {
+                app.properties.setProperty("BE.Prefs.Appearance.Brightness", "255", true);
+            }
+        }
+        return _ok({ highContrast: val === "true", action: "high_contrast_mode_set" });
+    } catch (e) { return _err("setHighContrastMode failed: " + e.message); }
+}
