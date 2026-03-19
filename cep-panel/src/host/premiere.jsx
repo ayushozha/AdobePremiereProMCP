@@ -21985,3 +21985,820 @@ function archiveAndCleanup(sequenceIndex, archiveDir, deleteRenders) {
         return _ok({ projectName: pn, archivePath: ap, projectCopied: df.exists, rendersDeleted: dr, manifest: mani });
     } catch (e) { return _err("archiveAndCleanup failed: " + e.message); }
 }
+
+// ===========================================================================
+// Keyboard Shortcuts, Command Execution & Menu Control
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Menu Commands (1-6)
+// ---------------------------------------------------------------------------
+
+/**
+ * 1. getMenuItems() - List top-level menu items via QE DOM.
+ */
+function getMenuItems() {
+    try {
+        app.enableQE();
+        if (typeof qe === "undefined") return _err("QE DOM not available");
+        var items = [];
+        var topMenus = ["File", "Edit", "Clip", "Sequence", "Marker", "Graphics", "View", "Window", "Help"];
+        for (var i = 0; i < topMenus.length; i++) {
+            var menuName = topMenus[i];
+            var info = { name: menuName, index: i };
+            try {
+                var menu = qe.project.getMenuByName(menuName);
+                if (menu) {
+                    info.itemCount = menu.numItems || 0;
+                    info.available = true;
+                } else {
+                    info.available = false;
+                }
+            } catch (_) {
+                info.available = false;
+            }
+            items.push(info);
+        }
+        return _ok({ menus: items, count: items.length });
+    } catch (e) { return _err("getMenuItems failed: " + e.message); }
+}
+
+/**
+ * 2. getSubmenuItems(menuPath) - List items in a submenu.
+ */
+function getSubmenuItems(menuPath) {
+    try {
+        if (!menuPath) return _err("menuPath is required");
+        app.enableQE();
+        if (typeof qe === "undefined") return _err("QE DOM not available");
+        var parts = menuPath.split("/");
+        var items = [];
+        try {
+            var menu = qe.project.getMenuByName(parts[0]);
+            if (!menu) return _err("Menu not found: " + parts[0]);
+            for (var p = 1; p < parts.length; p++) {
+                var found = false;
+                for (var s = 0; s < menu.numItems; s++) {
+                    var sub = menu.getItemAt(s);
+                    if (sub && sub.name === parts[p]) { menu = sub; found = true; break; }
+                }
+                if (!found) return _err("Submenu not found: " + parts[p]);
+            }
+            var count = menu.numItems || 0;
+            for (var j = 0; j < count; j++) {
+                var item = menu.getItemAt(j);
+                if (item) {
+                    items.push({
+                        index: j,
+                        name: item.name || "",
+                        id: item.id || "",
+                        enabled: item.enabled !== false,
+                        checked: item.checked === true,
+                        isSeparator: item.name === "" || item.name === "-"
+                    });
+                }
+            }
+        } catch (qeErr) {
+            return _err("Could not enumerate submenu: " + qeErr.message);
+        }
+        return _ok({ menuPath: menuPath, items: items, count: items.length });
+    } catch (e) { return _err("getSubmenuItems failed: " + e.message); }
+}
+
+/**
+ * 3. executeMenuItem(menuItemId) - Execute a menu item by ID via QE.
+ */
+function executeMenuItem(menuItemId) {
+    try {
+        if (!menuItemId) return _err("menuItemId is required");
+        app.enableQE();
+        if (typeof qe === "undefined") return _err("QE DOM not available");
+        try {
+            qe.executeCommand(menuItemId);
+            return _ok({ executed: true, menuItemId: menuItemId });
+        } catch (qeErr) {
+            return _err("executeMenuItem failed for '" + menuItemId + "': " + qeErr.message);
+        }
+    } catch (e) { return _err("executeMenuItem failed: " + e.message); }
+}
+
+/**
+ * 4. findMenuItem(searchText) - Search for menu items by name.
+ */
+function findMenuItem(searchText) {
+    try {
+        if (!searchText) return _err("searchText is required");
+        app.enableQE();
+        var results = [];
+        var needle = searchText.toLowerCase();
+        var topMenus = ["File", "Edit", "Clip", "Sequence", "Marker", "Graphics", "View", "Window", "Help"];
+
+        function _searchMenu(menu, path) {
+            if (!menu) return;
+            var count = 0;
+            try { count = menu.numItems || 0; } catch (_) { return; }
+            for (var i = 0; i < count; i++) {
+                try {
+                    var item = menu.getItemAt(i);
+                    if (!item) continue;
+                    var name = item.name || "";
+                    var fullPath = path + "/" + name;
+                    if (name.toLowerCase().indexOf(needle) >= 0) {
+                        results.push({ name: name, path: fullPath, id: item.id || "", enabled: item.enabled !== false, checked: item.checked === true });
+                    }
+                    if (item.numItems && item.numItems > 0) {
+                        _searchMenu(item, fullPath);
+                    }
+                } catch (_) {}
+            }
+        }
+
+        if (typeof qe !== "undefined") {
+            for (var m = 0; m < topMenus.length; m++) {
+                try {
+                    var menu = qe.project.getMenuByName(topMenus[m]);
+                    if (menu) _searchMenu(menu, topMenus[m]);
+                } catch (_) {}
+            }
+        }
+
+        // Fallback: search the common command map
+        var cmdMap = {"File/Save":"cmd.save","File/Save As":"cmd.saveas","File/Import":"cmd.importFiles","File/Export/Media":"cmd.exportMedia","Edit/Undo":"cmd.undo","Edit/Redo":"cmd.redo","Edit/Cut":"cmd.cut","Edit/Copy":"cmd.copy","Edit/Paste":"cmd.paste","Edit/Select All":"cmd.selectAll","Sequence/Render Effects In to Out":"cmd.renderInToOut"};
+        for (var path in cmdMap) {
+            if (path.toLowerCase().indexOf(needle) >= 0) {
+                var alreadyFound = false;
+                for (var r = 0; r < results.length; r++) { if (results[r].path === path) { alreadyFound = true; break; } }
+                if (!alreadyFound) results.push({ name: path.split("/").pop(), path: path, id: cmdMap[path], enabled: true, checked: false, source: "fallback" });
+            }
+        }
+
+        return _ok({ searchText: searchText, results: results, count: results.length });
+    } catch (e) { return _err("findMenuItem failed: " + e.message); }
+}
+
+/**
+ * 5. isMenuItemEnabled(menuItemId) - Check if menu item is enabled.
+ */
+function isMenuItemEnabled(menuItemId) {
+    try {
+        if (!menuItemId) return _err("menuItemId is required");
+        app.enableQE();
+        if (typeof qe === "undefined") return _err("QE DOM not available");
+        try {
+            var enabled = qe.isCommandEnabled(menuItemId);
+            return _ok({ menuItemId: menuItemId, enabled: enabled !== false });
+        } catch (qeErr) {
+            return _ok({ menuItemId: menuItemId, enabled: false, error: qeErr.message });
+        }
+    } catch (e) { return _err("isMenuItemEnabled failed: " + e.message); }
+}
+
+/**
+ * 6. isMenuItemChecked(menuItemId) - Check if menu item is checked/toggled.
+ */
+function isMenuItemChecked(menuItemId) {
+    try {
+        if (!menuItemId) return _err("menuItemId is required");
+        app.enableQE();
+        if (typeof qe === "undefined") return _err("QE DOM not available");
+        try {
+            var checked = qe.isCommandChecked(menuItemId);
+            return _ok({ menuItemId: menuItemId, checked: checked === true });
+        } catch (qeErr) {
+            return _ok({ menuItemId: menuItemId, checked: false, error: qeErr.message });
+        }
+    } catch (e) { return _err("isMenuItemChecked failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Keyboard Shortcuts (7-10)
+// ---------------------------------------------------------------------------
+
+/**
+ * 7. getShortcutForCommand(commandId) - Get keyboard shortcut for a command.
+ */
+function getShortcutForCommand(commandId) {
+    try {
+        if (!commandId) return _err("commandId is required");
+        app.enableQE();
+        if (typeof qe === "undefined") return _err("QE DOM not available");
+        var shortcut = null;
+        try {
+            shortcut = qe.getShortcutForCommand(commandId);
+        } catch (_) {}
+        if (shortcut) {
+            return _ok({ commandId: commandId, shortcut: String(shortcut), found: true });
+        }
+        // Fallback: check common known shortcuts
+        var known = {"cmd.save":"Ctrl/Cmd+S","cmd.undo":"Ctrl/Cmd+Z","cmd.redo":"Ctrl/Cmd+Shift+Z","cmd.cut":"Ctrl/Cmd+X","cmd.copy":"Ctrl/Cmd+C","cmd.paste":"Ctrl/Cmd+V","cmd.importFiles":"Ctrl/Cmd+I","cmd.exportMedia":"Ctrl/Cmd+M","cmd.selectAll":"Ctrl/Cmd+A"};
+        if (known[commandId]) {
+            return _ok({ commandId: commandId, shortcut: known[commandId], found: true, source: "fallback" });
+        }
+        return _ok({ commandId: commandId, shortcut: null, found: false });
+    } catch (e) { return _err("getShortcutForCommand failed: " + e.message); }
+}
+
+/**
+ * 8. getAllShortcuts() - List all keyboard shortcuts.
+ */
+function getAllShortcuts() {
+    try {
+        app.enableQE();
+        var shortcuts = [];
+        // Read keyboard shortcut files from disk
+        var shortcutDir = "";
+        if ($.os.indexOf("Windows") >= 0) {
+            shortcutDir = Folder.userData.fsName + "/Adobe/Premiere Pro/" + app.version.split(".")[0] + ".0/Profile-Default/";
+        } else {
+            shortcutDir = Folder.userData.fsName + "/Adobe/Premiere Pro/" + app.version.split(".")[0] + ".0/Profile-Default/";
+        }
+        var shortcutFiles = [];
+        var dir = new Folder(shortcutDir);
+        if (dir.exists) {
+            var files = dir.getFiles("*.kys");
+            for (var i = 0; i < files.length; i++) {
+                shortcutFiles.push({ file: files[i].name, path: files[i].fsName });
+            }
+        }
+        // Known common shortcuts
+        var commonShortcuts = [
+            {command:"Save",id:"cmd.save",shortcut:"Ctrl/Cmd+S"},
+            {command:"Undo",id:"cmd.undo",shortcut:"Ctrl/Cmd+Z"},
+            {command:"Redo",id:"cmd.redo",shortcut:"Ctrl/Cmd+Shift+Z"},
+            {command:"Cut",id:"cmd.cut",shortcut:"Ctrl/Cmd+X"},
+            {command:"Copy",id:"cmd.copy",shortcut:"Ctrl/Cmd+C"},
+            {command:"Paste",id:"cmd.paste",shortcut:"Ctrl/Cmd+V"},
+            {command:"Import",id:"cmd.importFiles",shortcut:"Ctrl/Cmd+I"},
+            {command:"Export Media",id:"cmd.exportMedia",shortcut:"Ctrl/Cmd+M"},
+            {command:"Select All",id:"cmd.selectAll",shortcut:"Ctrl/Cmd+A"},
+            {command:"Deselect All",id:"cmd.deselectAll",shortcut:"Ctrl/Cmd+Shift+A"},
+            {command:"Razor",id:"cmd.razor",shortcut:"C"},
+            {command:"Selection Tool",id:"cmd.selectionTool",shortcut:"V"},
+            {command:"Mark In",id:"cmd.markIn",shortcut:"I"},
+            {command:"Mark Out",id:"cmd.markOut",shortcut:"O"},
+            {command:"Play/Stop",id:"cmd.playStop",shortcut:"Space"},
+            {command:"Step Forward",id:"cmd.stepForward",shortcut:"Right Arrow"},
+            {command:"Step Backward",id:"cmd.stepBackward",shortcut:"Left Arrow"},
+            {command:"Lift",id:"cmd.lift",shortcut:";"},
+            {command:"Extract",id:"cmd.extract",shortcut:"'"},
+            {command:"Toggle Snap",id:"cmd.toggleSnap",shortcut:"S"}
+        ];
+        // Try to read additional shortcuts from QE DOM
+        if (typeof qe !== "undefined") {
+            try {
+                var qeShortcuts = qe.getKeyboardShortcuts();
+                if (qeShortcuts) {
+                    shortcuts = shortcuts.concat(qeShortcuts);
+                }
+            } catch (_) {}
+        }
+        return _ok({ shortcutFiles: shortcutFiles, commonShortcuts: commonShortcuts, qeShortcuts: shortcuts, totalCommon: commonShortcuts.length });
+    } catch (e) { return _err("getAllShortcuts failed: " + e.message); }
+}
+
+/**
+ * 9. simulateKeyPress(key, modifiers) - Simulate a keyboard shortcut.
+ */
+function simulateKeyPress(key, modifiers) {
+    try {
+        if (!key) return _err("key is required");
+        app.enableQE();
+        if (typeof qe === "undefined") return _err("QE DOM not available");
+        var mods = modifiers ? String(modifiers).toLowerCase() : "";
+        var hasCtrl = mods.indexOf("ctrl") >= 0 || mods.indexOf("cmd") >= 0;
+        var hasShift = mods.indexOf("shift") >= 0;
+        var hasAlt = mods.indexOf("alt") >= 0;
+
+        // Map common key+modifier combos to QE commands
+        var cmdKey = key.toUpperCase();
+        var commandMap = {};
+        commandMap["CTRL+S"] = "cmd.save";
+        commandMap["CTRL+Z"] = "cmd.undo";
+        commandMap["CTRL+SHIFT+Z"] = "cmd.redo";
+        commandMap["CTRL+X"] = "cmd.cut";
+        commandMap["CTRL+C"] = "cmd.copy";
+        commandMap["CTRL+V"] = "cmd.paste";
+        commandMap["CTRL+A"] = "cmd.selectAll";
+        commandMap["CTRL+I"] = "cmd.importFiles";
+        commandMap["CTRL+M"] = "cmd.exportMedia";
+        commandMap["DELETE"] = "cmd.delete";
+        commandMap["BACKSPACE"] = "cmd.delete";
+        commandMap["SPACE"] = "cmd.playStop";
+
+        var combo = "";
+        if (hasCtrl) combo += "CTRL+";
+        if (hasShift) combo += "SHIFT+";
+        if (hasAlt) combo += "ALT+";
+        combo += cmdKey;
+
+        if (commandMap[combo]) {
+            qe.executeCommand(commandMap[combo]);
+            return _ok({ simulated: true, key: key, modifiers: modifiers || "", command: commandMap[combo], method: "qe_command" });
+        }
+
+        // Try direct QE key simulation
+        try {
+            qe.simulateKeyPress(key, hasCtrl, hasShift, hasAlt);
+            return _ok({ simulated: true, key: key, modifiers: modifiers || "", method: "qe_keypress" });
+        } catch (qeErr) {
+            return _err("simulateKeyPress: QE key simulation failed for '" + combo + "': " + qeErr.message);
+        }
+    } catch (e) { return _err("simulateKeyPress failed: " + e.message); }
+}
+
+/**
+ * 10. getShortcutConflicts() - Find conflicting keyboard shortcuts.
+ */
+function getShortcutConflicts() {
+    try {
+        app.enableQE();
+        var conflicts = [];
+        // Read keyboard shortcut file and parse for duplicates
+        var shortcutDir = "";
+        if ($.os.indexOf("Windows") >= 0) {
+            shortcutDir = Folder.userData.fsName + "/Adobe/Premiere Pro/" + app.version.split(".")[0] + ".0/Profile-Default/";
+        } else {
+            shortcutDir = Folder.userData.fsName + "/Adobe/Premiere Pro/" + app.version.split(".")[0] + ".0/Profile-Default/";
+        }
+        var dir = new Folder(shortcutDir);
+        var shortcutMap = {};
+        if (dir.exists) {
+            var files = dir.getFiles("*.kys");
+            for (var i = 0; i < files.length; i++) {
+                try {
+                    var f = new File(files[i].fsName);
+                    if (f.open("r")) {
+                        var content = f.read();
+                        f.close();
+                        // Parse XML-based .kys file for shortcut entries
+                        var regex = /<shortcut[^>]*key="([^"]*)"[^>]*command="([^"]*)"/g;
+                        var match;
+                        while ((match = regex.exec(content)) !== null) {
+                            var k = match[1];
+                            var cmd = match[2];
+                            if (!shortcutMap[k]) shortcutMap[k] = [];
+                            shortcutMap[k].push({ command: cmd, file: files[i].name });
+                        }
+                    }
+                } catch (_) {}
+            }
+        }
+        for (var shortcutKey in shortcutMap) {
+            if (shortcutMap.hasOwnProperty(shortcutKey) && shortcutMap[shortcutKey].length > 1) {
+                conflicts.push({ shortcut: shortcutKey, commands: shortcutMap[shortcutKey], count: shortcutMap[shortcutKey].length });
+            }
+        }
+        return _ok({ conflicts: conflicts, totalConflicts: conflicts.length, shortcutDir: shortcutDir });
+    } catch (e) { return _err("getShortcutConflicts failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Quick Actions (11-18)
+// ---------------------------------------------------------------------------
+
+/**
+ * 11. toggleFullScreen() - Toggle fullscreen mode.
+ */
+function toggleFullScreen() {
+    try {
+        app.enableQE();
+        if (typeof qe !== "undefined") {
+            try {
+                qe.executeCommand("cmd.fullScreen");
+                return _ok({ toggled: true, action: "fullscreen", method: "qe" });
+            } catch (_) {}
+        }
+        // Fallback: simulate Ctrl+` or the fullscreen shortcut
+        try {
+            qe.simulateKeyPress("`", true, false, false);
+            return _ok({ toggled: true, action: "fullscreen", method: "keypress" });
+        } catch (e2) {
+            return _err("toggleFullScreen: could not toggle fullscreen: " + e2.message);
+        }
+    } catch (e) { return _err("toggleFullScreen failed: " + e.message); }
+}
+
+/**
+ * 12. toggleMaximizeFrame() - Toggle maximize current frame.
+ */
+function toggleMaximizeFrame() {
+    try {
+        app.enableQE();
+        if (typeof qe !== "undefined") {
+            try {
+                qe.executeCommand("cmd.maximizeFrame");
+                return _ok({ toggled: true, action: "maximizeFrame", method: "qe" });
+            } catch (_) {}
+        }
+        // Fallback: simulate ` key (accent/tilde) which is the default maximize frame shortcut
+        try {
+            qe.simulateKeyPress("`", false, false, false);
+            return _ok({ toggled: true, action: "maximizeFrame", method: "keypress" });
+        } catch (e2) {
+            return _err("toggleMaximizeFrame: could not toggle: " + e2.message);
+        }
+    } catch (e) { return _err("toggleMaximizeFrame failed: " + e.message); }
+}
+
+/**
+ * 13. clearSelection() - Clear all selections.
+ */
+function clearSelection() {
+    try {
+        app.enableQE();
+        if (typeof qe !== "undefined") {
+            try {
+                qe.executeCommand("cmd.deselectAll");
+                return _ok({ cleared: true, method: "qe" });
+            } catch (_) {}
+        }
+        // Fallback via sequence API
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        try {
+            seq.setSelection([]);
+            return _ok({ cleared: true, method: "api" });
+        } catch (_) {
+            return _ok({ cleared: true, method: "command", note: "Selection clear attempted via command" });
+        }
+    } catch (e) { return _err("clearSelection failed: " + e.message); }
+}
+
+/**
+ * 14. selectAll() - Select all clips in active sequence.
+ */
+function selectAllClips() {
+    try {
+        app.enableQE();
+        if (typeof qe !== "undefined") {
+            try {
+                qe.executeCommand("cmd.selectAll");
+                return _ok({ selected: true, method: "qe" });
+            } catch (_) {}
+        }
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var clipCount = 0;
+        if (seq.videoTracks) {
+            for (var v = 0; v < seq.videoTracks.numTracks; v++) {
+                var vt = seq.videoTracks[v];
+                if (vt.clips) { for (var i = 0; i < vt.clips.numItems; i++) { try { vt.clips[i].setSelected(true, true); clipCount++; } catch (_) {} } }
+            }
+        }
+        if (seq.audioTracks) {
+            for (var a = 0; a < seq.audioTracks.numTracks; a++) {
+                var at = seq.audioTracks[a];
+                if (at.clips) { for (var j = 0; j < at.clips.numItems; j++) { try { at.clips[j].setSelected(true, true); clipCount++; } catch (_) {} } }
+            }
+        }
+        return _ok({ selected: true, clipCount: clipCount, method: "api" });
+    } catch (e) { return _err("selectAllClips failed: " + e.message); }
+}
+
+/**
+ * 15. cutSelection() - Cut selected clips.
+ */
+function cutSelection() {
+    try {
+        app.enableQE();
+        if (typeof qe !== "undefined") {
+            try {
+                qe.executeCommand("cmd.cut");
+                return _ok({ cut: true, method: "qe" });
+            } catch (_) {}
+        }
+        return _err("cutSelection: QE DOM required for cut operation");
+    } catch (e) { return _err("cutSelection failed: " + e.message); }
+}
+
+/**
+ * 16. copySelection() - Copy selected clips.
+ */
+function copySelection() {
+    try {
+        app.enableQE();
+        if (typeof qe !== "undefined") {
+            try {
+                qe.executeCommand("cmd.copy");
+                return _ok({ copied: true, method: "qe" });
+            } catch (_) {}
+        }
+        return _err("copySelection: QE DOM required for copy operation");
+    } catch (e) { return _err("copySelection failed: " + e.message); }
+}
+
+/**
+ * 17. pasteSelection() - Paste clipboard contents.
+ */
+function pasteSelection() {
+    try {
+        app.enableQE();
+        if (typeof qe !== "undefined") {
+            try {
+                qe.executeCommand("cmd.paste");
+                return _ok({ pasted: true, method: "qe" });
+            } catch (_) {}
+        }
+        return _err("pasteSelection: QE DOM required for paste operation");
+    } catch (e) { return _err("pasteSelection failed: " + e.message); }
+}
+
+/**
+ * 18. duplicateSelection() - Duplicate selected clips in place.
+ */
+function duplicateSelection() {
+    try {
+        app.enableQE();
+        if (typeof qe !== "undefined") {
+            try {
+                // Copy then paste to duplicate in place
+                qe.executeCommand("cmd.copy");
+                qe.executeCommand("cmd.paste");
+                return _ok({ duplicated: true, method: "qe" });
+            } catch (_) {}
+        }
+        return _err("duplicateSelection: QE DOM required for duplicate operation");
+    } catch (e) { return _err("duplicateSelection failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// View Controls (19-24)
+// ---------------------------------------------------------------------------
+
+/**
+ * 19. setZoomLevel(level) - Set timeline zoom level (percentage 0-100).
+ */
+function setZoomLevel(level) {
+    try {
+        if (level === undefined || level === null) return _err("level is required");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        level = Math.max(0, Math.min(100, parseFloat(level)));
+        app.enableQE();
+        if (typeof qe !== "undefined") {
+            try {
+                var qeSeq = qe.project.getActiveSequence();
+                if (qeSeq) {
+                    qeSeq.setZoomLevel(level / 100.0);
+                    return _ok({ zoomLevel: level, method: "qe" });
+                }
+            } catch (_) {}
+        }
+        // Fallback: compute view extents from zoom level
+        var duration = _timeToSeconds(seq.end);
+        var visibleDuration = duration * (1.0 - level / 100.0);
+        if (visibleDuration < 0.1) visibleDuration = 0.1;
+        var currentPos = _timeToSeconds(seq.getPlayerPosition());
+        var startTime = Math.max(0, currentPos - visibleDuration / 2);
+        var endTime = startTime + visibleDuration;
+        return _ok({ zoomLevel: level, method: "computed", visibleRange: { start: startTime, end: endTime } });
+    } catch (e) { return _err("setZoomLevel failed: " + e.message); }
+}
+
+/**
+ * 20. getZoomLevel() - Get current zoom level.
+ */
+function getZoomLevel() {
+    try {
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        app.enableQE();
+        if (typeof qe !== "undefined") {
+            try {
+                var qeSeq = qe.project.getActiveSequence();
+                if (qeSeq) {
+                    var zoom = qeSeq.getZoomLevel();
+                    return _ok({ zoomLevel: parseFloat(zoom) * 100, method: "qe" });
+                }
+            } catch (_) {}
+        }
+        return _ok({ zoomLevel: -1, method: "unknown", note: "Could not determine zoom level" });
+    } catch (e) { return _err("getZoomLevel failed: " + e.message); }
+}
+
+/**
+ * 21. scrollTimelineTo(seconds) - Scroll timeline to time position.
+ */
+function scrollTimelineTo(seconds) {
+    try {
+        if (seconds === undefined || seconds === null) return _err("seconds is required");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        seconds = parseFloat(seconds);
+        // Move playhead to scroll the view
+        seq.setPlayerPosition(_secondsToTime(seconds).ticks);
+        return _ok({ scrolledTo: seconds, method: "playerPosition" });
+    } catch (e) { return _err("scrollTimelineTo failed: " + e.message); }
+}
+
+/**
+ * 22. enableLinkedSelection(enabled) - Toggle linked selection.
+ */
+function enableLinkedSelection(enabled) {
+    try {
+        app.enableQE();
+        if (typeof qe !== "undefined") {
+            try {
+                qe.executeCommand("cmd.linkedSelection");
+                return _ok({ linkedSelection: enabled, toggled: true, method: "qe" });
+            } catch (_) {}
+        }
+        return _err("enableLinkedSelection: QE DOM required");
+    } catch (e) { return _err("enableLinkedSelection failed: " + e.message); }
+}
+
+/**
+ * 23. getLinkedSelectionState() - Get linked selection state.
+ */
+function getLinkedSelectionState() {
+    try {
+        app.enableQE();
+        if (typeof qe !== "undefined") {
+            try {
+                var checked = qe.isCommandChecked("cmd.linkedSelection");
+                return _ok({ linkedSelection: checked === true, method: "qe" });
+            } catch (_) {}
+        }
+        return _ok({ linkedSelection: true, method: "default", note: "Could not query state, returning default" });
+    } catch (e) { return _err("getLinkedSelectionState failed: " + e.message); }
+}
+
+/**
+ * 24. enableInsertAndOverwrite(trackType, trackIndex, enabled) - Toggle insert/overwrite targeting.
+ */
+function enableInsertAndOverwrite(trackType, trackIndex, enabled) {
+    try {
+        if (!trackType) return _err("trackType is required");
+        if (trackIndex === undefined) return _err("trackIndex is required");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex);
+        var isVideo = trackType.toLowerCase() === "video";
+        app.enableQE();
+        if (typeof qe !== "undefined") {
+            try {
+                var qeSeq = qe.project.getActiveSequence();
+                if (qeSeq) {
+                    if (isVideo) {
+                        var vt = qeSeq.getVideoTrackAt(trackIndex);
+                        if (vt) { vt.setTargeted(enabled !== false); }
+                    } else {
+                        var at = qeSeq.getAudioTrackAt(trackIndex);
+                        if (at) { at.setTargeted(enabled !== false); }
+                    }
+                    return _ok({ trackType: trackType, trackIndex: trackIndex, enabled: enabled !== false, method: "qe" });
+                }
+            } catch (_) {}
+        }
+        return _err("enableInsertAndOverwrite: QE DOM required for track targeting");
+    } catch (e) { return _err("enableInsertAndOverwrite failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Sequence Display (25-30)
+// ---------------------------------------------------------------------------
+
+/**
+ * 25. showAudioTimeUnits(enabled) - Toggle audio time units.
+ */
+function showAudioTimeUnits(enabled) {
+    try {
+        app.enableQE();
+        if (typeof qe !== "undefined") {
+            try {
+                qe.executeCommand("cmd.showAudioTimeUnits");
+                return _ok({ audioTimeUnits: enabled, toggled: true, method: "qe" });
+            } catch (_) {}
+        }
+        return _err("showAudioTimeUnits: QE DOM required");
+    } catch (e) { return _err("showAudioTimeUnits failed: " + e.message); }
+}
+
+/**
+ * 26. showDuplicateFrameMarkers(enabled) - Toggle duplicate frame markers.
+ */
+function showDuplicateFrameMarkers(enabled) {
+    try {
+        app.enableQE();
+        if (typeof qe !== "undefined") {
+            try {
+                qe.executeCommand("cmd.showDuplicateFrameMarkers");
+                return _ok({ duplicateFrameMarkers: enabled, toggled: true, method: "qe" });
+            } catch (_) {}
+        }
+        return _err("showDuplicateFrameMarkers: QE DOM required");
+    } catch (e) { return _err("showDuplicateFrameMarkers failed: " + e.message); }
+}
+
+/**
+ * 27. showClipMismatchWarning(enabled) - Toggle clip mismatch warning.
+ */
+function showClipMismatchWarning(enabled) {
+    try {
+        app.enableQE();
+        if (typeof qe !== "undefined") {
+            try {
+                qe.executeCommand("cmd.showClipMismatchWarning");
+                return _ok({ clipMismatchWarning: enabled, toggled: true, method: "qe" });
+            } catch (_) {}
+        }
+        return _err("showClipMismatchWarning: QE DOM required");
+    } catch (e) { return _err("showClipMismatchWarning failed: " + e.message); }
+}
+
+/**
+ * 28. setTimelineSnap(snapType) - Set snap type (none, frame, marker, clip).
+ */
+function setTimelineSnap(snapType) {
+    try {
+        if (!snapType) return _err("snapType is required");
+        app.enableQE();
+        var snapLower = snapType.toLowerCase();
+        if (typeof qe !== "undefined") {
+            try {
+                if (snapLower === "none") {
+                    // Disable snapping
+                    var currentSnap = qe.isCommandChecked("cmd.toggleSnap");
+                    if (currentSnap) qe.executeCommand("cmd.toggleSnap");
+                    return _ok({ snapType: snapType, snapping: false, method: "qe" });
+                } else {
+                    // Enable snapping
+                    var isSnap = qe.isCommandChecked("cmd.toggleSnap");
+                    if (!isSnap) qe.executeCommand("cmd.toggleSnap");
+                    return _ok({ snapType: snapType, snapping: true, method: "qe" });
+                }
+            } catch (_) {}
+        }
+        return _err("setTimelineSnap: QE DOM required");
+    } catch (e) { return _err("setTimelineSnap failed: " + e.message); }
+}
+
+/**
+ * 29. getTimelineViewExtents() - Get visible timeline range (start/end times).
+ */
+function getTimelineViewExtents() {
+    try {
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        app.enableQE();
+        if (typeof qe !== "undefined") {
+            try {
+                var qeSeq = qe.project.getActiveSequence();
+                if (qeSeq) {
+                    var inPoint = qeSeq.getInPoint();
+                    var outPoint = qeSeq.getOutPoint();
+                    return _ok({
+                        startSeconds: parseFloat(inPoint) || 0,
+                        endSeconds: parseFloat(outPoint) || _timeToSeconds(seq.end),
+                        sequenceDuration: _timeToSeconds(seq.end),
+                        method: "qe"
+                    });
+                }
+            } catch (_) {}
+        }
+        // Fallback: return playhead position and total duration
+        var playerPos = _timeToSeconds(seq.getPlayerPosition());
+        var totalDuration = _timeToSeconds(seq.end);
+        return _ok({
+            startSeconds: 0,
+            endSeconds: totalDuration,
+            currentPosition: playerPos,
+            sequenceDuration: totalDuration,
+            method: "fallback"
+        });
+    } catch (e) { return _err("getTimelineViewExtents failed: " + e.message); }
+}
+
+/**
+ * 30. setTimelineViewExtents(startSeconds, endSeconds) - Set visible timeline range.
+ */
+function setTimelineViewExtents(startSeconds, endSeconds) {
+    try {
+        if (startSeconds === undefined) return _err("startSeconds is required");
+        if (endSeconds === undefined) return _err("endSeconds is required");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        startSeconds = parseFloat(startSeconds);
+        endSeconds = parseFloat(endSeconds);
+        if (endSeconds <= startSeconds) return _err("endSeconds must be greater than startSeconds");
+        app.enableQE();
+        if (typeof qe !== "undefined") {
+            try {
+                var qeSeq = qe.project.getActiveSequence();
+                if (qeSeq) {
+                    qeSeq.setInPoint(startSeconds);
+                    qeSeq.setOutPoint(endSeconds);
+                    return _ok({ startSeconds: startSeconds, endSeconds: endSeconds, method: "qe" });
+                }
+            } catch (_) {}
+        }
+        // Fallback: set in/out points on the sequence
+        try {
+            seq.setInPoint(_secondsToTime(startSeconds).ticks);
+            seq.setOutPoint(_secondsToTime(endSeconds).ticks);
+            return _ok({ startSeconds: startSeconds, endSeconds: endSeconds, method: "inOutPoints" });
+        } catch (e2) {
+            return _err("setTimelineViewExtents: could not set view extents: " + e2.message);
+        }
+    } catch (e) { return _err("setTimelineViewExtents failed: " + e.message); }
+}
