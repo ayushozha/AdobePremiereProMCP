@@ -632,6 +632,46 @@ type Orchestrator interface {
 	GetKeyboardShortcuts(ctx context.Context) (*GenericResult, error)
 	ExecuteMenuCommand(ctx context.Context, menuPath string) (*GenericResult, error)
 
+	// --- Menu Commands ---
+	GetMenuItems(ctx context.Context) (*GenericResult, error)
+	GetSubmenuItems(ctx context.Context, menuPath string) (*GenericResult, error)
+	ExecuteMenuItemByID(ctx context.Context, menuItemID string) (*GenericResult, error)
+	FindMenuItem(ctx context.Context, searchText string) (*GenericResult, error)
+	IsMenuItemEnabled(ctx context.Context, menuItemID string) (*GenericResult, error)
+	IsMenuItemChecked(ctx context.Context, menuItemID string) (*GenericResult, error)
+
+	// --- Keyboard Shortcut Queries ---
+	GetShortcutForCommand(ctx context.Context, commandID string) (*GenericResult, error)
+	GetAllShortcuts(ctx context.Context) (*GenericResult, error)
+	SimulateKeyPress(ctx context.Context, key string, modifiers string) (*GenericResult, error)
+	GetShortcutConflicts(ctx context.Context) (*GenericResult, error)
+
+	// --- Quick Actions ---
+	ToggleFullScreen(ctx context.Context) (*GenericResult, error)
+	ToggleMaximizeFrame(ctx context.Context) (*GenericResult, error)
+	ClearSelection(ctx context.Context) (*GenericResult, error)
+	SelectAll(ctx context.Context) (*GenericResult, error)
+	CutSelection(ctx context.Context) (*GenericResult, error)
+	CopySelection(ctx context.Context) (*GenericResult, error)
+	PasteSelection(ctx context.Context) (*GenericResult, error)
+	DuplicateSelection(ctx context.Context) (*GenericResult, error)
+
+	// --- View Controls ---
+	SetZoomLevel(ctx context.Context, level float64) (*GenericResult, error)
+	GetZoomLevel(ctx context.Context) (*GenericResult, error)
+	ScrollTimelineTo(ctx context.Context, seconds float64) (*GenericResult, error)
+	EnableLinkedSelection(ctx context.Context, enabled bool) (*GenericResult, error)
+	GetLinkedSelectionState(ctx context.Context) (*GenericResult, error)
+	EnableInsertAndOverwrite(ctx context.Context, trackType string, trackIndex int, enabled bool) (*GenericResult, error)
+
+	// --- Sequence Display ---
+	ShowAudioTimeUnits(ctx context.Context, enabled bool) (*GenericResult, error)
+	ShowDuplicateFrameMarkers(ctx context.Context, enabled bool) (*GenericResult, error)
+	ShowClipMismatchWarning(ctx context.Context, enabled bool) (*GenericResult, error)
+	SetTimelineSnap(ctx context.Context, snapType string) (*GenericResult, error)
+	GetTimelineViewExtents(ctx context.Context) (*GenericResult, error)
+	SetTimelineViewExtents(ctx context.Context, startSeconds, endSeconds float64) (*GenericResult, error)
+
 	// --- Workflow / Ingest Presets ---
 	CreateIngestPreset(ctx context.Context, name, settingsJSON string) (*GenericResult, error)
 	GetIngestSettings(ctx context.Context) (*GenericResult, error)
@@ -1215,4 +1255,46 @@ type Orchestrator interface {
 	GetProjectAgeInfo(ctx context.Context) (*GenericResult, error)
 	GetStorageReport(ctx context.Context) (*GenericResult, error)
 	GetPerformanceReport2(ctx context.Context) (*GenericResult, error)
+
+	// --- Social Media Optimization ---
+	CreateVerticalVersion(ctx context.Context, sequenceIndex int, outputName string) (*GenericResult, error)
+	CreateSquareVersion(ctx context.Context, sequenceIndex int, outputName string) (*GenericResult, error)
+	AddSafeZoneGuides(ctx context.Context, sequenceIndex int, platform string) (*GenericResult, error)
+	OptimizeForPlatform(ctx context.Context, sequenceIndex int, platform string) (*GenericResult, error)
+	CreateThumbnailFromFrame(ctx context.Context, sequenceIndex int, timeSeconds float64, outputPath, addText string) (*GenericResult, error)
+
+	// --- Content Segmentation ---
+	SplitIntoSegments(ctx context.Context, sequenceIndex int, maxDurationSeconds float64) (*GenericResult, error)
+	CreateChaptersFile(ctx context.Context, sequenceIndex int, outputPath, format string) (*GenericResult, error)
+	ExtractSegmentByMarkers(ctx context.Context, sequenceIndex, startMarkerIndex, endMarkerIndex int, outputName string) (*GenericResult, error)
+	CreateTeaser(ctx context.Context, sequenceIndex int, durationSeconds float64, outputName string) (*GenericResult, error)
+	CreateBumper(ctx context.Context, text string, duration float64, style, outputName string) (*GenericResult, error)
+
+	// --- Delivery Formats ---
+	ExportForBroadcast(ctx context.Context, sequenceIndex int, outputPath, standard string) (*GenericResult, error)
+	ExportForStreaming(ctx context.Context, sequenceIndex int, outputPath, platform string) (*GenericResult, error)
+	ExportForArchive(ctx context.Context, sequenceIndex int, outputPath, codec string) (*GenericResult, error)
+	ExportForWeb(ctx context.Context, sequenceIndex int, outputPath, quality string) (*GenericResult, error)
+	ExportForMobile(ctx context.Context, sequenceIndex int, outputPath, device string) (*GenericResult, error)
+
+	// --- Metadata for Distribution ---
+	SetDistributionMetadata(ctx context.Context, sequenceIndex int, title, description, tags, category string) (*GenericResult, error)
+	GetDistributionMetadata(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	EmbedThumbnailInFile(ctx context.Context, videoPath, thumbnailPath string) (*GenericResult, error)
+	AddChapterMetadata(ctx context.Context, videoPath, chaptersJSON string) (*GenericResult, error)
+	SetContentRating(ctx context.Context, sequenceIndex int, rating string) (*GenericResult, error)
+
+	// --- Quality Assurance ---
+	RunQAChecklist(ctx context.Context, sequenceIndex int, specsJSON string) (*GenericResult, error)
+	CheckLoudnessCompliance(ctx context.Context, sequenceIndex int, standard string) (*GenericResult, error)
+	CheckColorCompliance(ctx context.Context, sequenceIndex int, standard string) (*GenericResult, error)
+	CheckFrameAccuracy(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	ValidateClosedCaptions(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+
+	// --- Versioning ---
+	CreateVersionedExport(ctx context.Context, sequenceIndex int, outputDir, versionName, notes string) (*GenericResult, error)
+	GetExportHistory2(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	CompareExportVersions(ctx context.Context, version1Path, version2Path string) (*GenericResult, error)
+	CreateApprovalPackage(ctx context.Context, sequenceIndex int, outputDir string) (*GenericResult, error)
+	ArchiveAndCleanup(ctx context.Context, sequenceIndex int, archiveDir string, deleteRenders bool) (*GenericResult, error)
 }

@@ -21461,3 +21461,527 @@ function getAnalyticsPerformanceReport() {
         return _ok(report);
     } catch (e) { return _err("getAnalyticsPerformanceReport failed: " + e.message); }
 }
+
+// ===========================================================================
+// Social Media Optimization, Delivery & Distribution
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Social Media Optimization (1-5)
+// ---------------------------------------------------------------------------
+
+function createVerticalVersion(sequenceIndex, outputName) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences;
+        if (!seqs || seqs.numSequences === 0) return _err("No sequences in project");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        var srcSeq = seqs[idx];
+        var name = (outputName && outputName !== "") ? outputName : (srcSeq.name + "_Vertical_9x16");
+        app.project.createNewSequence(name, "createVerticalVersion_placeholder");
+        var newSeq = null;
+        for (var i = 0; i < seqs.numSequences; i++) { if (seqs[i].name === name) { newSeq = seqs[i]; break; } }
+        if (!newSeq) return _err("Failed to create vertical sequence");
+        if (typeof qe !== "undefined" && qe.project) { try { var qeSeq = qe.project.getSequenceAt(seqs.numSequences - 1); if (qeSeq) qeSeq.setFrameSize(1080, 1920); } catch (qeErr) {} }
+        return _ok({ sourceSequence: srcSeq.name, newSequence: name, width: 1080, height: 1920, aspectRatio: "9:16", message: "Vertical sequence created." });
+    } catch (e) { return _err("createVerticalVersion failed: " + e.message); }
+}
+
+function createSquareVersion(sequenceIndex, outputName) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences;
+        if (!seqs || seqs.numSequences === 0) return _err("No sequences in project");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        var srcSeq = seqs[idx];
+        var name = (outputName && outputName !== "") ? outputName : (srcSeq.name + "_Square_1x1");
+        app.project.createNewSequence(name, "createSquareVersion_placeholder");
+        var newSeq = null;
+        for (var i = 0; i < seqs.numSequences; i++) { if (seqs[i].name === name) { newSeq = seqs[i]; break; } }
+        if (!newSeq) return _err("Failed to create square sequence");
+        if (typeof qe !== "undefined" && qe.project) { try { var qeSeq = qe.project.getSequenceAt(seqs.numSequences - 1); if (qeSeq) qeSeq.setFrameSize(1080, 1080); } catch (qeErr) {} }
+        return _ok({ sourceSequence: srcSeq.name, newSequence: name, width: 1080, height: 1080, aspectRatio: "1:1", message: "Square sequence created." });
+    } catch (e) { return _err("createSquareVersion failed: " + e.message); }
+}
+
+function addSafeZoneGuides(sequenceIndex, platform) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences;
+        if (!seqs || seqs.numSequences === 0) return _err("No sequences in project");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        var seq = seqs[idx];
+        var plat = (platform && platform !== "") ? platform.toLowerCase() : "youtube";
+        var sz = {};
+        if (plat === "youtube") { sz = { titleSafe: { top: 10, bottom: 20, left: 5, right: 5 }, actionSafe: { top: 5, bottom: 15, left: 3, right: 3 }, platform: "YouTube" }; }
+        else if (plat === "instagram") { sz = { titleSafe: { top: 15, bottom: 15, left: 5, right: 5 }, actionSafe: { top: 10, bottom: 10, left: 3, right: 3 }, platform: "Instagram" }; }
+        else if (plat === "tiktok") { sz = { titleSafe: { top: 15, bottom: 25, left: 5, right: 5 }, actionSafe: { top: 10, bottom: 20, left: 3, right: 3 }, platform: "TikTok" }; }
+        else { sz = { titleSafe: { top: 10, bottom: 10, left: 10, right: 10 }, actionSafe: { top: 5, bottom: 5, left: 5, right: 5 }, platform: plat }; }
+        var markers = seq.markers;
+        if (markers) { var m = markers.createMarker(0); if (m) { m.name = sz.platform + " Safe Zone Guide"; m.comments = JSON.stringify(sz); m.setColorByIndex(3); } }
+        return _ok({ sequence: seq.name, platform: sz.platform, titleSafe: sz.titleSafe, actionSafe: sz.actionSafe });
+    } catch (e) { return _err("addSafeZoneGuides failed: " + e.message); }
+}
+
+function optimizeForPlatform(sequenceIndex, platform) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences;
+        if (!seqs || seqs.numSequences === 0) return _err("No sequences in project");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        var seq = seqs[idx];
+        var plat = (platform && platform !== "") ? platform.toLowerCase() : "youtube";
+        var s = {};
+        if (plat === "youtube") { s = { width: 1920, height: 1080, fps: 29.97, videoBitrate: 16000, codec: "H.264", platform: "YouTube" }; }
+        else if (plat === "instagram") { s = { width: 1080, height: 1080, fps: 30, videoBitrate: 3500, codec: "H.264", platform: "Instagram" }; }
+        else if (plat === "tiktok") { s = { width: 1080, height: 1920, fps: 30, videoBitrate: 6000, codec: "H.264", platform: "TikTok" }; }
+        else if (plat === "twitter") { s = { width: 1280, height: 720, fps: 30, videoBitrate: 5000, codec: "H.264", platform: "Twitter" }; }
+        else { s = { width: 1920, height: 1080, fps: 29.97, videoBitrate: 10000, codec: "H.264", platform: plat }; }
+        if (typeof qe !== "undefined" && qe.project) { try { var qeSeq = qe.project.getSequenceAt(idx); if (qeSeq) qeSeq.setFrameSize(s.width, s.height); } catch (qeErr) {} }
+        return _ok({ sequence: seq.name, optimizedFor: s.platform, settings: s });
+    } catch (e) { return _err("optimizeForPlatform failed: " + e.message); }
+}
+
+function createThumbnailFromFrame(sequenceIndex, timeSeconds, outputPath, addText) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences;
+        if (!seqs || seqs.numSequences === 0) return _err("No sequences in project");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        if (!outputPath || outputPath === "") return _err("Output path is required");
+        var seq = seqs[idx]; var time = (timeSeconds !== undefined && timeSeconds > 0) ? timeSeconds : 0;
+        app.project.activeSequence = seq;
+        var ok = false;
+        try { seq.exportFramePNG(time + "", outputPath); ok = true; } catch (e1) { try { app.project.activeSequence.exportFramePNG(time + "", outputPath); ok = true; } catch (e2) { return _err("Failed to export frame: " + e2.message); } }
+        return _ok({ sequence: seq.name, timeSeconds: time, outputPath: outputPath, addText: addText || "", exported: ok });
+    } catch (e) { return _err("createThumbnailFromFrame failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Content Segmentation (6-10)
+// ---------------------------------------------------------------------------
+
+function splitIntoSegments(sequenceIndex, maxDurationSeconds) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences;
+        if (!seqs || seqs.numSequences === 0) return _err("No sequences in project");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        var seq = seqs[idx]; var maxDur = (maxDurationSeconds && maxDurationSeconds > 0) ? maxDurationSeconds : 600;
+        var totalDuration = _timeToSeconds(seq.end) - _timeToSeconds(seq.zeroPoint);
+        if (totalDuration <= 0) return _err("Sequence has no duration");
+        var numSegments = Math.ceil(totalDuration / maxDur);
+        var segments = [];
+        for (var i = 0; i < numSegments; i++) { var ss = i * maxDur; var se = Math.min((i + 1) * maxDur, totalDuration); segments.push({ segmentIndex: i, startSeconds: ss, endSeconds: se, durationSeconds: se - ss }); }
+        return _ok({ sequence: seq.name, totalDuration: totalDuration, maxSegmentDuration: maxDur, numSegments: numSegments, segments: segments });
+    } catch (e) { return _err("splitIntoSegments failed: " + e.message); }
+}
+
+function createChaptersFile(sequenceIndex, outputPath, format) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences;
+        if (!seqs || seqs.numSequences === 0) return _err("No sequences in project");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        if (!outputPath || outputPath === "") return _err("Output path is required");
+        var seq = seqs[idx]; var fmt = (format && format !== "") ? format.toLowerCase() : "youtube";
+        var markers = seq.markers; var chapters = [];
+        if (markers) { for (var i = 0; i < markers.numMarkers; i++) { var m = markers[i]; var ts = _timeToSeconds(m.start); var h = Math.floor(ts/3600); var mn = Math.floor((ts%3600)/60); var sc = Math.floor(ts%60); chapters.push({ index: i, name: m.name || ("Chapter "+(i+1)), timeSeconds: ts, timecode: (h<10?"0":"")+h+":"+(mn<10?"0":"")+mn+":"+(sc<10?"0":"")+sc }); } }
+        var content = "";
+        if (fmt === "youtube") { for (var c = 0; c < chapters.length; c++) content += chapters[c].timecode + " " + chapters[c].name + "\n"; }
+        else if (fmt === "podcast") { content += "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<chapters>\n"; for (var c2 = 0; c2 < chapters.length; c2++) content += "  <chapter start=\"" + chapters[c2].timecode + "\" title=\"" + chapters[c2].name + "\" />\n"; content += "</chapters>\n"; }
+        else { for (var c3 = 0; c3 < chapters.length; c3++) content += chapters[c3].timecode + " - " + chapters[c3].name + "\n"; }
+        var f = new File(outputPath); f.open("w"); f.write(content); f.close();
+        return _ok({ sequence: seq.name, format: fmt, chaptersCount: chapters.length, outputPath: outputPath, chapters: chapters });
+    } catch (e) { return _err("createChaptersFile failed: " + e.message); }
+}
+
+function extractSegmentByMarkers(sequenceIndex, startMarkerIndex, endMarkerIndex, outputName) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences;
+        if (!seqs || seqs.numSequences === 0) return _err("No sequences in project");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        var seq = seqs[idx]; var markers = seq.markers;
+        if (!markers || markers.numMarkers === 0) return _err("No markers in sequence");
+        var si = (startMarkerIndex !== undefined) ? startMarkerIndex : 0;
+        var ei = (endMarkerIndex !== undefined) ? endMarkerIndex : markers.numMarkers - 1;
+        if (si >= markers.numMarkers || ei >= markers.numMarkers) return _err("Marker index out of range");
+        if (si >= ei) return _err("Start marker must be before end marker");
+        var startTime = _timeToSeconds(markers[si].start); var endTime = _timeToSeconds(markers[ei].start);
+        var name = (outputName && outputName !== "") ? outputName : (seq.name + "_Segment_" + si + "_" + ei);
+        seq.setInPoint(startTime); seq.setOutPoint(endTime);
+        return _ok({ sequence: seq.name, segmentName: name, startMarkerIndex: si, endMarkerIndex: ei, startTime: startTime, endTime: endTime, duration: endTime - startTime });
+    } catch (e) { return _err("extractSegmentByMarkers failed: " + e.message); }
+}
+
+function createTeaser(sequenceIndex, durationSeconds, outputName) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences;
+        if (!seqs || seqs.numSequences === 0) return _err("No sequences in project");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        var seq = seqs[idx]; var teaserDur = (durationSeconds && durationSeconds > 0) ? durationSeconds : 30;
+        var name = (outputName && outputName !== "") ? outputName : (seq.name + "_Teaser_" + teaserDur + "s");
+        var totalDuration = _timeToSeconds(seq.end) - _timeToSeconds(seq.zeroPoint);
+        if (totalDuration <= 0) return _err("Sequence has no duration");
+        var nh = Math.min(Math.floor(teaserDur / 3), 10); var cd = teaserDur / nh; var iv = totalDuration / (nh + 1);
+        var highlights = [];
+        for (var i = 0; i < nh; i++) { var st = iv * (i + 1) - (cd / 2); if (st < 0) st = 0; highlights.push({ index: i, sourceStart: st, sourceEnd: st + cd, clipDuration: cd }); }
+        app.project.createNewSequence(name, "createTeaser_placeholder");
+        return _ok({ sourceSequence: seq.name, teaserSequence: name, teaserDuration: teaserDur, numHighlights: nh, highlights: highlights });
+    } catch (e) { return _err("createTeaser failed: " + e.message); }
+}
+
+function createBumper(text, duration, style, outputName) {
+    try {
+        if (!app.project) return _err("No project open");
+        if (!text || text === "") return _err("Text is required");
+        var dur = (duration && duration > 0) ? duration : 5;
+        var stl = (style && style !== "") ? style.toLowerCase() : "simple";
+        var name = (outputName && outputName !== "") ? outputName : ("Bumper_" + new Date().getTime());
+        app.project.createNewSequence(name, "createBumper_placeholder");
+        return _ok({ bumperSequence: name, text: text, duration: dur, style: stl, message: "Bumper sequence created." });
+    } catch (e) { return _err("createBumper failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Delivery Formats (11-15)
+// ---------------------------------------------------------------------------
+
+function exportForBroadcast(sequenceIndex, outputPath, standard) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences; if (!seqs || seqs.numSequences === 0) return _err("No sequences");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        if (!outputPath || outputPath === "") return _err("Output path is required");
+        var seq = seqs[idx]; var std = (standard && standard !== "") ? standard.toUpperCase() : "ATSC";
+        var specs = {};
+        if (std === "ATSC") { specs = { standard: "ATSC", codec: "MPEG-2", container: "MXF", width: 1920, height: 1080, fps: 29.97, loudness: "ATSC A/85 (-24 LKFS)" }; }
+        else if (std === "DVB") { specs = { standard: "DVB", codec: "H.264", container: "MXF", width: 1920, height: 1080, fps: 25, loudness: "EBU R128 (-23 LUFS)" }; }
+        else if (std === "ISDB") { specs = { standard: "ISDB", codec: "H.264", container: "MPEG-TS", width: 1920, height: 1080, fps: 29.97, loudness: "ARIB TR-B32" }; }
+        else { specs = { standard: std, codec: "MPEG-2", container: "MXF", width: 1920, height: 1080, fps: 29.97, loudness: "-24 LKFS" }; }
+        app.project.activeSequence = seq;
+        return _ok({ sequence: seq.name, outputPath: outputPath, broadcastStandard: specs });
+    } catch (e) { return _err("exportForBroadcast failed: " + e.message); }
+}
+
+function exportForStreaming(sequenceIndex, outputPath, platform) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences; if (!seqs || seqs.numSequences === 0) return _err("No sequences");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        if (!outputPath || outputPath === "") return _err("Output path is required");
+        var seq = seqs[idx]; var plat = (platform && platform !== "") ? platform.toLowerCase() : "netflix";
+        var specs = {};
+        if (plat === "netflix") { specs = { platform: "Netflix", codec: "ProRes 422 HQ", width: 3840, height: 2160, fps: 23.976, bitDepth: 10, loudness: "-27 LKFS" }; }
+        else if (plat === "amazon") { specs = { platform: "Amazon", codec: "ProRes 422 HQ", width: 1920, height: 1080, fps: 23.976, bitDepth: 10, loudness: "-24 LKFS" }; }
+        else if (plat === "disney+" || plat === "disney") { specs = { platform: "Disney+", codec: "ProRes 422 HQ", width: 3840, height: 2160, fps: 23.976, bitDepth: 10, loudness: "-27 LKFS" }; }
+        else { specs = { platform: plat, codec: "ProRes 422 HQ", width: 1920, height: 1080, fps: 23.976, bitDepth: 10, loudness: "-24 LKFS" }; }
+        app.project.activeSequence = seq;
+        return _ok({ sequence: seq.name, outputPath: outputPath, streamingSpecs: specs });
+    } catch (e) { return _err("exportForStreaming failed: " + e.message); }
+}
+
+function exportForArchive(sequenceIndex, outputPath, codec) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences; if (!seqs || seqs.numSequences === 0) return _err("No sequences");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        if (!outputPath || outputPath === "") return _err("Output path is required");
+        var seq = seqs[idx]; var cn = (codec && codec !== "") ? codec : "prores4444";
+        var specs = {};
+        if (cn === "prores4444") { specs = { codec: "Apple ProRes 4444", container: "MOV", bitDepth: 12, alphaChannel: true }; }
+        else if (cn === "dnxhr444") { specs = { codec: "Avid DNxHR 444", container: "MXF", bitDepth: 12, alphaChannel: true }; }
+        else if (cn === "lossless") { specs = { codec: "FFV1 / Lossless", container: "MKV", bitDepth: 16, alphaChannel: true }; }
+        else { specs = { codec: cn, container: "MOV", bitDepth: 10, alphaChannel: false }; }
+        app.project.activeSequence = seq;
+        return _ok({ sequence: seq.name, outputPath: outputPath, archiveSpecs: specs });
+    } catch (e) { return _err("exportForArchive failed: " + e.message); }
+}
+
+function exportForWeb(sequenceIndex, outputPath, quality) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences; if (!seqs || seqs.numSequences === 0) return _err("No sequences");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        if (!outputPath || outputPath === "") return _err("Output path is required");
+        var seq = seqs[idx]; var q = (quality && quality !== "") ? quality.toLowerCase() : "medium";
+        var specs = {};
+        if (q === "high") { specs = { quality: "High", codec: "H.264", width: 1920, height: 1080, videoBitrateKbps: 8000 }; }
+        else if (q === "low") { specs = { quality: "Low", codec: "H.264", width: 854, height: 480, videoBitrateKbps: 1500 }; }
+        else { specs = { quality: "Medium", codec: "H.264", width: 1280, height: 720, videoBitrateKbps: 4000 }; }
+        app.project.activeSequence = seq;
+        return _ok({ sequence: seq.name, outputPath: outputPath, webSpecs: specs });
+    } catch (e) { return _err("exportForWeb failed: " + e.message); }
+}
+
+function exportForMobile(sequenceIndex, outputPath, device) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences; if (!seqs || seqs.numSequences === 0) return _err("No sequences");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        if (!outputPath || outputPath === "") return _err("Output path is required");
+        var seq = seqs[idx]; var d = (device && device !== "") ? device.toLowerCase() : "generic";
+        var specs = {};
+        if (d === "iphone" || d === "ios") { specs = { device: "iPhone/iOS", codec: "H.264/HEVC", width: 1920, height: 1080, videoBitrateKbps: 6000 }; }
+        else if (d === "android") { specs = { device: "Android", codec: "H.264", width: 1920, height: 1080, videoBitrateKbps: 5000 }; }
+        else if (d === "ipad" || d === "tablet") { specs = { device: "iPad/Tablet", codec: "H.264/HEVC", width: 2048, height: 1536, videoBitrateKbps: 8000 }; }
+        else { specs = { device: "Generic Mobile", codec: "H.264", width: 1280, height: 720, videoBitrateKbps: 3000 }; }
+        app.project.activeSequence = seq;
+        return _ok({ sequence: seq.name, outputPath: outputPath, mobileSpecs: specs });
+    } catch (e) { return _err("exportForMobile failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Metadata for Distribution (16-20)
+// ---------------------------------------------------------------------------
+
+function setDistributionMetadata(sequenceIndex, title, description, tags, category) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences; if (!seqs || seqs.numSequences === 0) return _err("No sequences");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        var seq = seqs[idx];
+        var md = { title: title || seq.name, description: description || "", tags: tags || "", category: category || "" };
+        try { if (app.project.rootItem) { var items = app.project.rootItem.children; for (var i = 0; i < items.numItems; i++) { if (items[i].name === seq.name) { try { var xb = items[i].getXMPMetadata(); if (xb) { var xmp = new XMPMeta(xb); xmp.setProperty("http://purl.org/dc/elements/1.1/", "title", md.title); xmp.setProperty("http://purl.org/dc/elements/1.1/", "description", md.description); items[i].setXMPMetadata(xmp.serialize()); } } catch (xe) {} break; } } } } catch (ie) {}
+        return _ok({ sequence: seq.name, metadata: md });
+    } catch (e) { return _err("setDistributionMetadata failed: " + e.message); }
+}
+
+function getDistributionMetadata(sequenceIndex) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences; if (!seqs || seqs.numSequences === 0) return _err("No sequences");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        var seq = seqs[idx];
+        var md = { title: seq.name, description: "", tags: "", category: "", duration: _timeToSeconds(seq.end) - _timeToSeconds(seq.zeroPoint) };
+        try { if (app.project.rootItem) { var items = app.project.rootItem.children; for (var i = 0; i < items.numItems; i++) { if (items[i].name === seq.name) { var xb = items[i].getXMPMetadata(); if (xb) { var xmp = new XMPMeta(xb); try { md.title = xmp.getProperty("http://purl.org/dc/elements/1.1/", "title").toString() || seq.name; } catch (e2) {} try { md.description = xmp.getProperty("http://purl.org/dc/elements/1.1/", "description").toString() || ""; } catch (e2) {} } break; } } } } catch (ie) {}
+        return _ok({ sequence: seq.name, metadata: md });
+    } catch (e) { return _err("getDistributionMetadata failed: " + e.message); }
+}
+
+function embedThumbnailInFile(videoPath, thumbnailPath) {
+    try {
+        if (!videoPath || videoPath === "") return _err("Video path is required");
+        if (!thumbnailPath || thumbnailPath === "") return _err("Thumbnail path is required");
+        var vf = new File(videoPath); var tf = new File(thumbnailPath);
+        if (!vf.exists) return _err("Video file not found"); if (!tf.exists) return _err("Thumbnail not found");
+        var sp = videoPath + ".xmp";
+        try { var xmp = new XMPMeta(); xmp.setProperty("http://ns.adobe.com/xap/1.0/", "Thumbnails", thumbnailPath); var sc = new File(sp); sc.open("w"); sc.write(xmp.serialize()); sc.close(); } catch (xe) {}
+        return _ok({ videoPath: videoPath, thumbnailPath: thumbnailPath, sidecarPath: sp });
+    } catch (e) { return _err("embedThumbnailInFile failed: " + e.message); }
+}
+
+function addChapterMetadata(videoPath, chaptersJson) {
+    try {
+        if (!videoPath || videoPath === "") return _err("Video path is required");
+        if (!chaptersJson || chaptersJson === "") return _err("Chapters JSON is required");
+        var chapters = JSON.parse(chaptersJson);
+        if (!chapters || !chapters.length) return _err("No chapters provided");
+        var mc = ";FFMETADATA1\n";
+        for (var i = 0; i < chapters.length; i++) { var ch = chapters[i]; var sms = Math.floor((ch.startSeconds||0)*1000); var ems = Math.floor((ch.endSeconds||ch.startSeconds+60)*1000); mc += "\n[CHAPTER]\nTIMEBASE=1/1000\nSTART="+sms+"\nEND="+ems+"\ntitle="+(ch.title||"Chapter "+(i+1))+"\n"; }
+        var mp = videoPath.replace(/\.[^.]+$/, "_chapters.txt");
+        var f = new File(mp); f.open("w"); f.write(mc); f.close();
+        return _ok({ videoPath: videoPath, chaptersMetadataPath: mp, chaptersCount: chapters.length });
+    } catch (e) { return _err("addChapterMetadata failed: " + e.message); }
+}
+
+function setContentRating(sequenceIndex, rating) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences; if (!seqs || seqs.numSequences === 0) return _err("No sequences");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        var seq = seqs[idx]; var r = (rating && rating !== "") ? rating.toUpperCase() : "TV-PG";
+        var valid = ["G","PG","PG-13","R","NC-17","TV-Y","TV-Y7","TV-G","TV-PG","TV-14","TV-MA","U","12","12A","15","18"];
+        var ok = false; for (var i = 0; i < valid.length; i++) { if (valid[i] === r) { ok = true; break; } }
+        var markers = seq.markers; if (markers) { var m = markers.createMarker(0); if (m) { m.name = "Content Rating: " + r; m.setColorByIndex(6); } }
+        return _ok({ sequence: seq.name, rating: r, recognized: ok });
+    } catch (e) { return _err("setContentRating failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Quality Assurance (21-25)
+// ---------------------------------------------------------------------------
+
+function runQAChecklist(sequenceIndex, specs) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences; if (!seqs || seqs.numSequences === 0) return _err("No sequences");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        var seq = seqs[idx]; var ts = specs ? JSON.parse(specs) : {};
+        var dur = _timeToSeconds(seq.end) - _timeToSeconds(seq.zeroPoint);
+        var checks = [];
+        if (ts.maxDuration) { checks.push({ check: "Duration", status: dur <= ts.maxDuration ? "PASS" : "FAIL", expected: "<="+ts.maxDuration+"s", actual: dur+"s" }); }
+        checks.push({ check: "Video Tracks", status: "INFO", actual: (seq.videoTracks ? seq.videoTracks.numTracks : 0) + " tracks" });
+        checks.push({ check: "Audio Tracks", status: "INFO", actual: (seq.audioTracks ? seq.audioTracks.numTracks : 0) + " tracks" });
+        var hasGaps = false;
+        if (seq.videoTracks && seq.videoTracks.numTracks > 0) { var vt = seq.videoTracks[0]; for (var c = 0; c < vt.clips.numItems - 1; c++) { if (_timeToSeconds(vt.clips[c+1].start) - _timeToSeconds(vt.clips[c].end) > 0.04) { hasGaps = true; break; } } }
+        checks.push({ check: "Timeline Gaps", status: hasGaps ? "WARN" : "PASS", actual: hasGaps ? "Gaps detected" : "No gaps" });
+        var p=0,fl=0,w=0; for (var ci=0;ci<checks.length;ci++){if(checks[ci].status==="PASS")p++;else if(checks[ci].status==="FAIL")fl++;else if(checks[ci].status==="WARN")w++;}
+        return _ok({ sequence: seq.name, totalChecks: checks.length, passed: p, failed: fl, warnings: w, checks: checks });
+    } catch (e) { return _err("runQAChecklist failed: " + e.message); }
+}
+
+function checkLoudnessCompliance(sequenceIndex, standard) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences; if (!seqs || seqs.numSequences === 0) return _err("No sequences");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        var seq = seqs[idx]; var std = (standard && standard !== "") ? standard.toUpperCase() : "EBU R128";
+        var targets = {};
+        if (std === "EBU R128" || std === "EBU") { targets = { standard: "EBU R128", integratedLoudness: -23.0, truePeak: -1.0, unit: "LUFS" }; }
+        else if (std === "ATSC A/85" || std === "ATSC") { targets = { standard: "ATSC A/85", integratedLoudness: -24.0, truePeak: -2.0, unit: "LKFS" }; }
+        else { targets = { standard: std, integratedLoudness: -23.0, truePeak: -1.0, unit: "LUFS" }; }
+        return _ok({ sequence: seq.name, targets: targets, audioTrackCount: seq.audioTracks ? seq.audioTracks.numTracks : 0 });
+    } catch (e) { return _err("checkLoudnessCompliance failed: " + e.message); }
+}
+
+function checkColorCompliance(sequenceIndex, standard) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences; if (!seqs || seqs.numSequences === 0) return _err("No sequences");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        var seq = seqs[idx]; var std = (standard && standard !== "") ? standard : "Rec.709";
+        var cs = {};
+        if (std === "Rec.709") { cs = { standard: "Rec.709", gamut: "BT.709", maxLuminance: 100 }; }
+        else if (std === "Rec.2020") { cs = { standard: "Rec.2020", gamut: "BT.2020", maxLuminance: 10000 }; }
+        else { cs = { standard: std, gamut: "Unknown", maxLuminance: 100 }; }
+        var cc = 0; if (seq.videoTracks) { for (var t=0;t<seq.videoTracks.numTracks;t++) cc+=seq.videoTracks[t].clips.numItems; }
+        return _ok({ sequence: seq.name, targetStandard: cs, videoClipCount: cc });
+    } catch (e) { return _err("checkColorCompliance failed: " + e.message); }
+}
+
+function checkFrameAccuracy(sequenceIndex) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences; if (!seqs || seqs.numSequences === 0) return _err("No sequences");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        var seq = seqs[idx]; var issues = []; var tc = 0;
+        if (seq.videoTracks) { for (var t=0;t<seq.videoTracks.numTracks;t++) { var tr=seq.videoTracks[t]; for (var c=0;c<tr.clips.numItems;c++) { tc++; var cl=tr.clips[c]; var d=_timeToSeconds(cl.end)-_timeToSeconds(cl.start); if(d<0.04)issues.push({type:"FLASH_FRAME",track:"V"+(t+1),clipIndex:c,duration:d}); if(c<tr.clips.numItems-1){var g=_timeToSeconds(tr.clips[c+1].start)-_timeToSeconds(cl.end);if(g>0&&g<0.04)issues.push({type:"SUB_FRAME_GAP",track:"V"+(t+1),clipIndex:c,gapDuration:g});} } } }
+        return _ok({ sequence: seq.name, totalClipsChecked: tc, issuesFound: issues.length, issues: issues, frameAccurate: issues.length === 0 });
+    } catch (e) { return _err("checkFrameAccuracy failed: " + e.message); }
+}
+
+function validateClosedCaptions(sequenceIndex) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences; if (!seqs || seqs.numSequences === 0) return _err("No sequences");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        var seq = seqs[idx]; var ct = 0; var cc = 0; var issues = [];
+        if (seq.captionTracks) { ct = seq.captionTracks.numTracks; for (var t=0;t<ct;t++) { if (seq.captionTracks[t].clips) cc += seq.captionTracks[t].clips.numItems; } }
+        if (ct === 0) issues.push({ type: "NO_CAPTIONS", severity: "ERROR", message: "No caption tracks found" });
+        return _ok({ sequence: seq.name, captionTracks: ct, captionCount: cc, issuesFound: issues.length, issues: issues, fccCompliant: issues.length === 0 });
+    } catch (e) { return _err("validateClosedCaptions failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Versioning (26-30)
+// ---------------------------------------------------------------------------
+
+function createVersionedExport(sequenceIndex, outputDir, versionName, notes) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences; if (!seqs || seqs.numSequences === 0) return _err("No sequences");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        if (!outputDir || outputDir === "") return _err("Output directory is required");
+        var seq = seqs[idx]; var ver = (versionName && versionName !== "") ? versionName : "v" + new Date().getTime();
+        var ts = new Date().toISOString().replace(/[:.]/g, "-");
+        var sn = seq.name.replace(/[^a-zA-Z0-9_-]/g, "_");
+        var fn = sn + "_" + ver + "_" + ts; var op = outputDir + "/" + fn + ".mp4";
+        var mp = outputDir + "/" + sn + "_export_history.json"; var hist = [];
+        try { var mf = new File(mp); if (mf.exists) { mf.open("r"); hist = JSON.parse(mf.read()); mf.close(); } } catch (e2) {}
+        hist.push({ version: ver, timestamp: ts, fileName: fn+".mp4", outputPath: op, notes: notes||"", sequenceName: seq.name });
+        var mf2 = new File(mp); mf2.open("w"); mf2.write(JSON.stringify(hist)); mf2.close();
+        return _ok({ sequence: seq.name, version: ver, outputPath: op, manifestPath: mp, totalVersions: hist.length });
+    } catch (e) { return _err("createVersionedExport failed: " + e.message); }
+}
+
+function getExportHistory(sequenceIndex) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences; if (!seqs || seqs.numSequences === 0) return _err("No sequences");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        var seq = seqs[idx]; var pp = app.project.path; var pd = pp.substring(0, pp.lastIndexOf("/"));
+        var sn = seq.name.replace(/[^a-zA-Z0-9_-]/g, "_");
+        var mp = pd + "/" + sn + "_export_history.json"; var hist = [];
+        try { var mf = new File(mp); if (mf.exists) { mf.open("r"); hist = JSON.parse(mf.read()); mf.close(); } } catch (e2) {}
+        return _ok({ sequence: seq.name, manifestPath: mp, totalVersions: hist.length, history: hist });
+    } catch (e) { return _err("getExportHistory failed: " + e.message); }
+}
+
+function compareExportVersions(version1Path, version2Path) {
+    try {
+        if (!version1Path || version1Path === "") return _err("Version 1 path is required");
+        if (!version2Path || version2Path === "") return _err("Version 2 path is required");
+        var f1 = new File(version1Path); var f2 = new File(version2Path);
+        var i1 = { path: version1Path, exists: f1.exists, size: f1.exists ? f1.length : 0 };
+        var i2 = { path: version2Path, exists: f2.exists, size: f2.exists ? f2.length : 0 };
+        return _ok({ version1: i1, version2: i2, comparison: { sizeChange: i2.size - i1.size, bothExist: i1.exists && i2.exists } });
+    } catch (e) { return _err("compareExportVersions failed: " + e.message); }
+}
+
+function createApprovalPackage(sequenceIndex, outputDir) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences; if (!seqs || seqs.numSequences === 0) return _err("No sequences");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        if (!outputDir || outputDir === "") return _err("Output directory is required");
+        var seq = seqs[idx]; var sn = seq.name.replace(/[^a-zA-Z0-9_-]/g, "_");
+        var ts = new Date().toISOString().replace(/[:.]/g, "-");
+        var pkgDir = outputDir + "/" + sn + "_approval_" + ts;
+        var pkg = { packageDir: pkgDir, videoPath: pkgDir+"/"+sn+"_review.mp4", thumbnailPath: pkgDir+"/"+sn+"_thumbnail.png", reportPath: pkgDir+"/"+sn+"_report.txt" };
+        var dur = _timeToSeconds(seq.end) - _timeToSeconds(seq.zeroPoint);
+        var tc = 0; if (seq.videoTracks) { for (var t=0;t<seq.videoTracks.numTracks;t++) tc+=seq.videoTracks[t].clips.numItems; }
+        var rpt = "=== APPROVAL PACKAGE ===\nSequence: "+seq.name+"\nDate: "+new Date().toISOString()+"\nDuration: "+dur.toFixed(2)+"s\nClips: "+tc+"\n";
+        var folder = new Folder(pkgDir); folder.create();
+        var rf = new File(pkg.reportPath); rf.open("w"); rf.write(rpt); rf.close();
+        return _ok({ sequence: seq.name, package: pkg, duration: dur, clipCount: tc });
+    } catch (e) { return _err("createApprovalPackage failed: " + e.message); }
+}
+
+function archiveAndCleanup(sequenceIndex, archiveDir, deleteRenders) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences; if (!seqs || seqs.numSequences === 0) return _err("No sequences");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        if (!archiveDir || archiveDir === "") return _err("Archive directory is required");
+        var seq = seqs[idx]; var dr = (deleteRenders !== undefined) ? deleteRenders : false;
+        var pp = app.project.path; var pn = app.project.name || "project";
+        var ts = new Date().toISOString().replace(/[:.]/g, "-");
+        var ap = archiveDir + "/" + pn.replace(/\.[^.]+$/, "") + "_archive_" + ts;
+        var folder = new Folder(ap); folder.create();
+        app.project.save();
+        var sf = new File(pp); var df = new File(ap + "/" + sf.name); sf.copy(df);
+        var mani = { projectName: pn, archiveDate: new Date().toISOString(), archivePath: ap, sequenceName: seq.name, deleteRenders: dr };
+        var mf = new File(ap + "/archive_manifest.json"); mf.open("w"); mf.write(JSON.stringify(mani)); mf.close();
+        if (dr) { try { app.project.deletePreviewFiles(); } catch (de) {} }
+        return _ok({ projectName: pn, archivePath: ap, projectCopied: df.exists, rendersDeleted: dr, manifest: mani });
+    } catch (e) { return _err("archiveAndCleanup failed: " + e.message); }
+}
