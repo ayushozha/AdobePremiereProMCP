@@ -6421,3 +6421,700 @@ function getMediaCachePath() {
         return _err("getMediaCachePath failed: " + e.message);
     }
 }
+
+// ===========================================================================
+// Advanced Editing Functions
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Advanced Trimming
+// ---------------------------------------------------------------------------
+
+function rippleTrim(trackType, trackIndex, clipIndex, trimEnd, deltaSeconds) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase();
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        clipIndex = parseInt(clipIndex, 10) || 0;
+        trimEnd = (trimEnd === true || trimEnd === "true" || trimEnd === 1);
+        deltaSeconds = parseFloat(deltaSeconds) || 0;
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex >= tracks.numTracks) return _err("Track index " + trackIndex + " out of range");
+        var track = tracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index " + clipIndex + " out of range");
+        var clip = track.clips[clipIndex];
+        var oldEnd = _timeToSeconds(clip.end);
+        var oldStart = _timeToSeconds(clip.start);
+        if (trimEnd) {
+            clip.end = _secondsToTime(oldEnd + deltaSeconds);
+            for (var i = clipIndex + 1; i < track.clips.numItems; i++) {
+                var c = track.clips[i];
+                c.start = _secondsToTime(_timeToSeconds(c.start) + deltaSeconds);
+                c.end = _secondsToTime(_timeToSeconds(c.end) + deltaSeconds);
+            }
+        } else {
+            clip.start = _secondsToTime(oldStart + deltaSeconds);
+            clip.inPoint = _secondsToTime(_timeToSeconds(clip.inPoint) + deltaSeconds);
+            for (var j = clipIndex + 1; j < track.clips.numItems; j++) {
+                var c2 = track.clips[j];
+                c2.start = _secondsToTime(_timeToSeconds(c2.start) + deltaSeconds);
+                c2.end = _secondsToTime(_timeToSeconds(c2.end) + deltaSeconds);
+            }
+        }
+        return _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, trimEnd: trimEnd, deltaSeconds: deltaSeconds, newStart: _timeToSeconds(clip.start), newEnd: _timeToSeconds(clip.end) });
+    } catch (e) { return _err("rippleTrim failed: " + e.message); }
+}
+
+function rollTrim(trackType, trackIndex, clipIndex, deltaSeconds) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase();
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        clipIndex = parseInt(clipIndex, 10) || 0;
+        deltaSeconds = parseFloat(deltaSeconds) || 0;
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex >= tracks.numTracks) return _err("Track index " + trackIndex + " out of range");
+        var track = tracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index " + clipIndex + " out of range");
+        if (clipIndex + 1 >= track.clips.numItems) return _err("No next clip to roll trim against");
+        var clipA = track.clips[clipIndex];
+        var clipB = track.clips[clipIndex + 1];
+        var newEditPoint = _timeToSeconds(clipA.end) + deltaSeconds;
+        clipA.end = _secondsToTime(newEditPoint);
+        clipA.outPoint = _secondsToTime(_timeToSeconds(clipA.outPoint) + deltaSeconds);
+        clipB.start = _secondsToTime(newEditPoint);
+        clipB.inPoint = _secondsToTime(_timeToSeconds(clipB.inPoint) + deltaSeconds);
+        return _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, deltaSeconds: deltaSeconds, editPoint: newEditPoint, clipAEnd: _timeToSeconds(clipA.end), clipBStart: _timeToSeconds(clipB.start) });
+    } catch (e) { return _err("rollTrim failed: " + e.message); }
+}
+
+function slipClip(trackType, trackIndex, clipIndex, deltaSeconds) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase();
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        clipIndex = parseInt(clipIndex, 10) || 0;
+        deltaSeconds = parseFloat(deltaSeconds) || 0;
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex >= tracks.numTracks) return _err("Track index " + trackIndex + " out of range");
+        var track = tracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index " + clipIndex + " out of range");
+        var clip = track.clips[clipIndex];
+        var newIn = _timeToSeconds(clip.inPoint) + deltaSeconds;
+        var newOut = _timeToSeconds(clip.outPoint) + deltaSeconds;
+        clip.inPoint = _secondsToTime(newIn);
+        clip.outPoint = _secondsToTime(newOut);
+        return _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, deltaSeconds: deltaSeconds, newInPoint: newIn, newOutPoint: newOut });
+    } catch (e) { return _err("slipClip failed: " + e.message); }
+}
+
+function slideClip(trackType, trackIndex, clipIndex, deltaSeconds) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase();
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        clipIndex = parseInt(clipIndex, 10) || 0;
+        deltaSeconds = parseFloat(deltaSeconds) || 0;
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex >= tracks.numTracks) return _err("Track index " + trackIndex + " out of range");
+        var track = tracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index " + clipIndex + " out of range");
+        if (clipIndex < 1 || clipIndex + 1 >= track.clips.numItems) return _err("slideClip requires clips on both sides");
+        var prevClip = track.clips[clipIndex - 1];
+        var clip = track.clips[clipIndex];
+        var nextClip = track.clips[clipIndex + 1];
+        clip.start = _secondsToTime(_timeToSeconds(clip.start) + deltaSeconds);
+        clip.end = _secondsToTime(_timeToSeconds(clip.end) + deltaSeconds);
+        prevClip.end = _secondsToTime(_timeToSeconds(prevClip.end) + deltaSeconds);
+        prevClip.outPoint = _secondsToTime(_timeToSeconds(prevClip.outPoint) + deltaSeconds);
+        nextClip.start = _secondsToTime(_timeToSeconds(nextClip.start) + deltaSeconds);
+        nextClip.inPoint = _secondsToTime(_timeToSeconds(nextClip.inPoint) + deltaSeconds);
+        return _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, deltaSeconds: deltaSeconds, newStart: _timeToSeconds(clip.start), newEnd: _timeToSeconds(clip.end) });
+    } catch (e) { return _err("slideClip failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Paste Operations
+// ---------------------------------------------------------------------------
+
+function pasteInsert(trackType, trackIndex, time) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase();
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        time = parseFloat(time) || 0;
+        seq.setPlayerPosition(_secondsToTime(time).ticks);
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (qeSeq) { qeSeq.pasteInsert(); }
+        else { return _err("QE DOM not available for paste insert"); }
+        return _ok({ trackType: trackType, trackIndex: trackIndex, pasteTime: time });
+    } catch (e) { return _err("pasteInsert failed: " + e.message); }
+}
+
+function pasteAttributes(srcTrackType, srcTrackIndex, srcClipIndex, destTrackType, destTrackIndex, destClipIndex, attributes) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        srcTrackType = String(srcTrackType || "video").toLowerCase();
+        srcTrackIndex = parseInt(srcTrackIndex, 10) || 0;
+        srcClipIndex = parseInt(srcClipIndex, 10) || 0;
+        destTrackType = String(destTrackType || "video").toLowerCase();
+        destTrackIndex = parseInt(destTrackIndex, 10) || 0;
+        destClipIndex = parseInt(destClipIndex, 10) || 0;
+        var attrList;
+        if (typeof attributes === "string") { try { attrList = JSON.parse(attributes); } catch (_) { attrList = attributes.split(","); } }
+        else if (attributes instanceof Array) { attrList = attributes; }
+        else { attrList = ["motion", "opacity", "effects"]; }
+        var srcTracks = (srcTrackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        var destTracks = (destTrackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (srcTrackIndex >= srcTracks.numTracks) return _err("Source track index out of range");
+        if (destTrackIndex >= destTracks.numTracks) return _err("Dest track index out of range");
+        var srcTrack = srcTracks[srcTrackIndex];
+        var destTrack = destTracks[destTrackIndex];
+        if (!srcTrack.clips || srcClipIndex >= srcTrack.clips.numItems) return _err("Source clip index out of range");
+        if (!destTrack.clips || destClipIndex >= destTrack.clips.numItems) return _err("Dest clip index out of range");
+        var srcClip = srcTrack.clips[srcClipIndex];
+        var destClip = destTrack.clips[destClipIndex];
+        var applied = [];
+        for (var a = 0; a < attrList.length; a++) {
+            var attr = String(attrList[a]).replace(/^\s+|\s+$/g, "").toLowerCase();
+            if (attr === "motion" && srcClip.components && srcClip.components.numItems > 0 && destClip.components && destClip.components.numItems > 0) {
+                var srcM = srcClip.components[0]; var destM = destClip.components[0];
+                for (var p = 0; p < srcM.properties.numItems && p < destM.properties.numItems; p++) { try { destM.properties[p].setValue(srcM.properties[p].getValue(), true); } catch (me) {} }
+                applied.push("motion");
+            } else if (attr === "opacity" && srcClip.components && srcClip.components.numItems > 1 && destClip.components && destClip.components.numItems > 1) {
+                var srcO = srcClip.components[1]; var destO = destClip.components[1];
+                for (var q = 0; q < srcO.properties.numItems && q < destO.properties.numItems; q++) { try { destO.properties[q].setValue(srcO.properties[q].getValue(), true); } catch (oe) {} }
+                applied.push("opacity");
+            } else if (attr === "effects") {
+                for (var ei = 2; ei < srcClip.components.numItems; ei++) {
+                    if (destClip.components.numItems > ei) {
+                        var sc = srcClip.components[ei]; var dc = destClip.components[ei];
+                        for (var pi = 0; pi < sc.properties.numItems && pi < dc.properties.numItems; pi++) { try { dc.properties[pi].setValue(sc.properties[pi].getValue(), true); } catch (epe) {} }
+                    }
+                }
+                applied.push("effects");
+            } else if (attr === "audio" && srcClip.components && destClip.components && srcClip.components.numItems > 0 && destClip.components.numItems > 0) {
+                var srcA = srcClip.components[0]; var destA = destClip.components[0];
+                for (var ap = 0; ap < srcA.properties.numItems && ap < destA.properties.numItems; ap++) { try { destA.properties[ap].setValue(srcA.properties[ap].getValue(), true); } catch (ae) {} }
+                applied.push("audio");
+            } else if (attr === "speed") { applied.push("speed (manual matching required)"); }
+        }
+        return _ok({ srcTrackType: srcTrackType, srcTrackIndex: srcTrackIndex, srcClipIndex: srcClipIndex, destTrackType: destTrackType, destTrackIndex: destTrackIndex, destClipIndex: destClipIndex, appliedAttributes: applied });
+    } catch (e) { return _err("pasteAttributes failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Match Frame
+// ---------------------------------------------------------------------------
+
+function matchFrame() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var playerPos = seq.getPlayerPosition();
+        var posSec = _timeToSeconds(playerPos);
+        var matchedClip = null; var matchedTrack = -1; var matchedClipIndex = -1;
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            if (!track.clips) continue;
+            for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                if (posSec >= _timeToSeconds(clip.start) && posSec < _timeToSeconds(clip.end)) { matchedClip = clip; matchedTrack = t; matchedClipIndex = c; break; }
+            }
+            if (matchedClip) break;
+        }
+        if (!matchedClip) return _err("No clip found at playhead position");
+        var offsetInClip = posSec - _timeToSeconds(matchedClip.start);
+        var sourceTime = _timeToSeconds(matchedClip.inPoint) + offsetInClip;
+        if (matchedClip.projectItem && app.sourceMonitor) { app.sourceMonitor.openProjectItem(matchedClip.projectItem); app.sourceMonitor.play(0); }
+        return _ok({ timelinePosition: posSec, sourceTime: sourceTime, clipName: matchedClip.name || "", trackIndex: matchedTrack, clipIndex: matchedClipIndex, inPoint: _timeToSeconds(matchedClip.inPoint), outPoint: _timeToSeconds(matchedClip.outPoint) });
+    } catch (e) { return _err("matchFrame failed: " + e.message); }
+}
+
+function reverseMatchFrame() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var sourcePos = 0;
+        if (app.sourceMonitor && app.sourceMonitor.position) { sourcePos = _timeToSeconds(app.sourceMonitor.position); }
+        var found = false; var resultObj = {};
+        for (var t = 0; t < seq.videoTracks.numTracks && !found; t++) {
+            var track = seq.videoTracks[t]; if (!track.clips) continue;
+            for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                var inPt = _timeToSeconds(clip.inPoint); var outPt = _timeToSeconds(clip.outPoint);
+                if (sourcePos >= inPt && sourcePos < outPt) { resultObj = { sourcePosition: sourcePos, timelinePosition: _timeToSeconds(clip.start) + (sourcePos - inPt), clipName: clip.name || "", trackType: "video", trackIndex: t, clipIndex: c }; found = true; break; }
+            }
+        }
+        if (!found) {
+            for (var at7 = 0; at7 < seq.audioTracks.numTracks && !found; at7++) {
+                var atrack = seq.audioTracks[at7]; if (!atrack.clips) continue;
+                for (var ac7 = 0; ac7 < atrack.clips.numItems; ac7++) {
+                    var aclip = atrack.clips[ac7];
+                    var aIn = _timeToSeconds(aclip.inPoint); var aOut = _timeToSeconds(aclip.outPoint);
+                    if (sourcePos >= aIn && sourcePos < aOut) { resultObj = { sourcePosition: sourcePos, timelinePosition: _timeToSeconds(aclip.start) + (sourcePos - aIn), clipName: aclip.name || "", trackType: "audio", trackIndex: at7, clipIndex: ac7 }; found = true; break; }
+                }
+            }
+        }
+        if (!found) return _err("No matching clip found for source position");
+        return _ok(resultObj);
+    } catch (e) { return _err("reverseMatchFrame failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Lift & Extract
+// ---------------------------------------------------------------------------
+
+function liftSelection() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var inPt = _timeToSeconds(seq.getInPoint());
+        var outPt = _timeToSeconds(seq.getOutPoint());
+        if (inPt >= outPt) return _err("In point must be before out point");
+        var lifted = [];
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t]; if (!track.clips) continue;
+            for (var c = track.clips.numItems - 1; c >= 0; c--) {
+                var clip = track.clips[c];
+                var cs = _timeToSeconds(clip.start); var ce = _timeToSeconds(clip.end);
+                if (cs >= inPt && ce <= outPt) { clip.remove(false, true); lifted.push({ trackType: "video", trackIndex: t, clipIndex: c, name: clip.name || "" }); }
+                else if (cs < outPt && ce > inPt) { if (cs < inPt) { clip.end = _secondsToTime(inPt); } else { clip.start = _secondsToTime(outPt); clip.inPoint = _secondsToTime(_timeToSeconds(clip.inPoint) + (outPt - cs)); } lifted.push({ trackType: "video", trackIndex: t, clipIndex: c, name: clip.name || "", partial: true }); }
+            }
+        }
+        for (var at8 = 0; at8 < seq.audioTracks.numTracks; at8++) {
+            var atrack = seq.audioTracks[at8]; if (!atrack.clips) continue;
+            for (var ac8 = atrack.clips.numItems - 1; ac8 >= 0; ac8--) {
+                var aclip = atrack.clips[ac8];
+                var acs = _timeToSeconds(aclip.start); var ace = _timeToSeconds(aclip.end);
+                if (acs >= inPt && ace <= outPt) { aclip.remove(false, true); lifted.push({ trackType: "audio", trackIndex: at8, clipIndex: ac8, name: aclip.name || "" }); }
+                else if (acs < outPt && ace > inPt) { if (acs < inPt) { aclip.end = _secondsToTime(inPt); } else { aclip.start = _secondsToTime(outPt); aclip.inPoint = _secondsToTime(_timeToSeconds(aclip.inPoint) + (outPt - acs)); } lifted.push({ trackType: "audio", trackIndex: at8, clipIndex: ac8, name: aclip.name || "", partial: true }); }
+            }
+        }
+        return _ok({ inPoint: inPt, outPoint: outPt, liftedClips: lifted });
+    } catch (e) { return _err("liftSelection failed: " + e.message); }
+}
+
+function extractSelection() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var inPt = _timeToSeconds(seq.getInPoint());
+        var outPt = _timeToSeconds(seq.getOutPoint());
+        if (inPt >= outPt) return _err("In point must be before out point");
+        var duration = outPt - inPt;
+        var extracted = [];
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t]; if (!track.clips) continue;
+            for (var c = track.clips.numItems - 1; c >= 0; c--) {
+                var clip = track.clips[c];
+                var cs = _timeToSeconds(clip.start); var ce = _timeToSeconds(clip.end);
+                if (cs >= inPt && ce <= outPt) { clip.remove(true, true); extracted.push({ trackType: "video", trackIndex: t, clipIndex: c, name: clip.name || "" }); }
+                else if (cs >= outPt) { clip.start = _secondsToTime(cs - duration); clip.end = _secondsToTime(ce - duration); }
+            }
+        }
+        for (var at9 = 0; at9 < seq.audioTracks.numTracks; at9++) {
+            var atrack = seq.audioTracks[at9]; if (!atrack.clips) continue;
+            for (var ac9 = atrack.clips.numItems - 1; ac9 >= 0; ac9--) {
+                var aclip = atrack.clips[ac9];
+                var acs = _timeToSeconds(aclip.start); var ace = _timeToSeconds(aclip.end);
+                if (acs >= inPt && ace <= outPt) { aclip.remove(true, true); extracted.push({ trackType: "audio", trackIndex: at9, clipIndex: ac9, name: aclip.name || "" }); }
+                else if (acs >= outPt) { aclip.start = _secondsToTime(acs - duration); aclip.end = _secondsToTime(ace - duration); }
+            }
+        }
+        return _ok({ inPoint: inPt, outPoint: outPt, extractedClips: extracted, gapClosed: true });
+    } catch (e) { return _err("extractSelection failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Gap Management
+// ---------------------------------------------------------------------------
+
+function findGaps(trackType, trackIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase();
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex >= tracks.numTracks) return _err("Track index " + trackIndex + " out of range");
+        var track = tracks[trackIndex];
+        var gaps = [];
+        if (!track.clips || track.clips.numItems === 0) return _ok({ trackType: trackType, trackIndex: trackIndex, gaps: [], gapCount: 0 });
+        var firstStart = _timeToSeconds(track.clips[0].start);
+        if (firstStart > 0.001) { gaps.push({ index: 0, startTime: 0, endTime: firstStart, duration: firstStart }); }
+        for (var i = 0; i < track.clips.numItems - 1; i++) {
+            var clipEnd = _timeToSeconds(track.clips[i].end);
+            var nextStart = _timeToSeconds(track.clips[i + 1].start);
+            if (nextStart - clipEnd > 0.001) { gaps.push({ index: gaps.length, startTime: clipEnd, endTime: nextStart, duration: nextStart - clipEnd }); }
+        }
+        return _ok({ trackType: trackType, trackIndex: trackIndex, gaps: gaps, gapCount: gaps.length });
+    } catch (e) { return _err("findGaps failed: " + e.message); }
+}
+
+function closeGap(trackType, trackIndex, gapIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase();
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        gapIndex = parseInt(gapIndex, 10) || 0;
+        var gapsResult = JSON.parse(findGaps(trackType, trackIndex));
+        if (!gapsResult.success) return _err(gapsResult.error);
+        var gapsList = gapsResult.data.gaps;
+        if (gapIndex < 0 || gapIndex >= gapsList.length) return _err("Gap index " + gapIndex + " out of range");
+        var gap = gapsList[gapIndex];
+        var gapDuration = gap.duration;
+        var gapEnd = gap.endTime;
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        var track = tracks[trackIndex];
+        for (var i = 0; i < track.clips.numItems; i++) {
+            var clip = track.clips[i]; var cs = _timeToSeconds(clip.start);
+            if (cs >= gapEnd - 0.001) { clip.start = _secondsToTime(cs - gapDuration); clip.end = _secondsToTime(_timeToSeconds(clip.end) - gapDuration); }
+        }
+        return _ok({ trackType: trackType, trackIndex: trackIndex, gapIndex: gapIndex, gapStart: gap.startTime, gapDuration: gapDuration, closed: true });
+    } catch (e) { return _err("closeGap failed: " + e.message); }
+}
+
+function closeAllGaps(trackType, trackIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase();
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex >= tracks.numTracks) return _err("Track index " + trackIndex + " out of range");
+        var track = tracks[trackIndex];
+        if (!track.clips || track.clips.numItems === 0) return _ok({ trackType: trackType, trackIndex: trackIndex, gapsClosed: 0 });
+        var closedCount = 0; var nextStart = 0;
+        for (var i = 0; i < track.clips.numItems; i++) {
+            var clip = track.clips[i]; var cs = _timeToSeconds(clip.start); var ce = _timeToSeconds(clip.end); var dur = ce - cs;
+            if (cs > nextStart + 0.001) { clip.start = _secondsToTime(nextStart); clip.end = _secondsToTime(nextStart + dur); closedCount++; }
+            nextStart = _timeToSeconds(clip.end);
+        }
+        return _ok({ trackType: trackType, trackIndex: trackIndex, gapsClosed: closedCount });
+    } catch (e) { return _err("closeAllGaps failed: " + e.message); }
+}
+
+function rippleDeleteGap(trackType, trackIndex, startTime, endTime) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase();
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        startTime = parseFloat(startTime) || 0; endTime = parseFloat(endTime) || 0;
+        if (startTime >= endTime) return _err("startTime must be less than endTime");
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex >= tracks.numTracks) return _err("Track index " + trackIndex + " out of range");
+        var track = tracks[trackIndex];
+        var duration = endTime - startTime; var removed = [];
+        for (var i = track.clips.numItems - 1; i >= 0; i--) {
+            var clip = track.clips[i]; var cs = _timeToSeconds(clip.start); var ce = _timeToSeconds(clip.end);
+            if (cs >= startTime && ce <= endTime) { clip.remove(true, true); removed.push(i); }
+        }
+        for (var j = 0; j < track.clips.numItems; j++) {
+            var c = track.clips[j]; var cStart = _timeToSeconds(c.start);
+            if (cStart >= endTime - 0.001) { c.start = _secondsToTime(cStart - duration); c.end = _secondsToTime(_timeToSeconds(c.end) - duration); }
+        }
+        return _ok({ trackType: trackType, trackIndex: trackIndex, startTime: startTime, endTime: endTime, duration: duration, removedClipIndices: removed });
+    } catch (e) { return _err("rippleDeleteGap failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Clip Grouping
+// ---------------------------------------------------------------------------
+
+function groupClips(clipRefsJson) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var clipRefs;
+        if (typeof clipRefsJson === "string") { clipRefs = JSON.parse(clipRefsJson); } else { clipRefs = clipRefsJson; }
+        if (!clipRefs || clipRefs.length < 2) return _err("At least two clip references required");
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) { var vt = seq.videoTracks[t]; if (vt.clips) { for (var vc = 0; vc < vt.clips.numItems; vc++) { vt.clips[vc].setSelected(false, true); } } }
+        for (var at10 = 0; at10 < seq.audioTracks.numTracks; at10++) { var aTr = seq.audioTracks[at10]; if (aTr.clips) { for (var ac10 = 0; ac10 < aTr.clips.numItems; ac10++) { aTr.clips[ac10].setSelected(false, true); } } }
+        var grouped = [];
+        for (var r = 0; r < clipRefs.length; r++) {
+            var ref = clipRefs[r]; var tType = String(ref.trackType || "video").toLowerCase(); var tIdx = parseInt(ref.trackIndex, 10) || 0; var cIdx = parseInt(ref.clipIndex, 10) || 0;
+            var trks = (tType === "audio") ? seq.audioTracks : seq.videoTracks;
+            if (tIdx < trks.numTracks && trks[tIdx].clips && cIdx < trks[tIdx].clips.numItems) { trks[tIdx].clips[cIdx].setSelected(true, true); grouped.push({ trackType: tType, trackIndex: tIdx, clipIndex: cIdx, name: trks[tIdx].clips[cIdx].name || "" }); }
+        }
+        app.enableQE(); var qeSeq = qe.project.getActiveSequence();
+        if (qeSeq && qeSeq.createGroup) { qeSeq.createGroup(); }
+        return _ok({ groupedClips: grouped, clipCount: grouped.length });
+    } catch (e) { return _err("groupClips failed: " + e.message); }
+}
+
+function ungroupClips(trackType, trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase(); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0;
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex >= tracks.numTracks) return _err("Track index out of range");
+        var track = tracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+        track.clips[clipIndex].setSelected(true, true);
+        app.enableQE(); var qeSeq = qe.project.getActiveSequence();
+        if (qeSeq && qeSeq.ungroup) { qeSeq.ungroup(); }
+        return _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, ungrouped: true });
+    } catch (e) { return _err("ungroupClips failed: " + e.message); }
+}
+
+function getGroupedClips(trackType, trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase(); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0;
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex >= tracks.numTracks) return _err("Track index out of range");
+        var track = tracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+        var clip = track.clips[clipIndex]; var members = [];
+        if (clip.isGrouped && clip.isGrouped()) {
+            for (var vt = 0; vt < seq.videoTracks.numTracks; vt++) { var vTrack = seq.videoTracks[vt]; if (!vTrack.clips) continue; for (var vc2 = 0; vc2 < vTrack.clips.numItems; vc2++) { var vClip = vTrack.clips[vc2]; if (vClip.isGrouped && vClip.isGrouped()) { members.push({ trackType: "video", trackIndex: vt, clipIndex: vc2, name: vClip.name || "", start: _timeToSeconds(vClip.start), end: _timeToSeconds(vClip.end) }); } } }
+            for (var atr = 0; atr < seq.audioTracks.numTracks; atr++) { var aTrack = seq.audioTracks[atr]; if (!aTrack.clips) continue; for (var ac11 = 0; ac11 < aTrack.clips.numItems; ac11++) { var aClip = aTrack.clips[ac11]; if (aClip.isGrouped && aClip.isGrouped()) { members.push({ trackType: "audio", trackIndex: atr, clipIndex: ac11, name: aClip.name || "", start: _timeToSeconds(aClip.start), end: _timeToSeconds(aClip.end) }); } } }
+        } else { members.push({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, name: clip.name || "", start: _timeToSeconds(clip.start), end: _timeToSeconds(clip.end), note: "Clip may not be grouped" }); }
+        return _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, groupMembers: members, memberCount: members.length });
+    } catch (e) { return _err("getGroupedClips failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Snap & Alignment
+// ---------------------------------------------------------------------------
+
+function setSnapping(enabled) {
+    try {
+        if (!app.project) return _err("No project is open");
+        enabled = (enabled === true || enabled === "true" || enabled === 1);
+        app.enableQE(); var qeSeq = qe.project.getActiveSequence();
+        if (qeSeq && qeSeq.setSnapping) { qeSeq.setSnapping(enabled); }
+        else if (qeSeq && typeof qeSeq.snap !== "undefined") { qeSeq.snap = enabled; }
+        return _ok({ snapping: enabled });
+    } catch (e) { return _err("setSnapping failed: " + e.message); }
+}
+
+function getSnapping() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var snapping = true;
+        app.enableQE(); var qeSeq = qe.project.getActiveSequence();
+        if (qeSeq && typeof qeSeq.snap !== "undefined") { snapping = !!qeSeq.snap; }
+        return _ok({ snapping: snapping });
+    } catch (e) { return _err("getSnapping failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Timeline Zoom
+// ---------------------------------------------------------------------------
+
+function zoomToFitTimeline() {
+    try {
+        if (!app.project) return _err("No project is open");
+        if (!app.project.activeSequence) return _err("No active sequence");
+        app.enableQE(); var qeSeq = qe.project.getActiveSequence();
+        if (qeSeq && qeSeq.zoomToFit) { qeSeq.zoomToFit(); }
+        return _ok({ zoomed: "fit" });
+    } catch (e) { return _err("zoomToFitTimeline failed: " + e.message); }
+}
+
+function zoomToSelection() {
+    try {
+        if (!app.project) return _err("No project is open");
+        if (!app.project.activeSequence) return _err("No active sequence");
+        app.enableQE(); var qeSeq = qe.project.getActiveSequence();
+        if (qeSeq && qeSeq.zoomToSelection) { qeSeq.zoomToSelection(); }
+        return _ok({ zoomed: "selection" });
+    } catch (e) { return _err("zoomToSelection failed: " + e.message); }
+}
+
+function setTimelineZoom(level) {
+    try {
+        if (!app.project) return _err("No project is open");
+        if (!app.project.activeSequence) return _err("No active sequence");
+        level = Math.max(0, Math.min(1, parseFloat(level) || 0));
+        app.enableQE(); var qeSeq = qe.project.getActiveSequence();
+        if (qeSeq && qeSeq.setZoomLevel) { qeSeq.setZoomLevel(level); }
+        return _ok({ zoomLevel: level });
+    } catch (e) { return _err("setTimelineZoom failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Timeline Navigation
+// ---------------------------------------------------------------------------
+
+function goToNextEditPoint() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var currentPos = _timeToSeconds(seq.getPlayerPosition());
+        var editPoints = [];
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) { var track = seq.videoTracks[t]; if (!track.clips) continue; for (var c = 0; c < track.clips.numItems; c++) { editPoints.push(_timeToSeconds(track.clips[c].start)); editPoints.push(_timeToSeconds(track.clips[c].end)); } }
+        for (var at11 = 0; at11 < seq.audioTracks.numTracks; at11++) { var atrack = seq.audioTracks[at11]; if (!atrack.clips) continue; for (var ac12 = 0; ac12 < atrack.clips.numItems; ac12++) { editPoints.push(_timeToSeconds(atrack.clips[ac12].start)); editPoints.push(_timeToSeconds(atrack.clips[ac12].end)); } }
+        editPoints.sort(function (a, b) { return a - b; });
+        var nextPoint = -1;
+        for (var i = 0; i < editPoints.length; i++) { if (editPoints[i] > currentPos + 0.001) { nextPoint = editPoints[i]; break; } }
+        if (nextPoint < 0) return _err("No next edit point found");
+        seq.setPlayerPosition(_secondsToTime(nextPoint).ticks);
+        return _ok({ previousPosition: currentPos, newPosition: nextPoint });
+    } catch (e) { return _err("goToNextEditPoint failed: " + e.message); }
+}
+
+function goToPreviousEditPoint() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var currentPos = _timeToSeconds(seq.getPlayerPosition());
+        var editPoints = [];
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) { var track = seq.videoTracks[t]; if (!track.clips) continue; for (var c = 0; c < track.clips.numItems; c++) { editPoints.push(_timeToSeconds(track.clips[c].start)); editPoints.push(_timeToSeconds(track.clips[c].end)); } }
+        for (var at12 = 0; at12 < seq.audioTracks.numTracks; at12++) { var atrack = seq.audioTracks[at12]; if (!atrack.clips) continue; for (var ac13 = 0; ac13 < atrack.clips.numItems; ac13++) { editPoints.push(_timeToSeconds(atrack.clips[ac13].start)); editPoints.push(_timeToSeconds(atrack.clips[ac13].end)); } }
+        editPoints.sort(function (a, b) { return a - b; });
+        var prevPoint = -1;
+        for (var i = editPoints.length - 1; i >= 0; i--) { if (editPoints[i] < currentPos - 0.001) { prevPoint = editPoints[i]; break; } }
+        if (prevPoint < 0) return _err("No previous edit point found");
+        seq.setPlayerPosition(_secondsToTime(prevPoint).ticks);
+        return _ok({ previousPosition: currentPos, newPosition: prevPoint });
+    } catch (e) { return _err("goToPreviousEditPoint failed: " + e.message); }
+}
+
+function goToNextClip(trackType, trackIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase(); trackIndex = parseInt(trackIndex, 10) || 0;
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex >= tracks.numTracks) return _err("Track index out of range");
+        var track = tracks[trackIndex]; var currentPos = _timeToSeconds(seq.getPlayerPosition());
+        if (!track.clips || track.clips.numItems === 0) return _err("No clips on track");
+        for (var i = 0; i < track.clips.numItems; i++) { var clipStart = _timeToSeconds(track.clips[i].start); if (clipStart > currentPos + 0.001) { seq.setPlayerPosition(_secondsToTime(clipStart).ticks); return _ok({ trackType: trackType, trackIndex: trackIndex, previousPosition: currentPos, newPosition: clipStart, clipIndex: i, clipName: track.clips[i].name || "" }); } }
+        return _err("No next clip found on this track");
+    } catch (e) { return _err("goToNextClip failed: " + e.message); }
+}
+
+function goToPreviousClip(trackType, trackIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase(); trackIndex = parseInt(trackIndex, 10) || 0;
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex >= tracks.numTracks) return _err("Track index out of range");
+        var track = tracks[trackIndex]; var currentPos = _timeToSeconds(seq.getPlayerPosition());
+        if (!track.clips || track.clips.numItems === 0) return _err("No clips on track");
+        for (var i = track.clips.numItems - 1; i >= 0; i--) { var clipStart = _timeToSeconds(track.clips[i].start); if (clipStart < currentPos - 0.001) { seq.setPlayerPosition(_secondsToTime(clipStart).ticks); return _ok({ trackType: trackType, trackIndex: trackIndex, previousPosition: currentPos, newPosition: clipStart, clipIndex: i, clipName: track.clips[i].name || "" }); } }
+        return _err("No previous clip found on this track");
+    } catch (e) { return _err("goToPreviousClip failed: " + e.message); }
+}
+
+function goToSequenceStart() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var prevPos = _timeToSeconds(seq.getPlayerPosition());
+        seq.setPlayerPosition(_secondsToTime(0).ticks);
+        return _ok({ previousPosition: prevPos, newPosition: 0 });
+    } catch (e) { return _err("goToSequenceStart failed: " + e.message); }
+}
+
+function goToSequenceEnd() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var prevPos = _timeToSeconds(seq.getPlayerPosition());
+        var endTime = _timeToSeconds(seq.end);
+        seq.setPlayerPosition(_secondsToTime(endTime).ticks);
+        return _ok({ previousPosition: prevPos, newPosition: endTime });
+    } catch (e) { return _err("goToSequenceEnd failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Clip Markers
+// ---------------------------------------------------------------------------
+
+function addClipMarker(trackType, trackIndex, clipIndex, time, name, comment, color) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase(); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0;
+        time = parseFloat(time) || 0; name = String(name || "Marker"); comment = String(comment || ""); color = parseInt(color, 10) || 0;
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex >= tracks.numTracks) return _err("Track index out of range");
+        var track = tracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+        var clip = track.clips[clipIndex];
+        if (!clip.markers) return _err("Clip does not support markers");
+        var marker = clip.markers.createMarker(time);
+        if (marker) { marker.name = name; marker.comments = comment; if (marker.setColorByIndex) { marker.setColorByIndex(color); } }
+        return _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, markerTime: time, markerName: name, markerComment: comment, markerColor: color });
+    } catch (e) { return _err("addClipMarker failed: " + e.message); }
+}
+
+function getClipMarkers(trackType, trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase(); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0;
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex >= tracks.numTracks) return _err("Track index out of range");
+        var track = tracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+        var clip = track.clips[clipIndex]; var markers = [];
+        if (clip.markers) {
+            var marker = clip.markers.getFirstMarker(); var idx = 0;
+            while (marker) { markers.push({ index: idx, name: marker.name || "", comments: marker.comments || "", start: _timeToSeconds(marker.start), end: _timeToSeconds(marker.end), type: marker.type || "" }); idx++; marker = clip.markers.getNextMarker(marker); }
+        }
+        return _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, clipName: clip.name || "", markers: markers, markerCount: markers.length });
+    } catch (e) { return _err("getClipMarkers failed: " + e.message); }
+}
+
+function deleteClipMarker(trackType, trackIndex, clipIndex, markerIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase(); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0; markerIndex = parseInt(markerIndex, 10) || 0;
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex >= tracks.numTracks) return _err("Track index out of range");
+        var track = tracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+        var clip = track.clips[clipIndex];
+        if (!clip.markers) return _err("Clip does not support markers");
+        var marker = clip.markers.getFirstMarker(); var idx = 0;
+        while (marker && idx < markerIndex) { marker = clip.markers.getNextMarker(marker); idx++; }
+        if (!marker) return _err("Marker index " + markerIndex + " out of range");
+        var markerName = marker.name || "";
+        clip.markers.deleteMarker(marker);
+        return _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, markerIndex: markerIndex, deletedMarkerName: markerName, deleted: true });
+    } catch (e) { return _err("deleteClipMarker failed: " + e.message); }
+}

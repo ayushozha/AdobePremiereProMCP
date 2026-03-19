@@ -29,6 +29,7 @@ func registerTools(s *server.MCPServer, orch Orchestrator, logger *zap.Logger) {
 	registerColorTools(s, orch, logger)
 	registerGraphicsTools(s, orch, logger)
 	registerWorkspaceTools(s, orch, logger)
+	registerAdvancedEditTools(s, orch, logger)
 	registerAITools(s, orch, logger)
 }
 
