@@ -24,7 +24,7 @@ Video editors spend hours on repetitive tasks: syncing clips, rough cuts, color 
 
 **No plugins. No subscriptions. Fully open source.**
 
-## Features -- 907 MCP Tools
+## Features -- 1,060 MCP Tools
 
 This is the most comprehensive MCP server for any NLE (non-linear editor). Every tool maps to real Adobe Premiere Pro ExtendScript and QE DOM operations.
 
@@ -123,7 +123,7 @@ PremierProMCP/
 +-- go-orchestrator/          # Go -- MCP server & task orchestrator
 |   +-- cmd/server/           #   Entry point
 |   +-- internal/             #   Core packages
-|   |   +-- mcp/              #     MCP protocol handler (907 tool definitions)
+|   |   +-- mcp/              #     MCP protocol handler (1,060 tool definitions)
 |   |   +-- orchestrator/     #     Task orchestration
 |   |   +-- health/           #     Health checks
 |   |   +-- grpc/             #     gRPC client/server
