@@ -20781,3 +20781,683 @@ function listEffectChainTemplates() {
         return _ok({ count: templates.length, templates: templates });
     } catch (e) { return _err("listEffectChainTemplates failed: " + e.message); }
 }
+
+// ===========================================================================
+// Project Analytics, Reporting & Data Extraction (1-30)
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Helper: count items recursively inside a bin
+// ---------------------------------------------------------------------------
+function _countBinItemsAnalytics(bin) {
+    var result = { clips: 0, bins: 0, video: 0, audio: 0, image: 0, graphics: 0, totalDuration: 0 };
+    if (!bin || !bin.children) return result;
+    for (var i = 0; i < bin.children.numItems; i++) {
+        var item = bin.children[i];
+        if (!item) continue;
+        if (item.type === ProjectItemType.BIN) {
+            result.bins++;
+            var sub = _countBinItemsAnalytics(item);
+            result.clips += sub.clips; result.bins += sub.bins;
+            result.video += sub.video; result.audio += sub.audio;
+            result.image += sub.image; result.graphics += sub.graphics;
+            result.totalDuration += sub.totalDuration;
+        } else if (item.type === ProjectItemType.CLIP || item.type === ProjectItemType.FILE) {
+            result.clips++;
+            try {
+                var dur = item.getMediaDuration ? parseFloat(item.getMediaDuration()) : 0;
+                if (isNaN(dur)) dur = 0;
+                result.totalDuration += dur;
+            } catch (_) {}
+            try {
+                var path = item.getMediaPath ? item.getMediaPath() : "";
+                var ext = String(path).replace(/^.*\./, ".").toLowerCase();
+                if (/^\.(mp4|mov|avi|mkv|mxf|wmv|flv|m4v|webm|mpg|mpeg|ts|3gp|r3d|braw|ari)$/.test(ext)) result.video++;
+                else if (/^\.(wav|mp3|aac|aiff|aif|flac|ogg|wma|m4a|ac3)$/.test(ext)) result.audio++;
+                else if (/^\.(jpg|jpeg|png|tiff|tif|bmp|gif|psd|ai|svg|exr|dpx|tga|webp)$/.test(ext)) result.image++;
+                else if (/^\.(mogrt|prproj|aep|prfpset)$/.test(ext)) result.graphics++;
+            } catch (_) {}
+        }
+    }
+    return result;
+}
+
+/**
+ * 1. getProjectSummary() - Comprehensive project summary.
+ */
+function getProjectSummary() {
+    try {
+        if (!app.project) return _err("No project open");
+        var proj = app.project;
+        var summary = {
+            projectName: proj.name || "",
+            projectPath: proj.path || "",
+            sequenceCount: proj.sequences ? proj.sequences.numSequences : 0,
+            binCount: 0,
+            clipCount: 0,
+            totalMediaDuration: 0,
+            videoClipCount: 0,
+            audioClipCount: 0,
+            imageCount: 0,
+            graphicsCount: 0
+        };
+        if (proj.rootItem) {
+            var counts = _countBinItemsAnalytics(proj.rootItem);
+            summary.binCount = counts.bins;
+            summary.clipCount = counts.clips;
+            summary.totalMediaDuration = counts.totalDuration;
+            summary.videoClipCount = counts.video;
+            summary.audioClipCount = counts.audio;
+            summary.imageCount = counts.image;
+            summary.graphicsCount = counts.graphics;
+        }
+        var sequences = [];
+        for (var s = 0; s < summary.sequenceCount; s++) {
+            var seq = proj.sequences[s];
+            if (!seq) continue;
+            sequences.push({ index: s, name: seq.name || "", duration: _timeToSeconds(seq.end) });
+        }
+        summary.sequences = sequences;
+        try { summary.diskUsage = (new File(proj.path)).length || 0; } catch (_) { summary.diskUsage = 0; }
+        return _ok(summary);
+    } catch (e) { return _err("getProjectSummary failed: " + e.message); }
+}
+
+/**
+ * 2. getMediaTypeBreakdown() - Breakdown by media type.
+ */
+function getMediaTypeBreakdown() {
+    try {
+        if (!app.project) return _err("No project open");
+        var breakdown = { video: { count: 0, totalDuration: 0 }, audio: { count: 0, totalDuration: 0 }, image: { count: 0, totalDuration: 0 }, graphics: { count: 0, totalDuration: 0 }, other: { count: 0, totalDuration: 0 } };
+        function walkMediaType(bin) {
+            if (!bin || !bin.children) return;
+            for (var i = 0; i < bin.children.numItems; i++) {
+                var item = bin.children[i];
+                if (!item) continue;
+                if (item.type === ProjectItemType.BIN) { walkMediaType(item); continue; }
+                var dur = 0;
+                try { dur = item.getMediaDuration ? parseFloat(item.getMediaDuration()) : 0; if (isNaN(dur)) dur = 0; } catch (_) {}
+                var cat = "other";
+                try {
+                    var path = item.getMediaPath ? item.getMediaPath() : "";
+                    var ext = String(path).replace(/^.*\./, ".").toLowerCase();
+                    if (/^\.(mp4|mov|avi|mkv|mxf|wmv|flv|m4v|webm|mpg|mpeg|ts|3gp|r3d|braw|ari)$/.test(ext)) cat = "video";
+                    else if (/^\.(wav|mp3|aac|aiff|aif|flac|ogg|wma|m4a|ac3)$/.test(ext)) cat = "audio";
+                    else if (/^\.(jpg|jpeg|png|tiff|tif|bmp|gif|psd|ai|svg|exr|dpx|tga|webp)$/.test(ext)) cat = "image";
+                    else if (/^\.(mogrt|prproj|aep|prfpset)$/.test(ext)) cat = "graphics";
+                } catch (_) {}
+                breakdown[cat].count++;
+                breakdown[cat].totalDuration += dur;
+            }
+        }
+        walkMediaType(app.project.rootItem);
+        return _ok(breakdown);
+    } catch (e) { return _err("getMediaTypeBreakdown failed: " + e.message); }
+}
+
+/**
+ * 3. getCodecBreakdown() - Breakdown by codec used across all media.
+ */
+function getCodecBreakdown() {
+    try {
+        if (!app.project) return _err("No project open");
+        var codecs = {};
+        function walkCodec(bin) {
+            if (!bin || !bin.children) return;
+            for (var i = 0; i < bin.children.numItems; i++) {
+                var item = bin.children[i];
+                if (!item) continue;
+                if (item.type === ProjectItemType.BIN) { walkCodec(item); continue; }
+                try {
+                    var codec = "unknown";
+                    if (item.getFootageInterpretation) {
+                        var interp = item.getFootageInterpretation();
+                        if (interp && interp.videoCodec) codec = String(interp.videoCodec);
+                    }
+                    if (codec === "unknown") {
+                        var path = item.getMediaPath ? item.getMediaPath() : "";
+                        var ext = String(path).replace(/^.*\./, "").toUpperCase();
+                        if (ext) codec = ext;
+                    }
+                    if (!codecs[codec]) codecs[codec] = 0;
+                    codecs[codec]++;
+                } catch (_) {}
+            }
+        }
+        walkCodec(app.project.rootItem);
+        var result = [];
+        for (var c in codecs) { if (codecs.hasOwnProperty(c)) result.push({ codec: c, count: codecs[c] }); }
+        result.sort(function (a, b) { return b.count - a.count; });
+        return _ok({ codecs: result, totalTypes: result.length });
+    } catch (e) { return _err("getCodecBreakdown failed: " + e.message); }
+}
+
+/**
+ * 4. getResolutionBreakdown() - Breakdown by resolution across all media.
+ */
+function getResolutionBreakdown() {
+    try {
+        if (!app.project) return _err("No project open");
+        var resolutions = {};
+        function walkRes(bin) {
+            if (!bin || !bin.children) return;
+            for (var i = 0; i < bin.children.numItems; i++) {
+                var item = bin.children[i];
+                if (!item) continue;
+                if (item.type === ProjectItemType.BIN) { walkRes(item); continue; }
+                try {
+                    var w = 0, h = 0;
+                    if (item.getFootageInterpretation) {
+                        var interp = item.getFootageInterpretation();
+                        if (interp) { w = interp.frameWidth || 0; h = interp.frameHeight || 0; }
+                    }
+                    var key = (w > 0 && h > 0) ? (w + "x" + h) : "unknown";
+                    if (!resolutions[key]) resolutions[key] = 0;
+                    resolutions[key]++;
+                } catch (_) {}
+            }
+        }
+        walkRes(app.project.rootItem);
+        var result = [];
+        for (var r in resolutions) { if (resolutions.hasOwnProperty(r)) result.push({ resolution: r, count: resolutions[r] }); }
+        result.sort(function (a, b) { return b.count - a.count; });
+        return _ok({ resolutions: result, totalTypes: result.length });
+    } catch (e) { return _err("getResolutionBreakdown failed: " + e.message); }
+}
+
+/**
+ * 5. getFrameRateBreakdown() - Breakdown by frame rate.
+ */
+function getFrameRateBreakdown() {
+    try {
+        if (!app.project) return _err("No project open");
+        var frameRates = {};
+        function walkFps(bin) {
+            if (!bin || !bin.children) return;
+            for (var i = 0; i < bin.children.numItems; i++) {
+                var item = bin.children[i];
+                if (!item) continue;
+                if (item.type === ProjectItemType.BIN) { walkFps(item); continue; }
+                try {
+                    var fps = "unknown";
+                    if (item.getFootageInterpretation) {
+                        var interp = item.getFootageInterpretation();
+                        if (interp && interp.frameRate) fps = String(Math.round(interp.frameRate * 100) / 100);
+                    }
+                    if (!frameRates[fps]) frameRates[fps] = 0;
+                    frameRates[fps]++;
+                } catch (_) {}
+            }
+        }
+        walkFps(app.project.rootItem);
+        var result = [];
+        for (var f in frameRates) { if (frameRates.hasOwnProperty(f)) result.push({ frameRate: f, count: frameRates[f] }); }
+        result.sort(function (a, b) { return b.count - a.count; });
+        return _ok({ frameRates: result, totalTypes: result.length });
+    } catch (e) { return _err("getFrameRateBreakdown failed: " + e.message); }
+}
+
+/**
+ * 6. getDurationDistribution() - Distribution of clip durations (histogram).
+ */
+function getDurationDistribution() {
+    try {
+        if (!app.project) return _err("No project open");
+        var buckets = { "0-1s": 0, "1-5s": 0, "5-15s": 0, "15-30s": 0, "30-60s": 0, "1-5min": 0, "5-15min": 0, "15-30min": 0, "30min+": 0 };
+        var durations = [];
+        function walkDur(bin) {
+            if (!bin || !bin.children) return;
+            for (var i = 0; i < bin.children.numItems; i++) {
+                var item = bin.children[i];
+                if (!item) continue;
+                if (item.type === ProjectItemType.BIN) { walkDur(item); continue; }
+                try {
+                    var dur = item.getMediaDuration ? parseFloat(item.getMediaDuration()) : 0;
+                    if (isNaN(dur) || dur <= 0) continue;
+                    durations.push(dur);
+                    if (dur <= 1) buckets["0-1s"]++;
+                    else if (dur <= 5) buckets["1-5s"]++;
+                    else if (dur <= 15) buckets["5-15s"]++;
+                    else if (dur <= 30) buckets["15-30s"]++;
+                    else if (dur <= 60) buckets["30-60s"]++;
+                    else if (dur <= 300) buckets["1-5min"]++;
+                    else if (dur <= 900) buckets["5-15min"]++;
+                    else if (dur <= 1800) buckets["15-30min"]++;
+                    else buckets["30min+"]++;
+                } catch (_) {}
+            }
+        }
+        walkDur(app.project.rootItem);
+        var total = durations.length;
+        var avg = 0, min = 0, max = 0;
+        if (total > 0) {
+            durations.sort(function (a, b) { return a - b; });
+            min = durations[0]; max = durations[total - 1];
+            var sum = 0; for (var d = 0; d < total; d++) sum += durations[d];
+            avg = sum / total;
+        }
+        return _ok({ buckets: buckets, totalClips: total, averageDuration: avg, minDuration: min, maxDuration: max });
+    } catch (e) { return _err("getDurationDistribution failed: " + e.message); }
+}
+
+/**
+ * 7. getColorSpaceBreakdown() - Breakdown by color space.
+ */
+function getColorSpaceBreakdown() {
+    try {
+        if (!app.project) return _err("No project open");
+        var colorSpaces = {};
+        function walkCS(bin) {
+            if (!bin || !bin.children) return;
+            for (var i = 0; i < bin.children.numItems; i++) {
+                var item = bin.children[i];
+                if (!item) continue;
+                if (item.type === ProjectItemType.BIN) { walkCS(item); continue; }
+                try {
+                    var cs = "unknown";
+                    if (item.getColorSpace) {
+                        var val = item.getColorSpace();
+                        if (val) cs = String(val);
+                    }
+                    if (cs === "unknown" && item.getFootageInterpretation) {
+                        var interp = item.getFootageInterpretation();
+                        if (interp && interp.colorSpace) cs = String(interp.colorSpace);
+                    }
+                    if (!colorSpaces[cs]) colorSpaces[cs] = 0;
+                    colorSpaces[cs]++;
+                } catch (_) {}
+            }
+        }
+        walkCS(app.project.rootItem);
+        var result = [];
+        for (var c in colorSpaces) { if (colorSpaces.hasOwnProperty(c)) result.push({ colorSpace: c, count: colorSpaces[c] }); }
+        result.sort(function (a, b) { return b.count - a.count; });
+        return _ok({ colorSpaces: result, totalTypes: result.length });
+    } catch (e) { return _err("getColorSpaceBreakdown failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Sequence Analytics (8-14)
+// ---------------------------------------------------------------------------
+
+/** 8. getSequenceSummary(sequenceIndex) */
+function getSequenceSummary(sequenceIndex) {
+    try {
+        if (!app.project) return _err("No project open");
+        var idx = parseInt(sequenceIndex, 10) || 0;
+        var numSeq = app.project.sequences ? app.project.sequences.numSequences : 0;
+        if (idx < 0 || idx >= numSeq) return _err("Sequence index " + idx + " out of range (0-" + (numSeq - 1) + ")");
+        var seq = app.project.sequences[idx];
+        if (!seq) return _err("Sequence not found");
+        var summary = { name: seq.name || "", index: idx, duration: _timeToSeconds(seq.end), videoTrackCount: seq.videoTracks ? seq.videoTracks.numTracks : 0, audioTrackCount: seq.audioTracks ? seq.audioTracks.numTracks : 0, totalVideoClips: 0, totalAudioClips: 0, totalEffects: 0, videoTracks: [], audioTracks: [] };
+        if (seq.videoTracks) { for (var v = 0; v < seq.videoTracks.numTracks; v++) { var vt = seq.videoTracks[v]; var cc = vt.clips ? vt.clips.numItems : 0; summary.totalVideoClips += cc; var efx = 0; if (vt.clips) { for (var vc = 0; vc < cc; vc++) { try { efx += vt.clips[vc].components ? vt.clips[vc].components.numItems : 0; } catch (_) {} } } summary.totalEffects += efx; summary.videoTracks.push({ index: v, name: vt.name || ("V" + (v + 1)), clipCount: cc, effectCount: efx }); } }
+        if (seq.audioTracks) { for (var a = 0; a < seq.audioTracks.numTracks; a++) { var at2 = seq.audioTracks[a]; var ac = at2.clips ? at2.clips.numItems : 0; summary.totalAudioClips += ac; summary.audioTracks.push({ index: a, name: at2.name || ("A" + (a + 1)), clipCount: ac }); } }
+        try { summary.frameSizeH = seq.frameSizeHorizontal; summary.frameSizeV = seq.frameSizeVertical; } catch (_) {}
+        return _ok(summary);
+    } catch (e) { return _err("getSequenceSummary failed: " + e.message); }
+}
+
+/** 9. getEffectsUsageReport(sequenceIndex) */
+function getEffectsUsageReport(sequenceIndex) {
+    try {
+        if (!app.project) return _err("No project open");
+        var idx = parseInt(sequenceIndex, 10) || 0;
+        var seq = app.project.sequences[idx];
+        if (!seq) return _err("Sequence not found at index " + idx);
+        var effectCounts = {};
+        function countEfx(tracks, tt) { if (!tracks) return; for (var t = 0; t < tracks.numTracks; t++) { var track = tracks[t]; if (!track.clips) continue; for (var c = 0; c < track.clips.numItems; c++) { var clip = track.clips[c]; if (!clip.components) continue; for (var ci = 0; ci < clip.components.numItems; ci++) { try { var comp = clip.components[ci]; var nm = comp.displayName || comp.matchName || "Unknown"; if (!effectCounts[nm]) effectCounts[nm] = { count: 0, trackType: tt }; effectCounts[nm].count++; } catch (_) {} } } } }
+        countEfx(seq.videoTracks, "video");
+        countEfx(seq.audioTracks, "audio");
+        var effects = []; for (var n in effectCounts) { if (effectCounts.hasOwnProperty(n)) effects.push({ name: n, count: effectCounts[n].count, trackType: effectCounts[n].trackType }); }
+        effects.sort(function (a, b) { return b.count - a.count; });
+        return _ok({ sequenceName: seq.name || "", effects: effects, uniqueEffectCount: effects.length });
+    } catch (e) { return _err("getEffectsUsageReport failed: " + e.message); }
+}
+
+/** 10. getTransitionsUsageReport(sequenceIndex) */
+function getTransitionsUsageReport(sequenceIndex) {
+    try {
+        if (!app.project) return _err("No project open");
+        var idx = parseInt(sequenceIndex, 10) || 0;
+        var seq = app.project.sequences[idx];
+        if (!seq) return _err("Sequence not found at index " + idx);
+        var tc = {};
+        function countTr(tracks) { if (!tracks) return; for (var t = 0; t < tracks.numTracks; t++) { var track = tracks[t]; if (!track.transitions) continue; for (var ti = 0; ti < track.transitions.numItems; ti++) { try { var tr = track.transitions[ti]; var nm = tr.name || tr.matchName || "Unknown Transition"; if (!tc[nm]) tc[nm] = 0; tc[nm]++; } catch (_) {} } } }
+        countTr(seq.videoTracks); countTr(seq.audioTracks);
+        var transitions = []; for (var n in tc) { if (tc.hasOwnProperty(n)) transitions.push({ name: n, count: tc[n] }); }
+        transitions.sort(function (a, b) { return b.count - a.count; });
+        return _ok({ sequenceName: seq.name || "", transitions: transitions, uniqueTransitionCount: transitions.length });
+    } catch (e) { return _err("getTransitionsUsageReport failed: " + e.message); }
+}
+
+/** 11. getTrackUtilizationReport(sequenceIndex) */
+function getTrackUtilizationReport(sequenceIndex) {
+    try {
+        if (!app.project) return _err("No project open");
+        var idx = parseInt(sequenceIndex, 10) || 0;
+        var seq = app.project.sequences[idx];
+        if (!seq) return _err("Sequence not found at index " + idx);
+        var seqDur = _timeToSeconds(seq.end);
+        if (seqDur <= 0) return _ok({ sequenceName: seq.name || "", duration: 0, tracks: [], note: "Sequence has zero duration" });
+        var tracks = [];
+        function at(track, tt, ti) { var ut = 0; var cc = track.clips ? track.clips.numItems : 0; if (track.clips) { for (var c = 0; c < cc; c++) { try { ut += _timeToSeconds(track.clips[c].end) - _timeToSeconds(track.clips[c].start); } catch (_) {} } } tracks.push({ trackType: tt, trackIndex: ti, name: track.name || (tt === "video" ? "V" : "A") + (ti + 1), clipCount: cc, usedTime: ut, utilization: Math.round((ut / seqDur) * 10000) / 100 }); }
+        if (seq.videoTracks) { for (var v = 0; v < seq.videoTracks.numTracks; v++) at(seq.videoTracks[v], "video", v); }
+        if (seq.audioTracks) { for (var a = 0; a < seq.audioTracks.numTracks; a++) at(seq.audioTracks[a], "audio", a); }
+        return _ok({ sequenceName: seq.name || "", duration: seqDur, tracks: tracks });
+    } catch (e) { return _err("getTrackUtilizationReport failed: " + e.message); }
+}
+
+/** 12. getEditPointDensity(sequenceIndex) */
+function getEditPointDensity(sequenceIndex) {
+    try {
+        if (!app.project) return _err("No project open");
+        var idx = parseInt(sequenceIndex, 10) || 0;
+        var seq = app.project.sequences[idx];
+        if (!seq) return _err("Sequence not found at index " + idx);
+        var seqDur = _timeToSeconds(seq.end);
+        var ep = 0;
+        function ce(tracks) { if (!tracks) return; for (var t = 0; t < tracks.numTracks; t++) { var track = tracks[t]; if (!track.clips) continue; ep += track.clips.numItems * 2; } }
+        ce(seq.videoTracks); ce(seq.audioTracks);
+        var dm = seqDur / 60;
+        return _ok({ sequenceName: seq.name || "", duration: seqDur, totalEditPoints: ep, editsPerMinute: Math.round((dm > 0 ? ep / dm : 0) * 100) / 100 });
+    } catch (e) { return _err("getEditPointDensity failed: " + e.message); }
+}
+
+/** 13. getPacingReport(sequenceIndex) */
+function getPacingReport(sequenceIndex) {
+    try {
+        if (!app.project) return _err("No project open");
+        var idx = parseInt(sequenceIndex, 10) || 0;
+        var seq = app.project.sequences[idx];
+        if (!seq) return _err("Sequence not found at index " + idx);
+        var seqDur = _timeToSeconds(seq.end);
+        var cd = [];
+        if (seq.videoTracks) { for (var v = 0; v < seq.videoTracks.numTracks; v++) { var vt = seq.videoTracks[v]; if (!vt.clips) continue; for (var vc = 0; vc < vt.clips.numItems; vc++) { try { var d = _timeToSeconds(vt.clips[vc].end) - _timeToSeconds(vt.clips[vc].start); if (d > 0) cd.push(d); } catch (_) {} } } }
+        var tc = cd.length; var avg = 0, mn = 0, mx = 0, cpm = 0;
+        if (tc > 0) { cd.sort(function (a, b) { return a - b; }); mn = cd[0]; mx = cd[tc - 1]; var sm = 0; for (var d2 = 0; d2 < tc; d2++) sm += cd[d2]; avg = sm / tc; var dm = seqDur / 60; cpm = dm > 0 ? tc / dm : 0; }
+        var pacing = "unknown";
+        if (avg > 0) { if (avg < 2) pacing = "very_fast"; else if (avg < 5) pacing = "fast"; else if (avg < 15) pacing = "moderate"; else if (avg < 30) pacing = "slow"; else pacing = "very_slow"; }
+        return _ok({ sequenceName: seq.name || "", duration: seqDur, totalVideoClips: tc, averageClipDuration: Math.round(avg * 100) / 100, minClipDuration: mn, maxClipDuration: mx, cutsPerMinute: Math.round(cpm * 100) / 100, pacing: pacing });
+    } catch (e) { return _err("getPacingReport failed: " + e.message); }
+}
+
+/** 14. getAudioLevelsReport(sequenceIndex) */
+function getAudioLevelsReport(sequenceIndex) {
+    try {
+        if (!app.project) return _err("No project open");
+        var idx = parseInt(sequenceIndex, 10) || 0;
+        var seq = app.project.sequences[idx];
+        if (!seq) return _err("Sequence not found at index " + idx);
+        var tr = [];
+        if (seq.audioTracks) { for (var a = 0; a < seq.audioTracks.numTracks; a++) { var at2 = seq.audioTracks[a]; var cc = at2.clips ? at2.clips.numItems : 0; var muted = false; try { muted = at2.isMuted() ? true : false; } catch (_) {} var clips = []; if (at2.clips) { for (var c = 0; c < cc; c++) { try { var clip = at2.clips[c]; var ci2 = { name: clip.name || "", start: _timeToSeconds(clip.start), end: _timeToSeconds(clip.end), duration: _timeToSeconds(clip.end) - _timeToSeconds(clip.start) }; if (clip.components) { for (var ci = 0; ci < clip.components.numItems; ci++) { var comp = clip.components[ci]; if (comp.displayName === "Volume" || comp.matchName === "audioVolume") { if (comp.properties) { for (var p = 0; p < comp.properties.numItems; p++) { var prop = comp.properties[p]; if (prop.displayName === "Level" || prop.displayName === "Volume") { try { ci2.level = prop.getValue(); } catch (_) {} } } } } } } clips.push(ci2); } catch (_) {} } } tr.push({ trackIndex: a, name: at2.name || ("Audio " + (a + 1)), clipCount: cc, muted: muted, clips: clips }); } }
+        return _ok({ sequenceName: seq.name || "", audioTrackCount: seq.audioTracks ? seq.audioTracks.numTracks : 0, tracks: tr, note: "Precise LUFS analysis requires full audio mixdown via the media engine." });
+    } catch (e) { return _err("getAudioLevelsReport failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Timeline Reports (15-19)
+// ---------------------------------------------------------------------------
+
+/** 15. getClipSourceReport(sequenceIndex) */
+function getClipSourceReport(sequenceIndex) {
+    try {
+        if (!app.project) return _err("No project open");
+        var idx = parseInt(sequenceIndex, 10) || 0;
+        var seq = app.project.sequences[idx];
+        if (!seq) return _err("Sequence not found at index " + idx);
+        var sources = {};
+        function pt(tracks, tt) { if (!tracks) return; for (var t = 0; t < tracks.numTracks; t++) { var track = tracks[t]; if (!track.clips) continue; for (var c = 0; c < track.clips.numItems; c++) { try { var clip = track.clips[c]; var sn = clip.name || "Unknown"; var mp = ""; try { if (clip.projectItem && clip.projectItem.getMediaPath) mp = clip.projectItem.getMediaPath(); } catch (_) {} var key = mp || sn; if (!sources[key]) sources[key] = { sourceName: sn, mediaPath: mp, usages: [] }; sources[key].usages.push({ trackType: tt, trackIndex: t, clipIndex: c, start: _timeToSeconds(clip.start), end: _timeToSeconds(clip.end) }); } catch (_) {} } } }
+        pt(seq.videoTracks, "video"); pt(seq.audioTracks, "audio");
+        var result = []; for (var s in sources) { if (sources.hasOwnProperty(s)) result.push(sources[s]); }
+        result.sort(function (a, b) { return b.usages.length - a.usages.length; });
+        return _ok({ sequenceName: seq.name || "", sources: result, uniqueSourceCount: result.length });
+    } catch (e) { return _err("getClipSourceReport failed: " + e.message); }
+}
+
+/** 16. getTimelineStructureReport(sequenceIndex) */
+function getTimelineStructureReport(sequenceIndex) {
+    try {
+        if (!app.project) return _err("No project open");
+        var idx = parseInt(sequenceIndex, 10) || 0;
+        var seq = app.project.sequences[idx];
+        if (!seq) return _err("Sequence not found at index " + idx);
+        var seqDur = _timeToSeconds(seq.end);
+        var markers = [];
+        if (seq.markers) { for (var m = 0; m < seq.markers.numMarkers; m++) { try { var mk = seq.markers[m]; markers.push({ name: mk.name || "", comment: mk.comments || "", time: _timeToSeconds(mk.start), end: _timeToSeconds(mk.end) }); } catch (_) {} } }
+        var ns = 10; var sd = seqDur > 0 ? seqDur / ns : 1; var sections = [];
+        for (var si = 0; si < ns; si++) { var ss = si * sd; var se = (si + 1) * sd; var cc2 = 0; if (seq.videoTracks) { for (var v = 0; v < seq.videoTracks.numTracks; v++) { var vt = seq.videoTracks[v]; if (!vt.clips) continue; for (var vc = 0; vc < vt.clips.numItems; vc++) { try { var cs2 = _timeToSeconds(vt.clips[vc].start); var ce2 = _timeToSeconds(vt.clips[vc].end); if (ce2 > ss && cs2 < se) cc2++; } catch (_) {} } } } sections.push({ sectionIndex: si, startTime: ss, endTime: se, clipCount: cc2 }); }
+        return _ok({ sequenceName: seq.name || "", duration: seqDur, markerCount: markers.length, markers: markers, sections: sections });
+    } catch (e) { return _err("getTimelineStructureReport failed: " + e.message); }
+}
+
+/** 17. getGapAnalysisReport(sequenceIndex) */
+function getGapAnalysisReport(sequenceIndex) {
+    try {
+        if (!app.project) return _err("No project open");
+        var idx = parseInt(sequenceIndex, 10) || 0;
+        var seq = app.project.sequences[idx];
+        if (!seq) return _err("Sequence not found at index " + idx);
+        var seqDur = _timeToSeconds(seq.end);
+        var trackGaps = [];
+        function fg(tracks, tt) { if (!tracks) return; for (var t = 0; t < tracks.numTracks; t++) { var track = tracks[t]; if (!track.clips || track.clips.numItems === 0) continue; var gaps = []; var ce = []; for (var c = 0; c < track.clips.numItems; c++) { try { ce.push({ start: _timeToSeconds(track.clips[c].start), end: _timeToSeconds(track.clips[c].end) }); } catch (_) {} } ce.sort(function (a, b) { return a.start - b.start; }); if (ce.length > 0 && ce[0].start > 0.01) gaps.push({ start: 0, end: ce[0].start, duration: ce[0].start }); for (var g = 1; g < ce.length; g++) { var gs = ce[g - 1].end; var ge = ce[g].start; if (ge - gs > 0.01) gaps.push({ start: gs, end: ge, duration: ge - gs }); } var tgd = 0; for (var gi = 0; gi < gaps.length; gi++) tgd += gaps[gi].duration; trackGaps.push({ trackType: tt, trackIndex: t, name: track.name || "", gapCount: gaps.length, totalGapDuration: tgd, gaps: gaps }); } }
+        fg(seq.videoTracks, "video"); fg(seq.audioTracks, "audio");
+        var tg = 0, tgt = 0; for (var i = 0; i < trackGaps.length; i++) { tg += trackGaps[i].gapCount; tgt += trackGaps[i].totalGapDuration; }
+        return _ok({ sequenceName: seq.name || "", duration: seqDur, totalGaps: tg, totalGapDuration: tgt, tracks: trackGaps });
+    } catch (e) { return _err("getGapAnalysisReport failed: " + e.message); }
+}
+
+/** 18. getDuplicateClipsReport(sequenceIndex) */
+function getDuplicateClipsReport(sequenceIndex) {
+    try {
+        if (!app.project) return _err("No project open");
+        var idx = parseInt(sequenceIndex, 10) || 0;
+        var seq = app.project.sequences[idx];
+        if (!seq) return _err("Sequence not found at index " + idx);
+        var cm = {};
+        function mc(tracks, tt) { if (!tracks) return; for (var t = 0; t < tracks.numTracks; t++) { var track = tracks[t]; if (!track.clips) continue; for (var c = 0; c < track.clips.numItems; c++) { try { var clip = track.clips[c]; var key = clip.name || "Unknown"; try { if (clip.projectItem && clip.projectItem.getMediaPath) key = clip.projectItem.getMediaPath() || key; } catch (_) {} if (!cm[key]) cm[key] = { name: clip.name || "", mediaPath: key, instances: [] }; cm[key].instances.push({ trackType: tt, trackIndex: t, clipIndex: c, start: _timeToSeconds(clip.start), end: _timeToSeconds(clip.end) }); } catch (_) {} } } }
+        mc(seq.videoTracks, "video"); mc(seq.audioTracks, "audio");
+        var dups = []; for (var k in cm) { if (cm.hasOwnProperty(k) && cm[k].instances.length > 1) dups.push(cm[k]); }
+        dups.sort(function (a, b) { return b.instances.length - a.instances.length; });
+        return _ok({ sequenceName: seq.name || "", duplicateGroups: dups, totalDuplicateGroups: dups.length });
+    } catch (e) { return _err("getDuplicateClipsReport failed: " + e.message); }
+}
+
+/** 19. getUnusedTracksReport(sequenceIndex) */
+function getUnusedTracksReport(sequenceIndex) {
+    try {
+        if (!app.project) return _err("No project open");
+        var idx = parseInt(sequenceIndex, 10) || 0;
+        var seq = app.project.sequences[idx];
+        if (!seq) return _err("Sequence not found at index " + idx);
+        var unused = [], used = [];
+        function ct(tracks, tt) { if (!tracks) return; for (var t = 0; t < tracks.numTracks; t++) { var track = tracks[t]; var cc = track.clips ? track.clips.numItems : 0; var info = { trackType: tt, trackIndex: t, name: track.name || (tt === "video" ? "V" : "A") + (t + 1), clipCount: cc }; if (cc === 0) unused.push(info); else used.push(info); } }
+        ct(seq.videoTracks, "video"); ct(seq.audioTracks, "audio");
+        return _ok({ sequenceName: seq.name || "", totalTracks: unused.length + used.length, unusedTrackCount: unused.length, usedTrackCount: used.length, unusedTracks: unused, usedTracks: used });
+    } catch (e) { return _err("getUnusedTracksReport failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Export Reports (20-24)
+// ---------------------------------------------------------------------------
+
+/** 20. exportProjectReport(outputPath, format) */
+function exportProjectReport(outputPath, format) {
+    try {
+        if (!app.project) return _err("No project open");
+        if (!outputPath) return _err("outputPath is required");
+        var fmt = (format || "json").toLowerCase();
+        var proj = app.project;
+        var report = { projectName: proj.name || "", projectPath: proj.path || "", generatedAt: new Date().toISOString(), sequenceCount: proj.sequences ? proj.sequences.numSequences : 0, sequences: [] };
+        if (proj.rootItem) { var counts = _countBinItemsAnalytics(proj.rootItem); report.clipCount = counts.clips; report.binCount = counts.bins; }
+        for (var s = 0; s < report.sequenceCount; s++) { var seq = proj.sequences[s]; if (!seq) continue; var vc = 0, ac = 0; if (seq.videoTracks) { for (var v = 0; v < seq.videoTracks.numTracks; v++) vc += seq.videoTracks[v].clips ? seq.videoTracks[v].clips.numItems : 0; } if (seq.audioTracks) { for (var a = 0; a < seq.audioTracks.numTracks; a++) ac += seq.audioTracks[a].clips ? seq.audioTracks[a].clips.numItems : 0; } report.sequences.push({ index: s, name: seq.name || "", duration: _timeToSeconds(seq.end), videoTracks: seq.videoTracks ? seq.videoTracks.numTracks : 0, audioTracks: seq.audioTracks ? seq.audioTracks.numTracks : 0, videoClips: vc, audioClips: ac }); }
+        var content;
+        if (fmt === "html") { content = "<html><head><title>Project Report - " + report.projectName + "</title><style>body{font-family:sans-serif;margin:20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;text-align:left}th{background:#f5f5f5}</style></head><body>"; content += "<h1>Project Report: " + report.projectName + "</h1><p>Generated: " + report.generatedAt + "</p><p>Path: " + report.projectPath + "</p><p>Clips: " + (report.clipCount || 0) + " | Bins: " + (report.binCount || 0) + " | Sequences: " + report.sequenceCount + "</p>"; content += "<h2>Sequences</h2><table><tr><th>Index</th><th>Name</th><th>Duration</th><th>V Tracks</th><th>A Tracks</th><th>V Clips</th><th>A Clips</th></tr>"; for (var si = 0; si < report.sequences.length; si++) { var sq = report.sequences[si]; content += "<tr><td>" + sq.index + "</td><td>" + sq.name + "</td><td>" + sq.duration.toFixed(2) + "s</td><td>" + sq.videoTracks + "</td><td>" + sq.audioTracks + "</td><td>" + sq.videoClips + "</td><td>" + sq.audioClips + "</td></tr>"; } content += "</table></body></html>"; }
+        else { content = JSON.stringify(report, null, 2); }
+        var f = new File(outputPath); f.open("w"); f.write(content); f.close();
+        return _ok({ exported: true, outputPath: f.fsName, format: fmt, size: f.length });
+    } catch (e) { return _err("exportProjectReport failed: " + e.message); }
+}
+
+/** 21. exportTimelineAsText(sequenceIndex, outputPath) */
+function exportTimelineAsText(sequenceIndex, outputPath) {
+    try {
+        if (!app.project) return _err("No project open");
+        if (!outputPath) return _err("outputPath is required");
+        var idx = parseInt(sequenceIndex, 10) || 0;
+        var seq = app.project.sequences[idx];
+        if (!seq) return _err("Sequence not found at index " + idx);
+        var lines = ["Timeline Report: " + (seq.name || "Untitled"), "Duration: " + _timeToSeconds(seq.end).toFixed(2) + " seconds", "Generated: " + new Date().toISOString(), "========================================"];
+        if (seq.videoTracks) { for (var v = 0; v < seq.videoTracks.numTracks; v++) { var vt = seq.videoTracks[v]; lines.push("\n[Video Track " + (v + 1) + "] " + (vt.name || "")); if (!vt.clips || vt.clips.numItems === 0) { lines.push("  (empty)"); continue; } for (var vc = 0; vc < vt.clips.numItems; vc++) { try { var clip = vt.clips[vc]; lines.push("  " + vc + ". " + (clip.name || "Untitled") + "  [" + _timeToSeconds(clip.start).toFixed(2) + "s - " + _timeToSeconds(clip.end).toFixed(2) + "s]  dur=" + (_timeToSeconds(clip.end) - _timeToSeconds(clip.start)).toFixed(2) + "s"); } catch (_) {} } } }
+        if (seq.audioTracks) { for (var a = 0; a < seq.audioTracks.numTracks; a++) { var at2 = seq.audioTracks[a]; lines.push("\n[Audio Track " + (a + 1) + "] " + (at2.name || "")); if (!at2.clips || at2.clips.numItems === 0) { lines.push("  (empty)"); continue; } for (var ac = 0; ac < at2.clips.numItems; ac++) { try { var aclip = at2.clips[ac]; lines.push("  " + ac + ". " + (aclip.name || "Untitled") + "  [" + _timeToSeconds(aclip.start).toFixed(2) + "s - " + _timeToSeconds(aclip.end).toFixed(2) + "s]  dur=" + (_timeToSeconds(aclip.end) - _timeToSeconds(aclip.start)).toFixed(2) + "s"); } catch (_) {} } } }
+        var f = new File(outputPath); f.open("w"); f.write(lines.join("\n")); f.close();
+        return _ok({ exported: true, outputPath: f.fsName, lineCount: lines.length });
+    } catch (e) { return _err("exportTimelineAsText failed: " + e.message); }
+}
+
+/** 22. exportClipList(sequenceIndex, outputPath, format) */
+function exportClipList(sequenceIndex, outputPath, format) {
+    try {
+        if (!app.project) return _err("No project open");
+        if (!outputPath) return _err("outputPath is required");
+        var idx = parseInt(sequenceIndex, 10) || 0;
+        var seq = app.project.sequences[idx];
+        if (!seq) return _err("Sequence not found at index " + idx);
+        var fmt = (format || "csv").toLowerCase();
+        var clips = [];
+        function cc(tracks, tt) { if (!tracks) return; for (var t = 0; t < tracks.numTracks; t++) { var track = tracks[t]; if (!track.clips) continue; for (var c = 0; c < track.clips.numItems; c++) { try { var clip = track.clips[c]; var mp = ""; try { if (clip.projectItem && clip.projectItem.getMediaPath) mp = clip.projectItem.getMediaPath(); } catch (_) {} clips.push({ name: clip.name || "", trackType: tt, trackIndex: t, clipIndex: c, start: _timeToSeconds(clip.start), end: _timeToSeconds(clip.end), duration: _timeToSeconds(clip.end) - _timeToSeconds(clip.start), mediaPath: mp }); } catch (_) {} } } }
+        cc(seq.videoTracks, "video"); cc(seq.audioTracks, "audio");
+        var content;
+        if (fmt === "json") { content = JSON.stringify({ sequenceName: seq.name || "", clipCount: clips.length, clips: clips }, null, 2); }
+        else { var lines = ["Name,Track Type,Track Index,Clip Index,Start (s),End (s),Duration (s),Media Path"]; for (var ci = 0; ci < clips.length; ci++) { var cl = clips[ci]; lines.push('"' + cl.name + '",' + cl.trackType + ',' + cl.trackIndex + ',' + cl.clipIndex + ',' + cl.start.toFixed(3) + ',' + cl.end.toFixed(3) + ',' + cl.duration.toFixed(3) + ',"' + cl.mediaPath + '"'); } content = lines.join("\n"); }
+        var f = new File(outputPath); f.open("w"); f.write(content); f.close();
+        return _ok({ exported: true, outputPath: f.fsName, format: fmt, clipCount: clips.length });
+    } catch (e) { return _err("exportClipList failed: " + e.message); }
+}
+
+/** 23. exportEffectsList(sequenceIndex, outputPath) */
+function exportEffectsList(sequenceIndex, outputPath) {
+    try {
+        if (!app.project) return _err("No project open");
+        if (!outputPath) return _err("outputPath is required");
+        var idx = parseInt(sequenceIndex, 10) || 0;
+        var seq = app.project.sequences[idx];
+        if (!seq) return _err("Sequence not found at index " + idx);
+        var effects = [];
+        function ce(tracks, tt) { if (!tracks) return; for (var t = 0; t < tracks.numTracks; t++) { var track = tracks[t]; if (!track.clips) continue; for (var c = 0; c < track.clips.numItems; c++) { var clip = track.clips[c]; if (!clip.components) continue; for (var ci = 0; ci < clip.components.numItems; ci++) { try { var comp = clip.components[ci]; effects.push({ effectName: comp.displayName || "", matchName: comp.matchName || "", clipName: clip.name || "", trackType: tt, trackIndex: t, clipIndex: c }); } catch (_) {} } } } }
+        ce(seq.videoTracks, "video"); ce(seq.audioTracks, "audio");
+        var content = JSON.stringify({ sequenceName: seq.name || "", effectCount: effects.length, effects: effects }, null, 2);
+        var f = new File(outputPath); f.open("w"); f.write(content); f.close();
+        return _ok({ exported: true, outputPath: f.fsName, effectCount: effects.length });
+    } catch (e) { return _err("exportEffectsList failed: " + e.message); }
+}
+
+/** 24. exportMediaList(outputPath, format) */
+function exportMediaList(outputPath, format) {
+    try {
+        if (!app.project) return _err("No project open");
+        if (!outputPath) return _err("outputPath is required");
+        var fmt = (format || "csv").toLowerCase();
+        var mediaItems = [];
+        function wm(bin, bp) { if (!bin || !bin.children) return; for (var i = 0; i < bin.children.numItems; i++) { var item = bin.children[i]; if (!item) continue; if (item.type === ProjectItemType.BIN) { wm(item, bp + "/" + (item.name || "Bin")); continue; } try { var mp = ""; try { if (item.getMediaPath) mp = item.getMediaPath(); } catch (_) {} var dur = 0; try { dur = item.getMediaDuration ? parseFloat(item.getMediaDuration()) : 0; if (isNaN(dur)) dur = 0; } catch (_) {} mediaItems.push({ name: item.name || "", binPath: bp, mediaPath: mp, duration: dur }); } catch (_) {} } }
+        wm(app.project.rootItem, "");
+        var content;
+        if (fmt === "json") { content = JSON.stringify({ projectName: app.project.name || "", mediaCount: mediaItems.length, media: mediaItems }, null, 2); }
+        else { var lines = ["Name,Bin Path,Media Path,Duration (s)"]; for (var mi = 0; mi < mediaItems.length; mi++) { var m = mediaItems[mi]; lines.push('"' + m.name + '","' + m.binPath + '","' + m.mediaPath + '",' + m.duration.toFixed(3)); } content = lines.join("\n"); }
+        var f = new File(outputPath); f.open("w"); f.write(content); f.close();
+        return _ok({ exported: true, outputPath: f.fsName, format: fmt, mediaCount: mediaItems.length });
+    } catch (e) { return _err("exportMediaList failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Comparison (25-26)
+// ---------------------------------------------------------------------------
+
+/** 25. compareSequences(seqIndex1, seqIndex2) */
+function compareSequences(seqIndex1, seqIndex2) {
+    try {
+        if (!app.project) return _err("No project open");
+        var i1 = parseInt(seqIndex1, 10) || 0; var i2 = parseInt(seqIndex2, 10) || 0;
+        var ns = app.project.sequences ? app.project.sequences.numSequences : 0;
+        if (i1 < 0 || i1 >= ns) return _err("Sequence index 1 (" + i1 + ") out of range");
+        if (i2 < 0 || i2 >= ns) return _err("Sequence index 2 (" + i2 + ") out of range");
+        var s1 = app.project.sequences[i1]; var s2 = app.project.sequences[i2];
+        if (!s1 || !s2) return _err("One or both sequences not found");
+        function ss(seq) { var vc = 0, ac = 0, ef = 0; if (seq.videoTracks) { for (var v = 0; v < seq.videoTracks.numTracks; v++) { var vt = seq.videoTracks[v]; vc += vt.clips ? vt.clips.numItems : 0; if (vt.clips) { for (var vi = 0; vi < vt.clips.numItems; vi++) { try { ef += vt.clips[vi].components ? vt.clips[vi].components.numItems : 0; } catch (_) {} } } } } if (seq.audioTracks) { for (var a = 0; a < seq.audioTracks.numTracks; a++) { ac += seq.audioTracks[a].clips ? seq.audioTracks[a].clips.numItems : 0; } } return { name: seq.name || "", duration: _timeToSeconds(seq.end), videoTrackCount: seq.videoTracks ? seq.videoTracks.numTracks : 0, audioTrackCount: seq.audioTracks ? seq.audioTracks.numTracks : 0, videoClipCount: vc, audioClipCount: ac, effectCount: ef }; }
+        var st1 = ss(s1); var st2 = ss(s2);
+        return _ok({ sequence1: st1, sequence2: st2, differences: { durationDiff: st1.duration - st2.duration, videoClipDiff: st1.videoClipCount - st2.videoClipCount, audioClipDiff: st1.audioClipCount - st2.audioClipCount, effectDiff: st1.effectCount - st2.effectCount, videoTrackDiff: st1.videoTrackCount - st2.videoTrackCount, audioTrackDiff: st1.audioTrackCount - st2.audioTrackCount } });
+    } catch (e) { return _err("compareSequences failed: " + e.message); }
+}
+
+/** 26. compareClips(clip1TrackType, clip1TrackIndex, clip1ClipIndex, clip2TrackType, clip2TrackIndex, clip2ClipIndex) */
+function compareClips(clip1TrackType, clip1TrackIndex, clip1ClipIndex, clip2TrackType, clip2TrackIndex, clip2ClipIndex) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        function gc(tt, ti, ci) { var tIdx = parseInt(ti, 10) || 0; var cIdx = parseInt(ci, 10) || 0; var tracks = (tt === "audio") ? seq.audioTracks : seq.videoTracks; if (!tracks || tIdx >= tracks.numTracks) return null; var track = tracks[tIdx]; if (!track.clips || cIdx >= track.clips.numItems) return null; return track.clips[cIdx]; }
+        var c1 = gc(clip1TrackType, clip1TrackIndex, clip1ClipIndex);
+        var c2 = gc(clip2TrackType, clip2TrackIndex, clip2ClipIndex);
+        if (!c1) return _err("Clip 1 not found"); if (!c2) return _err("Clip 2 not found");
+        function cp(clip, tt, ti, ci) { var props = { name: clip.name || "", trackType: tt, trackIndex: parseInt(ti, 10), clipIndex: parseInt(ci, 10), start: _timeToSeconds(clip.start), end: _timeToSeconds(clip.end), duration: _timeToSeconds(clip.end) - _timeToSeconds(clip.start), effectCount: 0, effects: [] }; try { if (clip.projectItem && clip.projectItem.getMediaPath) props.mediaPath = clip.projectItem.getMediaPath(); } catch (_) {} if (clip.components) { props.effectCount = clip.components.numItems; for (var e2 = 0; e2 < clip.components.numItems; e2++) { try { props.effects.push(clip.components[e2].displayName || ""); } catch (_) {} } } return props; }
+        var p1 = cp(c1, clip1TrackType, clip1TrackIndex, clip1ClipIndex);
+        var p2 = cp(c2, clip2TrackType, clip2TrackIndex, clip2ClipIndex);
+        return _ok({ clip1: p1, clip2: p2, comparison: { sameName: p1.name === p2.name, sameSource: (p1.mediaPath || "") === (p2.mediaPath || ""), durationDiff: p1.duration - p2.duration, effectCountDiff: p1.effectCount - p2.effectCount } });
+    } catch (e) { return _err("compareClips failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Usage Statistics (27-30)
+// ---------------------------------------------------------------------------
+
+/** 27. getEditingSessionStats() */
+function getEditingSessionStats() {
+    try {
+        if (!app.project) return _err("No project open");
+        var stats = { projectName: app.project.name || "", projectPath: app.project.path || "", sequenceCount: app.project.sequences ? app.project.sequences.numSequences : 0, activeSequence: null, appVersion: app.version || "unknown", appBuild: app.build || "unknown" };
+        if (app.project.activeSequence) { stats.activeSequence = { name: app.project.activeSequence.name || "", duration: _timeToSeconds(app.project.activeSequence.end) }; }
+        try { stats.os = $.os || "unknown"; } catch (_) {}
+        try { stats.memoryAvailable = $.memCache || 0; } catch (_) {}
+        return _ok(stats);
+    } catch (e) { return _err("getEditingSessionStats failed: " + e.message); }
+}
+
+/** 28. getProjectAgeInfo() */
+function getProjectAgeInfo() {
+    try {
+        if (!app.project) return _err("No project open");
+        var pp = app.project.path || "";
+        var info = { projectName: app.project.name || "", projectPath: pp, created: null, modified: null, fileSize: 0, ageDays: 0 };
+        if (pp) { var f = new File(pp); if (f.exists) { try { info.created = f.created ? f.created.toISOString() : null; } catch (_) { info.created = String(f.created); } try { info.modified = f.modified ? f.modified.toISOString() : null; } catch (_) { info.modified = String(f.modified); } info.fileSize = f.length || 0; if (f.created) { info.ageDays = Math.floor((new Date().getTime() - f.created.getTime()) / 86400000); } } }
+        return _ok(info);
+    } catch (e) { return _err("getProjectAgeInfo failed: " + e.message); }
+}
+
+/** 29. getStorageReport() */
+function getStorageReport() {
+    try {
+        if (!app.project) return _err("No project open");
+        var report = { projectName: app.project.name || "", projectFileSize: 0, totalMediaSize: 0, mediaFiles: [] };
+        var pp = app.project.path || "";
+        if (pp) { var pf = new File(pp); if (pf.exists) report.projectFileSize = pf.length || 0; }
+        function ws(bin) { if (!bin || !bin.children) return; for (var i = 0; i < bin.children.numItems; i++) { var item = bin.children[i]; if (!item) continue; if (item.type === ProjectItemType.BIN) { ws(item); continue; } try { var mp = item.getMediaPath ? item.getMediaPath() : ""; if (mp) { var mf = new File(mp); if (mf.exists) { var sz = mf.length || 0; report.totalMediaSize += sz; report.mediaFiles.push({ name: item.name || "", path: mp, size: sz }); } } } catch (_) {} } }
+        ws(app.project.rootItem);
+        try { report.scratchDisks = {}; if (app.project.getScratchDiskPath) { var types = ["ScratchDiskType.FirstVideoCaptureFolder", "ScratchDiskType.FirstAudioCaptureFolder", "ScratchDiskType.FirstVideoPreviewFolder", "ScratchDiskType.FirstAudioPreviewFolder"]; for (var t = 0; t < types.length; t++) { try { report.scratchDisks[types[t]] = app.project.getScratchDiskPath(types[t]) || ""; } catch (_) {} } } } catch (_) {}
+        report.mediaFileCount = report.mediaFiles.length;
+        if (report.mediaFiles.length > 100) { report.mediaFiles = report.mediaFiles.slice(0, 100); report.truncated = true; }
+        return _ok(report);
+    } catch (e) { return _err("getStorageReport failed: " + e.message); }
+}
+
+/** 30. getAnalyticsPerformanceReport() - Performance stats. */
+function getAnalyticsPerformanceReport() {
+    try {
+        if (!app.project) return _err("No project open");
+        var report = { projectName: app.project.name || "", renderer: "unknown", gpuAcceleration: false, sequenceCount: app.project.sequences ? app.project.sequences.numSequences : 0, sequences: [] };
+        try { if (app.project.gpuAccelRendererInfo) { report.renderer = String(app.project.gpuAccelRendererInfo()); report.gpuAcceleration = true; } } catch (_) {}
+        for (var s = 0; s < report.sequenceCount; s++) { var seq = app.project.sequences[s]; if (!seq) continue; var vc = 0, ac = 0, ef = 0; if (seq.videoTracks) { for (var v = 0; v < seq.videoTracks.numTracks; v++) { var vt = seq.videoTracks[v]; vc += vt.clips ? vt.clips.numItems : 0; if (vt.clips) { for (var vi = 0; vi < vt.clips.numItems; vi++) { try { ef += vt.clips[vi].components ? vt.clips[vi].components.numItems : 0; } catch (_) {} } } } } if (seq.audioTracks) { for (var a = 0; a < seq.audioTracks.numTracks; a++) { ac += seq.audioTracks[a].clips ? seq.audioTracks[a].clips.numItems : 0; } } report.sequences.push({ index: s, name: seq.name || "", duration: _timeToSeconds(seq.end), videoClips: vc, audioClips: ac, effectCount: ef, complexityScore: Math.min(100, Math.round((vc + ac + ef) / 3)) }); }
+        try { report.os = $.os || "unknown"; } catch (_) {}
+        try { report.engineVersion = app.version || "unknown"; } catch (_) {}
+        return _ok(report);
+    } catch (e) { return _err("getAnalyticsPerformanceReport failed: " + e.message); }
+}
