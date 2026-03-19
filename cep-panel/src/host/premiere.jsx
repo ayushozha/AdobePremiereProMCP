@@ -4740,3 +4740,436 @@ function setLumetriSaturation(trackIndex, clipIndex, value) { try { return _setL
 function setLumetriTemperature(trackIndex, clipIndex, value) { try { return _setLumetriProperty(trackIndex, clipIndex, "Temperature", value); } catch (e) { return _err("setLumetriTemperature failed: " + e.message); } }
 function setLumetriTint(trackIndex, clipIndex, value) { try { return _setLumetriProperty(trackIndex, clipIndex, "Tint", value); } catch (e) { return _err("setLumetriTint failed: " + e.message); } }
 function setLumetriExposure(trackIndex, clipIndex, value) { try { return _setLumetriProperty(trackIndex, clipIndex, "Exposure", value); } catch (e) { return _err("setLumetriExposure failed: " + e.message); } }
+
+// ===========================================================================
+// Motion Graphics Templates (MOGRTs) -- Primary text/title method
+// ===========================================================================
+
+function importMOGRT(mogrtPath, timeTicks, videoTrackOffset, audioTrackOffset) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        if (!mogrtPath || mogrtPath === "") return _err("mogrtPath is required");
+        timeTicks = timeTicks || "0";
+        videoTrackOffset = parseInt(videoTrackOffset, 10) || 0;
+        audioTrackOffset = parseInt(audioTrackOffset, 10) || 0;
+        var result = seq.importMGT(mogrtPath, timeTicks, videoTrackOffset, audioTrackOffset);
+        if (result) {
+            return _ok({ mogrtPath: mogrtPath, timeTicks: timeTicks, videoTrackOffset: videoTrackOffset, audioTrackOffset: audioTrackOffset, imported: true });
+        }
+        return _err("importMGT returned false for: " + mogrtPath);
+    } catch (e) { return _err("importMOGRT failed: " + e.message); }
+}
+
+function getMOGRTProperties(trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        clipIndex = parseInt(clipIndex, 10) || 0;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index " + trackIndex + " out of range");
+        var track = seq.videoTracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index " + clipIndex + " out of range on track " + trackIndex);
+        var clip = track.clips[clipIndex];
+        var mgtComp = clip.getMGTComponent();
+        if (!mgtComp) return _err("Clip at track " + trackIndex + ", index " + clipIndex + " has no MGT component");
+        var props = [];
+        if (mgtComp.properties) {
+            for (var i = 0; i < mgtComp.properties.numItems; i++) {
+                var prop = mgtComp.properties[i];
+                var info = { index: i, displayName: prop.displayName || "", matchName: prop.matchName || "" };
+                try { info.value = prop.getValue(); } catch (e2) { info.value = null; }
+                try { info.keyframeable = prop.isTimeVarying() !== undefined; } catch (e3) { info.keyframeable = false; }
+                props.push(info);
+            }
+        }
+        return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, clipName: clip.name || "", properties: props });
+    } catch (e) { return _err("getMOGRTProperties failed: " + e.message); }
+}
+
+function setMOGRTText(trackIndex, clipIndex, propertyIndex, text) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        clipIndex = parseInt(clipIndex, 10) || 0;
+        propertyIndex = parseInt(propertyIndex, 10) || 0;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index " + trackIndex + " out of range");
+        var track = seq.videoTracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index " + clipIndex + " out of range on track " + trackIndex);
+        var clip = track.clips[clipIndex];
+        var mgtComp = clip.getMGTComponent();
+        if (!mgtComp) return _err("Clip has no MGT component");
+        if (!mgtComp.properties || propertyIndex >= mgtComp.properties.numItems) return _err("Property index " + propertyIndex + " out of range");
+        var prop = mgtComp.properties[propertyIndex];
+        prop.setValue(text, true);
+        return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, propertyIndex: propertyIndex, text: text, propertyName: prop.displayName || "" });
+    } catch (e) { return _err("setMOGRTText failed: " + e.message); }
+}
+
+function setMOGRTProperty(trackIndex, clipIndex, propertyName, value) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        clipIndex = parseInt(clipIndex, 10) || 0;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index " + trackIndex + " out of range");
+        var track = seq.videoTracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index " + clipIndex + " out of range on track " + trackIndex);
+        var clip = track.clips[clipIndex];
+        var mgtComp = clip.getMGTComponent();
+        if (!mgtComp) return _err("Clip has no MGT component");
+        var found = false;
+        if (mgtComp.properties) {
+            for (var i = 0; i < mgtComp.properties.numItems; i++) {
+                if (mgtComp.properties[i].displayName === propertyName) { mgtComp.properties[i].setValue(value, true); found = true; break; }
+            }
+        }
+        if (!found) return _err("Property '" + propertyName + "' not found on MOGRT clip");
+        return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, propertyName: propertyName, value: value });
+    } catch (e) { return _err("setMOGRTProperty failed: " + e.message); }
+}
+
+// ===========================================================================
+// Titles & Lower Thirds
+// ===========================================================================
+
+function addTitle(text, trackIndex, startTime, duration, styleJson) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        startTime = parseFloat(startTime) || 0;
+        duration = parseFloat(duration) || 5.0;
+        var style = {};
+        if (styleJson && styleJson !== "") { try { style = JSON.parse(styleJson); } catch (pe) {} }
+        var insertTimeTicks = String(Math.round(startTime * 254016000000));
+        if (style.mogrtPath && style.mogrtPath !== "") {
+            var imported = seq.importMGT(style.mogrtPath, insertTimeTicks, trackIndex, 0);
+            if (imported) {
+                var track = seq.videoTracks[trackIndex];
+                if (track && track.clips) {
+                    for (var ci = 0; ci < track.clips.numItems; ci++) {
+                        var c = track.clips[ci];
+                        if (Math.abs(_timeToSeconds(c.start) - startTime) < 0.1) {
+                            var mgt = c.getMGTComponent();
+                            if (mgt && mgt.properties) { for (var pi = 0; pi < mgt.properties.numItems; pi++) { try { mgt.properties[pi].setValue(text, true); break; } catch (sp) { continue; } } }
+                            try { c.end = _secondsToTime(startTime + duration); } catch (de) {}
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        return _ok({ text: text, trackIndex: trackIndex, startTime: startTime, duration: duration, style: style });
+    } catch (e) { return _err("addTitle failed: " + e.message); }
+}
+
+function addLowerThird(name, title, trackIndex, startTime, duration) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        startTime = parseFloat(startTime) || 0;
+        duration = parseFloat(duration) || 5.0;
+        var insertTimeTicks = String(Math.round(startTime * 254016000000));
+        var mogrtPaths = ["/Library/Application Support/Adobe/Common/Motion Graphics Templates/Lower Third.mogrt", app.path + "/../Motion Graphics Templates/Lower Third.mogrt"];
+        var imported = false;
+        for (var mp = 0; mp < mogrtPaths.length; mp++) { try { var r = seq.importMGT(mogrtPaths[mp], insertTimeTicks, trackIndex, 0); if (r) { imported = true; break; } } catch (me) { continue; } }
+        if (imported) {
+            var track = seq.videoTracks[trackIndex];
+            if (track && track.clips) {
+                for (var ci = 0; ci < track.clips.numItems; ci++) {
+                    var clip = track.clips[ci];
+                    if (Math.abs(_timeToSeconds(clip.start) - startTime) < 0.1) {
+                        var mgt = clip.getMGTComponent();
+                        if (mgt && mgt.properties) { var idx = 0; for (var pi = 0; pi < mgt.properties.numItems; pi++) { try { if (idx === 0) { mgt.properties[pi].setValue(name, true); idx++; } else if (idx === 1) { mgt.properties[pi].setValue(title, true); break; } } catch (pe) { continue; } } }
+                        try { clip.end = _secondsToTime(startTime + duration); } catch (de) {}
+                        break;
+                    }
+                }
+            }
+        }
+        return _ok({ name: name, title: title, trackIndex: trackIndex, startTime: startTime, duration: duration, mogrtImported: imported });
+    } catch (e) { return _err("addLowerThird failed: " + e.message); }
+}
+
+// ===========================================================================
+// Captions & Subtitles
+// ===========================================================================
+
+function createCaptionTrack(format) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        format = format || "Subtitle";
+        var formatCode = 0;
+        if (format === "Closed" || format === "608") formatCode = 1;
+        else if (format === "708") formatCode = 2;
+        if (seq.addCaptionTrack) { seq.addCaptionTrack(formatCode); }
+        else if (typeof seq.createCaptionTrack === "function") { seq.createCaptionTrack(formatCode); }
+        else { return _err("Caption track creation not supported in this Premiere Pro version"); }
+        return _ok({ format: format, formatCode: formatCode, created: true });
+    } catch (e) { return _err("createCaptionTrack failed: " + e.message); }
+}
+
+function importCaptions(filePath, format) {
+    try {
+        if (!app.project) return _err("No project is open");
+        if (!app.project.activeSequence) return _err("No active sequence");
+        if (!filePath || filePath === "") return _err("filePath is required");
+        format = format || "SRT";
+        var ok = app.project.importFiles([filePath], true, app.project.rootItem, false);
+        if (!ok) return _err("Failed to import caption file: " + filePath);
+        var found = false;
+        if (app.project.rootItem.children) { for (var i = app.project.rootItem.children.numItems - 1; i >= 0; i--) { var item = app.project.rootItem.children[i]; if (item.getMediaPath && item.getMediaPath() === filePath) { found = true; break; } } }
+        return _ok({ filePath: filePath, format: format, imported: true, projectItemFound: found });
+    } catch (e) { return _err("importCaptions failed: " + e.message); }
+}
+
+function getCaptions(trackIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        var captions = [];
+        if (seq.captionTracks && trackIndex < seq.captionTracks.numTracks) {
+            var ct = seq.captionTracks[trackIndex];
+            if (ct && ct.clips) { for (var ci = 0; ci < ct.clips.numItems; ci++) { var c = ct.clips[ci]; captions.push({ index: ci, text: c.name || "", startSeconds: _timeToSeconds(c.start), endSeconds: _timeToSeconds(c.end), duration: _timeToSeconds(c.duration) }); } }
+        } else if (trackIndex < seq.videoTracks.numTracks) {
+            var vt = seq.videoTracks[trackIndex];
+            if (vt && vt.clips) { for (var vc = 0; vc < vt.clips.numItems; vc++) { var v = vt.clips[vc]; captions.push({ index: vc, text: v.name || "", startSeconds: _timeToSeconds(v.start), endSeconds: _timeToSeconds(v.end), duration: _timeToSeconds(v.duration) }); } }
+        }
+        return _ok({ trackIndex: trackIndex, captionCount: captions.length, captions: captions });
+    } catch (e) { return _err("getCaptions failed: " + e.message); }
+}
+
+function addCaption(trackIndex, startTime, endTime, text) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        startTime = parseFloat(startTime) || 0;
+        endTime = parseFloat(endTime) || (startTime + 3.0);
+        if (!text || text === "") return _err("text is required");
+        if (seq.captionTracks && trackIndex < seq.captionTracks.numTracks) {
+            var ct = seq.captionTracks[trackIndex];
+            if (ct.addCaption) { ct.addCaption(_secondsToTime(startTime), _secondsToTime(endTime), text); }
+            else if (ct.insertClip) { ct.insertClip(text, _secondsToTime(startTime)); }
+        } else { return _err("Caption track index " + trackIndex + " out of range or not available"); }
+        return _ok({ trackIndex: trackIndex, startTime: startTime, endTime: endTime, text: text });
+    } catch (e) { return _err("addCaption failed: " + e.message); }
+}
+
+function editCaption(trackIndex, captionIndex, text) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        captionIndex = parseInt(captionIndex, 10) || 0;
+        if (!text || text === "") return _err("text is required");
+        var edited = false;
+        if (seq.captionTracks && trackIndex < seq.captionTracks.numTracks) {
+            var ct = seq.captionTracks[trackIndex];
+            if (ct.clips && captionIndex < ct.clips.numItems) {
+                var clip = ct.clips[captionIndex];
+                if (clip.getMGTComponent) { var comp = clip.getMGTComponent(); if (comp && comp.properties) { for (var pi = 0; pi < comp.properties.numItems; pi++) { try { comp.properties[pi].setValue(text, true); edited = true; break; } catch (pe) { continue; } } } }
+                if (!edited) { clip.name = text; edited = true; }
+            } else { return _err("Caption index " + captionIndex + " out of range"); }
+        } else { return _err("Caption track index " + trackIndex + " out of range"); }
+        return _ok({ trackIndex: trackIndex, captionIndex: captionIndex, text: text, edited: edited });
+    } catch (e) { return _err("editCaption failed: " + e.message); }
+}
+
+function deleteCaption(trackIndex, captionIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        captionIndex = parseInt(captionIndex, 10) || 0;
+        if (seq.captionTracks && trackIndex < seq.captionTracks.numTracks) {
+            var ct = seq.captionTracks[trackIndex];
+            if (ct.clips && captionIndex < ct.clips.numItems) { ct.clips[captionIndex].remove(false, true); }
+            else { return _err("Caption index " + captionIndex + " out of range"); }
+        } else { return _err("Caption track index " + trackIndex + " out of range"); }
+        return _ok({ trackIndex: trackIndex, captionIndex: captionIndex, deleted: true });
+    } catch (e) { return _err("deleteCaption failed: " + e.message); }
+}
+
+function exportCaptions(outputPath, format) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        if (!outputPath || outputPath === "") return _err("outputPath is required");
+        format = format || "SRT";
+        if (seq.exportCaptions) { seq.exportCaptions(outputPath, format); return _ok({ outputPath: outputPath, format: format, exported: true }); }
+        var captions = [];
+        if (seq.captionTracks) { for (var t = 0; t < seq.captionTracks.numTracks; t++) { var ct = seq.captionTracks[t]; if (ct.clips) { for (var ci = 0; ci < ct.clips.numItems; ci++) { var c = ct.clips[ci]; captions.push({ text: c.name || "", startSeconds: _timeToSeconds(c.start), endSeconds: _timeToSeconds(c.end) }); } } } }
+        var sep = (format === "VTT" || format === "vtt") ? "." : ",";
+        var content = (format === "VTT" || format === "vtt") ? "WEBVTT\n\n" : "";
+        for (var i = 0; i < captions.length; i++) {
+            var cap = captions[i];
+            var _f = function(ts) { var h=Math.floor(ts/3600),m=Math.floor((ts%3600)/60),s=Math.floor(ts%60),ms=Math.round((ts-Math.floor(ts))*1000); return (h<10?"0":"")+h+":"+(m<10?"0":"")+m+":"+(s<10?"0":"")+s+sep+(ms<100?"0":"")+(ms<10?"0":"")+ms; };
+            content += (i + 1) + "\n" + _f(cap.startSeconds) + " --> " + _f(cap.endSeconds) + "\n" + cap.text + "\n\n";
+        }
+        var f = new File(outputPath); f.open("w"); f.write(content); f.close();
+        return _ok({ outputPath: outputPath, format: format, captionCount: captions.length, exported: true });
+    } catch (e) { return _err("exportCaptions failed: " + e.message); }
+}
+
+function styleCaptions(trackIndex, font, size, color, bgColor, position) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        size = parseFloat(size) || 24;
+        var styled = 0;
+        if (seq.captionTracks && trackIndex < seq.captionTracks.numTracks) {
+            var ct = seq.captionTracks[trackIndex];
+            if (ct.clips) {
+                for (var ci = 0; ci < ct.clips.numItems; ci++) {
+                    var clip = ct.clips[ci];
+                    if (clip.components) { for (var comp = 0; comp < clip.components.numItems; comp++) { var component = clip.components[comp]; if (component.properties) { for (var pi = 0; pi < component.properties.numItems; pi++) { var p = component.properties[pi]; var dn = p.displayName || ""; try { if (font && dn === "Font") p.setValue(font, true); else if (size && dn === "Font Size") p.setValue(size, true); else if (color && dn === "Font Color") p.setValue(color, true); else if (bgColor && dn === "Background Color") p.setValue(bgColor, true); else if (position && dn === "Position") p.setValue(position, true); } catch (se) { continue; } } } } }
+                    styled++;
+                }
+            }
+        } else { return _err("Caption track index " + trackIndex + " out of range"); }
+        return _ok({ trackIndex: trackIndex, font: font || "", size: size, color: color || "", bgColor: bgColor || "", position: position || "", captionsStyled: styled });
+    } catch (e) { return _err("styleCaptions failed: " + e.message); }
+}
+
+// ===========================================================================
+// Graphics (Color Mattes and Transparent Video)
+// ===========================================================================
+
+function createColorMatte(name, red, green, blue, width, height) {
+    try {
+        if (!app.project) return _err("No project is open");
+        name = name || "Color Matte";
+        red = Math.max(0, Math.min(255, parseInt(red, 10) || 0));
+        green = Math.max(0, Math.min(255, parseInt(green, 10) || 0));
+        blue = Math.max(0, Math.min(255, parseInt(blue, 10) || 0));
+        width = parseInt(width, 10) || 1920; height = parseInt(height, 10) || 1080;
+        if (typeof qe === "undefined") app.enableQE();
+        if (typeof qe !== "undefined" && qe.project) { qe.project.newColorMatte(red, green, blue, name); return _ok({ name: name, red: red, green: green, blue: blue, width: width, height: height, created: true, method: "qe" }); }
+        if (app.project.createColorMatte) { app.project.createColorMatte(red, green, blue, name, width, height); return _ok({ name: name, red: red, green: green, blue: blue, width: width, height: height, created: true, method: "project" }); }
+        return _err("Color matte creation not supported in this Premiere Pro version");
+    } catch (e) { return _err("createColorMatte failed: " + e.message); }
+}
+
+function placeColorMatte(projectItemIndex, trackIndex, startTime, duration) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        projectItemIndex = parseInt(projectItemIndex, 10) || 0; trackIndex = parseInt(trackIndex, 10) || 0;
+        startTime = parseFloat(startTime) || 0; duration = parseFloat(duration) || 5.0;
+        if (!app.project.rootItem.children || projectItemIndex >= app.project.rootItem.children.numItems) return _err("Project item index " + projectItemIndex + " out of range");
+        var pi = app.project.rootItem.children[projectItemIndex];
+        if (!pi) return _err("No project item at index " + projectItemIndex);
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index " + trackIndex + " out of range");
+        seq.videoTracks[trackIndex].insertClip(pi, _secondsToTime(startTime));
+        if (seq.videoTracks[trackIndex].clips) { for (var ci = 0; ci < seq.videoTracks[trackIndex].clips.numItems; ci++) { var c = seq.videoTracks[trackIndex].clips[ci]; if (Math.abs(_timeToSeconds(c.start) - startTime) < 0.1) { try { c.end = _secondsToTime(startTime + duration); } catch (de) {} break; } } }
+        return _ok({ projectItemName: pi.name || "", projectItemIndex: projectItemIndex, trackIndex: trackIndex, startTime: startTime, duration: duration });
+    } catch (e) { return _err("placeColorMatte failed: " + e.message); }
+}
+
+function createTransparentVideo(name, width, height, duration) {
+    try {
+        if (!app.project) return _err("No project is open");
+        name = name || "Transparent Video"; width = parseInt(width, 10) || 1920; height = parseInt(height, 10) || 1080; duration = parseFloat(duration) || 10.0;
+        if (typeof qe === "undefined") app.enableQE();
+        if (typeof qe !== "undefined" && qe.project) { qe.project.newTransparentVideo(name, width, height, duration); return _ok({ name: name, width: width, height: height, duration: duration, created: true, method: "qe" }); }
+        if (app.project.createTransparentVideo) { app.project.createTransparentVideo(name, width, height, duration); return _ok({ name: name, width: width, height: height, duration: duration, created: true, method: "project" }); }
+        return _err("Transparent video creation not supported in this Premiere Pro version");
+    } catch (e) { return _err("createTransparentVideo failed: " + e.message); }
+}
+
+// ===========================================================================
+// Speed & Time (time remapping and freeze frame)
+// ===========================================================================
+
+function setTimeRemapping(trackIndex, clipIndex, enabled) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0;
+        enabled = (enabled === true || enabled === "true" || enabled === 1);
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index " + trackIndex + " out of range");
+        var track = seq.videoTracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index " + clipIndex + " out of range");
+        var clip = track.clips[clipIndex];
+        if (clip.components) { for (var ci = 0; ci < clip.components.numItems; ci++) { var comp = clip.components[ci]; if (comp.displayName === "Time Remapping" || comp.matchName === "timeRemapping") { var sp = comp.properties.getParamForDisplayName("Speed"); if (sp) { if (enabled) { sp.setTimeVarying(true); } else { sp.setTimeVarying(false); sp.setValue(100, true); } } break; } } }
+        return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, timeRemapping: enabled });
+    } catch (e) { return _err("setTimeRemapping failed: " + e.message); }
+}
+
+function addTimeRemapKeyframe(trackIndex, clipIndex, time, speed) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0;
+        time = parseFloat(time) || 0; speed = parseFloat(speed) || 1.0;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index " + trackIndex + " out of range");
+        var track = seq.videoTracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index " + clipIndex + " out of range");
+        var clip = track.clips[clipIndex];
+        if (clip.components) { for (var ci = 0; ci < clip.components.numItems; ci++) { var comp = clip.components[ci]; if (comp.displayName === "Time Remapping" || comp.matchName === "timeRemapping") { var sp = comp.properties.getParamForDisplayName("Speed"); if (sp) { sp.setTimeVarying(true); var kfT = _secondsToTime(time); sp.addKey(kfT); sp.setValueAtKey(kfT, speed * 100, true); } break; } } }
+        return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, time: time, speed: speed });
+    } catch (e) { return _err("addTimeRemapKeyframe failed: " + e.message); }
+}
+
+function freezeFrame(trackIndex, clipIndex, time, duration) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0;
+        time = parseFloat(time) || 0; duration = parseFloat(duration) || 2.0;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index " + trackIndex + " out of range");
+        var track = seq.videoTracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index " + clipIndex + " out of range");
+        var clip = track.clips[clipIndex];
+        if (clip.components) { for (var ci = 0; ci < clip.components.numItems; ci++) { var comp = clip.components[ci]; if (comp.displayName === "Time Remapping" || comp.matchName === "timeRemapping") { var sp = comp.properties.getParamForDisplayName("Speed"); if (sp) { sp.setTimeVarying(true); var fs = _secondsToTime(time); var fe = _secondsToTime(time + duration); sp.addKey(fs); sp.setValueAtKey(fs, 0, true); sp.addKey(fe); sp.setValueAtKey(fe, 0, true); } break; } } }
+        return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, freezeTime: time, freezeDuration: duration });
+    } catch (e) { return _err("freezeFrame failed: " + e.message); }
+}
+
+// ===========================================================================
+// Scene Edit Detection
+// ===========================================================================
+
+function detectSceneEdits(trackIndex, clipIndex, sensitivity) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0;
+        sensitivity = Math.max(0, Math.min(100, parseFloat(sensitivity) || 50.0));
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index " + trackIndex + " out of range");
+        var track = seq.videoTracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index " + clipIndex + " out of range");
+        var clip = track.clips[clipIndex];
+        var pi = clip.projectItem;
+        if (!pi) return _err("Clip has no associated project item for scene detection");
+        if (pi.createSceneEditMarkers) { pi.createSceneEditMarkers(sensitivity); }
+        else if (pi.applyCutsAtSceneEdits) { pi.applyCutsAtSceneEdits(sensitivity); }
+        else { return _err("Scene edit detection not supported in this Premiere Pro version"); }
+        return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, clipName: clip.name || "", sensitivity: sensitivity, detected: true });
+    } catch (e) { return _err("detectSceneEdits failed: " + e.message); }
+}
