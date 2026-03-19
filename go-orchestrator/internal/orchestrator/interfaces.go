@@ -875,6 +875,48 @@ type Orchestrator interface {
 	CleanTempFiles(ctx context.Context) (*GenericResult, error)
 	OptimizeProject(ctx context.Context) (*GenericResult, error)
 
+	// --- Encoding Settings ---
+	GetExportSettingsForPreset(ctx context.Context, presetPath string) (*GenericResult, error)
+	CreateCustomExportSettings(ctx context.Context, settingsJSON string) (*GenericResult, error)
+	GetAvailableCodecs(ctx context.Context) (*GenericResult, error)
+	GetAvailableAudioCodecs(ctx context.Context) (*GenericResult, error)
+	GetAvailableContainers(ctx context.Context) (*GenericResult, error)
+
+	// --- Format Conversion ---
+	ConvertToProRes(ctx context.Context, projectItemIndex int, variant, outputPath string) (*GenericResult, error)
+	ConvertToH264(ctx context.Context, projectItemIndex int, outputPath string, bitrate int) (*GenericResult, error)
+	ConvertToH265(ctx context.Context, projectItemIndex int, outputPath string, bitrate int) (*GenericResult, error)
+	ConvertToDNxHR(ctx context.Context, projectItemIndex int, outputPath, profile string) (*GenericResult, error)
+	ConvertToGIF(ctx context.Context, sequenceIndex int, outputPath string, width, fps int) (*GenericResult, error)
+
+	// --- Thumbnail/Preview Generation ---
+	GenerateClipThumbnail(ctx context.Context, projectItemIndex int, timeOffset float64, outputPath string) (*GenericResult, error)
+	GenerateSequenceThumbnail(ctx context.Context, sequenceIndex int, timeOffset float64, outputPath string) (*GenericResult, error)
+	GenerateContactSheet(ctx context.Context, projectItemIndex int, outputPath string, cols, rows int) (*GenericResult, error)
+	GenerateStoryboard(ctx context.Context, sequenceIndex int, outputPath string, interval float64) (*GenericResult, error)
+
+	// --- Media Analysis (Encoding) ---
+	AnalyzeMediaCodec(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	CompareMediaSpecs(ctx context.Context, itemIndex1, itemIndex2 int) (*GenericResult, error)
+	GetBitRateInfo(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	GetColorDepthInfo(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	GetAudioSpecsDetailed(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	IsVariableFrameRate(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+
+	// --- File Operations (Encoding) ---
+	GetFileHash(ctx context.Context, projectItemIndex int, algorithm string) (*GenericResult, error)
+	GetFileDates(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	MoveMediaFile(ctx context.Context, projectItemIndex int, newDirectory string) (*GenericResult, error)
+	CopyMediaFile(ctx context.Context, projectItemIndex int, destDirectory string) (*GenericResult, error)
+	RenameMediaFile(ctx context.Context, projectItemIndex int, newName string) (*GenericResult, error)
+
+	// --- Render Queue ---
+	AddToRenderQueue(ctx context.Context, sequenceIndex int, presetPath, outputPath string) (*GenericResult, error)
+	GetRenderQueueStatus(ctx context.Context) (*GenericResult, error)
+	ClearRenderQueue(ctx context.Context) (*GenericResult, error)
+	PauseRenderQueue(ctx context.Context) (*GenericResult, error)
+	ResumeRenderQueue(ctx context.Context) (*GenericResult, error)
+
 	// --- UI Panel Control ---
 	OpenPanel(ctx context.Context, panelName string) (*GenericResult, error)
 	ClosePanel(ctx context.Context, panelName string) (*GenericResult, error)
@@ -962,6 +1004,48 @@ type Orchestrator interface {
 	TrimProject(ctx context.Context) (*GenericResult, error)
 	ConsolidateAndTranscode(ctx context.Context, outputDir, codec, quality string) (*GenericResult, error)
 
+	// --- Timeline Assembly ---
+	AssembleFromEDL(ctx context.Context, edlJSON string) (*GenericResult, error)
+	AssembleFromCSV(ctx context.Context, csvPath string) (*GenericResult, error)
+	AssembleFromFolderOrder(ctx context.Context, folderPath, transitionName string, transitionDuration float64) (*GenericResult, error)
+	InterleaveClips(ctx context.Context, trackIndexA, trackIndexB int, transitionDuration float64) (*GenericResult, error)
+	ShuffleClips(ctx context.Context, trackType string, trackIndex int) (*GenericResult, error)
+
+	// --- Arrangement ---
+	SortClipsByDuration(ctx context.Context, trackType string, trackIndex int, ascending bool) (*GenericResult, error)
+	SortClipsByName(ctx context.Context, trackType string, trackIndex int, ascending bool) (*GenericResult, error)
+	SortClipsByFileName(ctx context.Context, trackType string, trackIndex int, ascending bool) (*GenericResult, error)
+	ReverseClipOrder(ctx context.Context, trackType string, trackIndex int) (*GenericResult, error)
+	DistributeClipsEvenly(ctx context.Context, trackType string, trackIndex int, totalDuration float64) (*GenericResult, error)
+	StackClips(ctx context.Context, trackType string, trackIndex int, startTime float64) (*GenericResult, error)
+
+	// --- Multi-Track Composition ---
+	CreateOverlayTrack(ctx context.Context, sourceTrack, destTrack int, opacity float64, blendMode string) (*GenericResult, error)
+	CreateGreenScreenComposite(ctx context.Context, fgTrackIndex, fgClipIndex, bgTrackIndex, bgClipIndex int, keyColor string) (*GenericResult, error)
+	CreatePictureInPictureGrid(ctx context.Context, trackIndices []int, layout string) (*GenericResult, error)
+	LayerTracks(ctx context.Context, baseTrack int, overlayTracks []int, opacities []float64) (*GenericResult, error)
+
+	// --- Clip Generation ---
+	GenerateBlackClip(ctx context.Context, trackIndex int, startTime, duration float64) (*GenericResult, error)
+	GenerateColorClip(ctx context.Context, trackIndex int, startTime, duration float64, color string) (*GenericResult, error)
+	GenerateGradientClip(ctx context.Context, trackIndex int, startTime, duration float64, colorStart, colorEnd, direction string) (*GenericResult, error)
+	GenerateTestPattern(ctx context.Context, trackIndex int, startTime, duration float64, pattern string) (*GenericResult, error)
+	GenerateSilence(ctx context.Context, trackIndex int, startTime, duration float64) (*GenericResult, error)
+	GenerateTone(ctx context.Context, trackIndex int, startTime, duration, frequency, amplitude float64) (*GenericResult, error)
+
+	// --- Timeline Duplication ---
+	DuplicateTimelineSection(ctx context.Context, startTime, endTime, destTime float64) (*GenericResult, error)
+	RepeatTimelineSection(ctx context.Context, startTime, endTime float64, count int) (*GenericResult, error)
+	MirrorTimeline(ctx context.Context) (*GenericResult, error)
+	SplitTimelineAtPlayhead(ctx context.Context) (*GenericResult, error)
+
+	// --- Timeline Analysis ---
+	GetTimelineGapReport(ctx context.Context) (*GenericResult, error)
+	GetTimelineConflictReport(ctx context.Context) (*GenericResult, error)
+	GetTimelineEffectsReport(ctx context.Context) (*GenericResult, error)
+	GetTimelineDurationBreakdown(ctx context.Context) (*GenericResult, error)
+	GetTimelineTrackUsageReport(ctx context.Context) (*GenericResult, error)
+
 	// --- Event Monitoring ---
 	RegisterEventListener(ctx context.Context, eventName string) (*GenericResult, error)
 	UnregisterEventListener(ctx context.Context, eventName string) (*GenericResult, error)
@@ -1003,4 +1087,90 @@ type Orchestrator interface {
 	ShowProgressBar(ctx context.Context, title string, current, total int) (*GenericResult, error)
 	HideProgressBar(ctx context.Context) (*GenericResult, error)
 	ShowDialog(ctx context.Context, title, message, buttons string) (*GenericResult, error)
+
+	// --- Script Execution ---
+	EvaluateExpression(ctx context.Context, expression string) (*GenericResult, error)
+	ExecuteScript(ctx context.Context, scriptPath string) (*GenericResult, error)
+	ExecuteScriptWithArgs(ctx context.Context, scriptPath string, argsJSON string) (*GenericResult, error)
+	GetScriptResult(ctx context.Context) (*GenericResult, error)
+	ListAvailableScripts(ctx context.Context, directory string) (*GenericResult, error)
+
+	// --- Variable/State Management ---
+	SetGlobalVariable(ctx context.Context, name string, value string) (*GenericResult, error)
+	GetGlobalVariable(ctx context.Context, name string) (*GenericResult, error)
+	ListGlobalVariables(ctx context.Context) (*GenericResult, error)
+	ClearGlobalVariables(ctx context.Context) (*GenericResult, error)
+
+	// --- Conditional Operations ---
+	IfClipExists(ctx context.Context, trackType string, trackIndex, clipIndex int, thenScript, elseScript string) (*GenericResult, error)
+	IfSequenceOpen(ctx context.Context, thenScript, elseScript string) (*GenericResult, error)
+	IfProjectOpen(ctx context.Context, thenScript, elseScript string) (*GenericResult, error)
+	WhileCondition(ctx context.Context, conditionScript, bodyScript string, maxIterations int) (*GenericResult, error)
+
+	// --- Batch Scripting ---
+	ExecuteBatch(ctx context.Context, scriptsJSON string) (*GenericResult, error)
+	ExecuteParallel(ctx context.Context, scriptsJSON string) (*GenericResult, error)
+	ExecuteWithRetry(ctx context.Context, script string, maxRetries int, delayMs int) (*GenericResult, error)
+	ExecuteWithTimeout(ctx context.Context, script string, timeoutMs int) (*GenericResult, error)
+
+	// --- Timer/Scheduling ---
+	ScheduleScript(ctx context.Context, script string, delayMs int) (*GenericResult, error)
+	ScheduleRepeating(ctx context.Context, script string, intervalMs, count int) (*GenericResult, error)
+	CancelScheduledScript(ctx context.Context, scheduleID string) (*GenericResult, error)
+	GetScheduledScripts(ctx context.Context) (*GenericResult, error)
+
+	// --- Data Operations ---
+	ReadJSONFile(ctx context.Context, filePath string) (*GenericResult, error)
+	WriteJSONFile(ctx context.Context, filePath, data string) (*GenericResult, error)
+	ReadCSVFile(ctx context.Context, filePath string) (*GenericResult, error)
+	WriteCSVFile(ctx context.Context, filePath, headers, rows string) (*GenericResult, error)
+	ReadTextFile(ctx context.Context, filePath string) (*GenericResult, error)
+	WriteTextFile(ctx context.Context, filePath, content string) (*GenericResult, error)
+	AppendTextFile(ctx context.Context, filePath, content string) (*GenericResult, error)
+
+	// --- System Integration ---
+	OpenURL(ctx context.Context, url string) (*GenericResult, error)
+	ExecuteSystemCommand(ctx context.Context, command string) (*GenericResult, error)
+
+	// --- Project Analytics ---
+	GetProjectSummary(ctx context.Context) (*GenericResult, error)
+	GetMediaTypeBreakdown(ctx context.Context) (*GenericResult, error)
+	GetCodecBreakdown(ctx context.Context) (*GenericResult, error)
+	GetResolutionBreakdown(ctx context.Context) (*GenericResult, error)
+	GetFrameRateBreakdown(ctx context.Context) (*GenericResult, error)
+	GetDurationDistribution(ctx context.Context) (*GenericResult, error)
+	GetColorSpaceBreakdown(ctx context.Context) (*GenericResult, error)
+
+	// --- Sequence Analytics ---
+	GetSequenceSummary(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	GetEffectsUsageReport(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	GetTransitionsUsageReport(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	GetTrackUtilizationReport(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	GetEditPointDensity(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	GetPacingReport(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	GetAudioLevelsReport(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+
+	// --- Timeline Reports ---
+	GetClipSourceReport(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	GetTimelineStructureReport(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	GetGapAnalysisReport(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	GetDuplicateClipsReport(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	GetUnusedTracksReport(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+
+	// --- Export Reports ---
+	ExportProjectReport(ctx context.Context, outputPath, format string) (*GenericResult, error)
+	ExportTimelineAsText(ctx context.Context, sequenceIndex int, outputPath string) (*GenericResult, error)
+	ExportClipList(ctx context.Context, sequenceIndex int, outputPath, format string) (*GenericResult, error)
+	ExportEffectsList(ctx context.Context, sequenceIndex int, outputPath string) (*GenericResult, error)
+	ExportMediaList(ctx context.Context, outputPath, format string) (*GenericResult, error)
+
+	// --- Comparison ---
+	CompareSequences(ctx context.Context, seqIndex1, seqIndex2 int) (*GenericResult, error)
+	CompareClips(ctx context.Context, clip1TrackType string, clip1TrackIndex, clip1ClipIndex int, clip2TrackType string, clip2TrackIndex, clip2ClipIndex int) (*GenericResult, error)
+
+	// --- Usage Statistics ---
+	GetEditingSessionStats(ctx context.Context) (*GenericResult, error)
+	GetProjectAgeInfo(ctx context.Context) (*GenericResult, error)
+	GetStorageReport(ctx context.Context) (*GenericResult, error)
+	GetPerformanceReport2(ctx context.Context) (*GenericResult, error)
 }

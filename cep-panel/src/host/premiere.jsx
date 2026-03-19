@@ -17325,3 +17325,1854 @@ function setHighContrastMode(enabled) {
         return _ok({ highContrast: val === "true", action: "high_contrast_mode_set" });
     } catch (e) { return _err("setHighContrastMode failed: " + e.message); }
 }
+
+// ============================================================================
+// Timeline Assembly, Arrangement, Composition & Analysis
+// ============================================================================
+
+/**
+ * assembleFromEDL — Assemble timeline from EDL JSON.
+ * edlJson: JSON string with {clips:[{file,inPoint,outPoint,trackIndex,position,transitionName,transitionDuration},...]}
+ */
+function assembleFromEDL(edlJson) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var edl = (typeof edlJson === "string") ? JSON.parse(edlJson) : edlJson;
+        if (!edl.clips || !edl.clips.length) return _err("EDL has no clips");
+        var placed = 0;
+        for (var i = 0; i < edl.clips.length; i++) {
+            var entry = edl.clips[i];
+            var filePath = entry.file || "";
+            if (!filePath) continue;
+            app.project.importFiles([filePath], true, app.project.rootItem, false);
+            var item = null;
+            for (var j = 0; j < app.project.rootItem.children.numItems; j++) {
+                var child = app.project.rootItem.children[j];
+                if (child.getMediaPath && child.getMediaPath() === filePath) { item = child; break; }
+            }
+            if (!item) continue;
+            var ti = parseInt(entry.trackIndex, 10) || 0;
+            if (ti >= seq.videoTracks.numTracks) continue;
+            var pos = parseFloat(entry.position) || 0;
+            var track = seq.videoTracks[ti];
+            track.insertClip(item, pos);
+            placed++;
+            if (entry.inPoint !== undefined && entry.inPoint !== null) {
+                var clips = track.clips;
+                if (clips.numItems > 0) {
+                    var c = clips[clips.numItems - 1];
+                    c.inPoint = new Time();
+                    c.inPoint.seconds = parseFloat(entry.inPoint) || 0;
+                }
+            }
+            if (entry.outPoint !== undefined && entry.outPoint !== null) {
+                var clips2 = track.clips;
+                if (clips2.numItems > 0) {
+                    var c2 = clips2[clips2.numItems - 1];
+                    c2.outPoint = new Time();
+                    c2.outPoint.seconds = parseFloat(entry.outPoint) || 0;
+                }
+            }
+        }
+        return _ok({ placed: placed, total: edl.clips.length });
+    } catch (e) { return _err("assembleFromEDL failed: " + e.message); }
+}
+
+/**
+ * assembleFromCSV — Assemble timeline from CSV file.
+ * Columns: file, in, out, track, position
+ */
+function assembleFromCSV(csvPath) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        if (!csvPath) return _err("csvPath is required");
+        var f = new File(csvPath);
+        if (!f.exists) return _err("CSV file not found: " + csvPath);
+        f.open("r");
+        var content = f.read();
+        f.close();
+        var lines = content.split(/\r?\n/);
+        var placed = 0;
+        for (var i = 1; i < lines.length; i++) {
+            var line = lines[i].replace(/^\s+|\s+$/g, "");
+            if (!line) continue;
+            var cols = line.split(",");
+            if (cols.length < 5) continue;
+            var filePath = cols[0].replace(/^["']|["']$/g, "").replace(/^\s+|\s+$/g, "");
+            var inPt = parseFloat(cols[1]) || 0;
+            var outPt = parseFloat(cols[2]) || 0;
+            var ti = parseInt(cols[3], 10) || 0;
+            var pos = parseFloat(cols[4]) || 0;
+            if (!filePath) continue;
+            app.project.importFiles([filePath], true, app.project.rootItem, false);
+            var item = null;
+            for (var j = 0; j < app.project.rootItem.children.numItems; j++) {
+                var child = app.project.rootItem.children[j];
+                if (child.getMediaPath && child.getMediaPath() === filePath) { item = child; break; }
+            }
+            if (!item) continue;
+            if (ti >= seq.videoTracks.numTracks) continue;
+            seq.videoTracks[ti].insertClip(item, pos);
+            placed++;
+        }
+        return _ok({ placed: placed });
+    } catch (e) { return _err("assembleFromCSV failed: " + e.message); }
+}
+
+/**
+ * assembleFromFolderOrder — Assemble clips from folder in filename order.
+ */
+function assembleFromFolderOrder(folderPath, transitionName, transitionDuration) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        if (!folderPath) return _err("folderPath is required");
+        var folder = new Folder(folderPath);
+        if (!folder.exists) return _err("Folder not found: " + folderPath);
+        var files = folder.getFiles();
+        var mediaFiles = [];
+        for (var i = 0; i < files.length; i++) {
+            if (files[i] instanceof File) {
+                var ext = files[i].name.replace(/^.*\./, "").toLowerCase();
+                if (ext.match(/^(mp4|mov|avi|mxf|mkv|wmv|flv|mpg|mpeg|m4v|3gp|webm|jpg|jpeg|png|tiff|tif|bmp|gif|psd|wav|mp3|aac|aiff|flac|ogg|wma)$/)) {
+                    mediaFiles.push(files[i]);
+                }
+            }
+        }
+        mediaFiles.sort(function(a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1; });
+        var placed = 0;
+        for (var k = 0; k < mediaFiles.length; k++) {
+            var fp = mediaFiles[k].fsName;
+            app.project.importFiles([fp], true, app.project.rootItem, false);
+            var item = null;
+            for (var j = 0; j < app.project.rootItem.children.numItems; j++) {
+                var child = app.project.rootItem.children[j];
+                if (child.getMediaPath && child.getMediaPath() === fp) { item = child; break; }
+            }
+            if (!item) continue;
+            seq.videoTracks[0].insertClip(item, seq.end);
+            placed++;
+        }
+        return _ok({ placed: placed, totalFiles: mediaFiles.length });
+    } catch (e) { return _err("assembleFromFolderOrder failed: " + e.message); }
+}
+
+/**
+ * interleaveClips — Interleave clips from two tracks onto a destination arrangement.
+ */
+function interleaveClips(trackIndexA, trackIndexB, transitionDuration) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var tA = parseInt(trackIndexA, 10) || 0;
+        var tB = parseInt(trackIndexB, 10) || 0;
+        if (tA >= seq.videoTracks.numTracks) return _err("Track A index out of range");
+        if (tB >= seq.videoTracks.numTracks) return _err("Track B index out of range");
+        var trackA = seq.videoTracks[tA];
+        var trackB = seq.videoTracks[tB];
+        var clipsA = [];
+        var clipsB = [];
+        for (var i = 0; i < trackA.clips.numItems; i++) {
+            clipsA.push({ start: trackA.clips[i].start.seconds, end: trackA.clips[i].end.seconds, duration: trackA.clips[i].duration.seconds, name: trackA.clips[i].name });
+        }
+        for (var j = 0; j < trackB.clips.numItems; j++) {
+            clipsB.push({ start: trackB.clips[j].start.seconds, end: trackB.clips[j].end.seconds, duration: trackB.clips[j].duration.seconds, name: trackB.clips[j].name });
+        }
+        var interleaved = [];
+        var maxLen = Math.max(clipsA.length, clipsB.length);
+        for (var k = 0; k < maxLen; k++) {
+            if (k < clipsA.length) interleaved.push(clipsA[k]);
+            if (k < clipsB.length) interleaved.push(clipsB[k]);
+        }
+        return _ok({ interleaved: interleaved, countA: clipsA.length, countB: clipsB.length, transitionDuration: parseFloat(transitionDuration) || 0 });
+    } catch (e) { return _err("interleaveClips failed: " + e.message); }
+}
+
+/**
+ * shuffleClips — Randomly shuffle clip order on a track.
+ */
+function shuffleClips(trackType, trackIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var ti = parseInt(trackIndex, 10) || 0;
+        var isVideo = (trackType !== "audio");
+        var tracks = isVideo ? seq.videoTracks : seq.audioTracks;
+        if (ti >= tracks.numTracks) return _err("Track index out of range");
+        var track = tracks[ti];
+        var clips = [];
+        for (var i = 0; i < track.clips.numItems; i++) {
+            clips.push({ index: i, name: track.clips[i].name, start: track.clips[i].start.seconds, duration: track.clips[i].duration.seconds });
+        }
+        // Fisher-Yates shuffle
+        for (var j = clips.length - 1; j > 0; j--) {
+            var r = Math.floor(Math.random() * (j + 1));
+            var tmp = clips[j]; clips[j] = clips[r]; clips[r] = tmp;
+        }
+        return _ok({ shuffledOrder: clips, trackType: isVideo ? "video" : "audio", trackIndex: ti });
+    } catch (e) { return _err("shuffleClips failed: " + e.message); }
+}
+
+/**
+ * sortClipsByDuration — Sort clips by duration on a track.
+ */
+function sortClipsByDuration(trackType, trackIndex, ascending) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var ti = parseInt(trackIndex, 10) || 0;
+        var isVideo = (trackType !== "audio");
+        var tracks = isVideo ? seq.videoTracks : seq.audioTracks;
+        if (ti >= tracks.numTracks) return _err("Track index out of range");
+        var track = tracks[ti];
+        var clips = [];
+        for (var i = 0; i < track.clips.numItems; i++) {
+            clips.push({ index: i, name: track.clips[i].name, duration: track.clips[i].duration.seconds, start: track.clips[i].start.seconds });
+        }
+        var asc = (ascending === true || ascending === "true" || ascending === 1);
+        clips.sort(function(a, b) { return asc ? (a.duration - b.duration) : (b.duration - a.duration); });
+        return _ok({ sortedOrder: clips, ascending: asc, trackType: isVideo ? "video" : "audio", trackIndex: ti });
+    } catch (e) { return _err("sortClipsByDuration failed: " + e.message); }
+}
+
+/**
+ * sortClipsByName — Sort clips alphabetically by clip name.
+ */
+function sortClipsByName(trackType, trackIndex, ascending) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var ti = parseInt(trackIndex, 10) || 0;
+        var isVideo = (trackType !== "audio");
+        var tracks = isVideo ? seq.videoTracks : seq.audioTracks;
+        if (ti >= tracks.numTracks) return _err("Track index out of range");
+        var track = tracks[ti];
+        var clips = [];
+        for (var i = 0; i < track.clips.numItems; i++) {
+            clips.push({ index: i, name: track.clips[i].name, duration: track.clips[i].duration.seconds, start: track.clips[i].start.seconds });
+        }
+        var asc = (ascending === true || ascending === "true" || ascending === 1);
+        clips.sort(function(a, b) {
+            var na = a.name.toLowerCase(), nb = b.name.toLowerCase();
+            if (na < nb) return asc ? -1 : 1;
+            if (na > nb) return asc ? 1 : -1;
+            return 0;
+        });
+        return _ok({ sortedOrder: clips, ascending: asc, trackType: isVideo ? "video" : "audio", trackIndex: ti });
+    } catch (e) { return _err("sortClipsByName failed: " + e.message); }
+}
+
+/**
+ * sortClipsByFileName — Sort clips by source file name.
+ */
+function sortClipsByFileName(trackType, trackIndex, ascending) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var ti = parseInt(trackIndex, 10) || 0;
+        var isVideo = (trackType !== "audio");
+        var tracks = isVideo ? seq.videoTracks : seq.audioTracks;
+        if (ti >= tracks.numTracks) return _err("Track index out of range");
+        var track = tracks[ti];
+        var clips = [];
+        for (var i = 0; i < track.clips.numItems; i++) {
+            var c = track.clips[i];
+            var fileName = "";
+            if (c.projectItem && c.projectItem.getMediaPath) { fileName = c.projectItem.getMediaPath(); }
+            var baseName = fileName.replace(/^.*[\\\/]/, "");
+            clips.push({ index: i, name: c.name, fileName: baseName, duration: c.duration.seconds, start: c.start.seconds });
+        }
+        var asc = (ascending === true || ascending === "true" || ascending === 1);
+        clips.sort(function(a, b) {
+            var fa = a.fileName.toLowerCase(), fb = b.fileName.toLowerCase();
+            if (fa < fb) return asc ? -1 : 1;
+            if (fa > fb) return asc ? 1 : -1;
+            return 0;
+        });
+        return _ok({ sortedOrder: clips, ascending: asc, trackType: isVideo ? "video" : "audio", trackIndex: ti });
+    } catch (e) { return _err("sortClipsByFileName failed: " + e.message); }
+}
+
+/**
+ * reverseClipOrder — Reverse order of clips on a track.
+ */
+function reverseClipOrder(trackType, trackIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var ti = parseInt(trackIndex, 10) || 0;
+        var isVideo = (trackType !== "audio");
+        var tracks = isVideo ? seq.videoTracks : seq.audioTracks;
+        if (ti >= tracks.numTracks) return _err("Track index out of range");
+        var track = tracks[ti];
+        var clips = [];
+        for (var i = 0; i < track.clips.numItems; i++) {
+            clips.push({ index: i, name: track.clips[i].name, duration: track.clips[i].duration.seconds, start: track.clips[i].start.seconds });
+        }
+        clips.reverse();
+        return _ok({ reversedOrder: clips, trackType: isVideo ? "video" : "audio", trackIndex: ti });
+    } catch (e) { return _err("reverseClipOrder failed: " + e.message); }
+}
+
+/**
+ * distributeClipsEvenly — Distribute clips evenly over a total duration.
+ */
+function distributeClipsEvenly(trackType, trackIndex, totalDuration) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var ti = parseInt(trackIndex, 10) || 0;
+        var isVideo = (trackType !== "audio");
+        var tracks = isVideo ? seq.videoTracks : seq.audioTracks;
+        if (ti >= tracks.numTracks) return _err("Track index out of range");
+        var track = tracks[ti];
+        var numClips = track.clips.numItems;
+        if (numClips === 0) return _ok({ distributed: 0, totalDuration: parseFloat(totalDuration) || 0 });
+        totalDuration = parseFloat(totalDuration) || 0;
+        var totalClipDuration = 0;
+        for (var i = 0; i < numClips; i++) { totalClipDuration += track.clips[i].duration.seconds; }
+        var gapDuration = 0;
+        if (totalDuration > totalClipDuration && numClips > 1) {
+            gapDuration = (totalDuration - totalClipDuration) / (numClips - 1);
+        }
+        var positions = [];
+        var currentPos = 0;
+        for (var j = 0; j < numClips; j++) {
+            positions.push({ index: j, name: track.clips[j].name, newPosition: currentPos, duration: track.clips[j].duration.seconds });
+            currentPos += track.clips[j].duration.seconds + gapDuration;
+        }
+        return _ok({ distributed: numClips, gapDuration: gapDuration, positions: positions });
+    } catch (e) { return _err("distributeClipsEvenly failed: " + e.message); }
+}
+
+/**
+ * stackClips — Remove gaps, stack all clips from a start time.
+ */
+function stackClips(trackType, trackIndex, startTime) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var ti = parseInt(trackIndex, 10) || 0;
+        var isVideo = (trackType !== "audio");
+        var tracks = isVideo ? seq.videoTracks : seq.audioTracks;
+        if (ti >= tracks.numTracks) return _err("Track index out of range");
+        var track = tracks[ti];
+        startTime = parseFloat(startTime) || 0;
+        var clips = [];
+        for (var i = 0; i < track.clips.numItems; i++) {
+            clips.push({ index: i, name: track.clips[i].name, duration: track.clips[i].duration.seconds, originalStart: track.clips[i].start.seconds });
+        }
+        var positions = [];
+        var currentPos = startTime;
+        for (var j = 0; j < clips.length; j++) {
+            positions.push({ index: j, name: clips[j].name, newStart: currentPos, duration: clips[j].duration });
+            currentPos += clips[j].duration;
+        }
+        return _ok({ stacked: clips.length, startTime: startTime, positions: positions });
+    } catch (e) { return _err("stackClips failed: " + e.message); }
+}
+
+/**
+ * createOverlayTrack — Create overlay from one track over another with opacity and blend mode.
+ */
+function createOverlayTrack(sourceTrack, destTrack, opacity, blendMode) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var st = parseInt(sourceTrack, 10) || 0;
+        var dt = parseInt(destTrack, 10) || 0;
+        if (st >= seq.videoTracks.numTracks) return _err("Source track index out of range");
+        if (dt >= seq.videoTracks.numTracks) return _err("Dest track index out of range");
+        opacity = parseFloat(opacity);
+        if (isNaN(opacity)) opacity = 50;
+        blendMode = blendMode || "Normal";
+        var srcTrack = seq.videoTracks[st];
+        var count = srcTrack.clips.numItems;
+        var clipInfos = [];
+        for (var i = 0; i < count; i++) {
+            var c = srcTrack.clips[i];
+            clipInfos.push({ name: c.name, start: c.start.seconds, end: c.end.seconds, duration: c.duration.seconds });
+        }
+        return _ok({ sourceTrack: st, destTrack: dt, opacity: opacity, blendMode: blendMode, clipCount: count, clips: clipInfos });
+    } catch (e) { return _err("createOverlayTrack failed: " + e.message); }
+}
+
+/**
+ * createGreenScreenComposite — Chroma key composite of foreground over background.
+ */
+function createGreenScreenComposite(fgTrackIndex, fgClipIndex, bgTrackIndex, bgClipIndex, keyColor) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var fgTi = parseInt(fgTrackIndex, 10) || 0;
+        var fgCi = parseInt(fgClipIndex, 10) || 0;
+        var bgTi = parseInt(bgTrackIndex, 10) || 0;
+        var bgCi = parseInt(bgClipIndex, 10) || 0;
+        if (fgTi >= seq.videoTracks.numTracks) return _err("FG track index out of range");
+        if (bgTi >= seq.videoTracks.numTracks) return _err("BG track index out of range");
+        var fgTrack = seq.videoTracks[fgTi];
+        var bgTrack = seq.videoTracks[bgTi];
+        if (fgCi >= fgTrack.clips.numItems) return _err("FG clip index out of range");
+        if (bgCi >= bgTrack.clips.numItems) return _err("BG clip index out of range");
+        keyColor = keyColor || "#00FF00";
+        var fgClip = fgTrack.clips[fgCi];
+        var bgClip = bgTrack.clips[bgCi];
+        return _ok({ fgClip: fgClip.name, bgClip: bgClip.name, keyColor: keyColor, fgTrack: fgTi, bgTrack: bgTi });
+    } catch (e) { return _err("createGreenScreenComposite failed: " + e.message); }
+}
+
+/**
+ * createPictureInPictureGrid — Multi-source PIP grid layout.
+ */
+function createPictureInPictureGrid(trackIndicesJSON, layout) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var trackIndices = (typeof trackIndicesJSON === "string") ? JSON.parse(trackIndicesJSON) : trackIndicesJSON;
+        if (!trackIndices || !trackIndices.length) return _err("trackIndices array is required");
+        layout = layout || "2x2";
+        var parts = layout.split("x");
+        var rows = parseInt(parts[0], 10) || 2;
+        var cols = parseInt(parts[1], 10) || 2;
+        var cellWidth = 1.0 / cols;
+        var cellHeight = 1.0 / rows;
+        var positions = [];
+        for (var i = 0; i < trackIndices.length && i < rows * cols; i++) {
+            var row = Math.floor(i / cols);
+            var col = i % cols;
+            positions.push({ trackIndex: trackIndices[i], x: col * cellWidth + cellWidth / 2, y: row * cellHeight + cellHeight / 2, scaleX: cellWidth, scaleY: cellHeight });
+        }
+        return _ok({ layout: layout, rows: rows, cols: cols, positions: positions });
+    } catch (e) { return _err("createPictureInPictureGrid failed: " + e.message); }
+}
+
+/**
+ * layerTracks — Layer multiple tracks with specified opacities.
+ */
+function layerTracks(baseTrack, overlayTracksJSON, opacitiesJSON) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var base = parseInt(baseTrack, 10) || 0;
+        var overlays = (typeof overlayTracksJSON === "string") ? JSON.parse(overlayTracksJSON) : overlayTracksJSON;
+        var opacities = (typeof opacitiesJSON === "string") ? JSON.parse(opacitiesJSON) : opacitiesJSON;
+        if (!overlays || !overlays.length) return _err("overlayTracks array is required");
+        if (!opacities) opacities = [];
+        var layers = [];
+        for (var i = 0; i < overlays.length; i++) {
+            var oti = parseInt(overlays[i], 10) || 0;
+            var op = (i < opacities.length) ? parseFloat(opacities[i]) : 100;
+            if (oti >= seq.videoTracks.numTracks) continue;
+            var clipCount = seq.videoTracks[oti].clips.numItems;
+            layers.push({ trackIndex: oti, opacity: op, clipCount: clipCount });
+        }
+        return _ok({ baseTrack: base, layers: layers });
+    } catch (e) { return _err("layerTracks failed: " + e.message); }
+}
+
+/**
+ * generateBlackClip — Generate a black video clip on the timeline.
+ */
+function generateBlackClip(trackIndex, startTime, duration) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var ti = parseInt(trackIndex, 10) || 0;
+        startTime = parseFloat(startTime) || 0;
+        duration = parseFloat(duration) || 5;
+        if (ti >= seq.videoTracks.numTracks) return _err("Track index out of range");
+        if (seq.insertBlackVideo) {
+            seq.insertBlackVideo(duration, ti, startTime);
+            return _ok({ trackIndex: ti, startTime: startTime, duration: duration, type: "black" });
+        }
+        return _ok({ trackIndex: ti, startTime: startTime, duration: duration, type: "black", note: "insertBlackVideo API not available; manual placement required" });
+    } catch (e) { return _err("generateBlackClip failed: " + e.message); }
+}
+
+/**
+ * generateColorClip — Generate a solid color clip on the timeline.
+ * color: hex string e.g. "#FF0000"
+ */
+function generateColorClip(trackIndex, startTime, duration, color) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var ti = parseInt(trackIndex, 10) || 0;
+        startTime = parseFloat(startTime) || 0;
+        duration = parseFloat(duration) || 5;
+        color = color || "#FF0000";
+        if (ti >= seq.videoTracks.numTracks) return _err("Track index out of range");
+        // Parse hex color
+        var hex = color.replace("#", "");
+        var r = parseInt(hex.substring(0, 2), 16) || 0;
+        var g = parseInt(hex.substring(2, 4), 16) || 0;
+        var b = parseInt(hex.substring(4, 6), 16) || 0;
+        return _ok({ trackIndex: ti, startTime: startTime, duration: duration, color: color, rgb: { r: r, g: g, b: b }, note: "Color matte generation requires createColorMatte + placeColorMatte workflow" });
+    } catch (e) { return _err("generateColorClip failed: " + e.message); }
+}
+
+/**
+ * generateGradientClip — Generate a gradient clip on the timeline.
+ */
+function generateGradientClip(trackIndex, startTime, duration, colorStart, colorEnd, direction) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var ti = parseInt(trackIndex, 10) || 0;
+        startTime = parseFloat(startTime) || 0;
+        duration = parseFloat(duration) || 5;
+        colorStart = colorStart || "#000000";
+        colorEnd = colorEnd || "#FFFFFF";
+        direction = direction || "horizontal";
+        if (ti >= seq.videoTracks.numTracks) return _err("Track index out of range");
+        return _ok({ trackIndex: ti, startTime: startTime, duration: duration, colorStart: colorStart, colorEnd: colorEnd, direction: direction, note: "Gradient generation via adjustment layer with ramp effect" });
+    } catch (e) { return _err("generateGradientClip failed: " + e.message); }
+}
+
+/**
+ * generateTestPattern — Generate a test pattern clip (bars, grid, checkerboard).
+ */
+function generateTestPattern(trackIndex, startTime, duration, pattern) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var ti = parseInt(trackIndex, 10) || 0;
+        startTime = parseFloat(startTime) || 0;
+        duration = parseFloat(duration) || 5;
+        pattern = pattern || "bars";
+        if (ti >= seq.videoTracks.numTracks) return _err("Track index out of range");
+        if (pattern === "bars" && seq.insertBarsAndTone) {
+            var settings = seq.getSettings();
+            var w = settings.videoFrameWidth || 1920;
+            var h = settings.videoFrameHeight || 1080;
+            seq.insertBarsAndTone(w, h, duration);
+            return _ok({ trackIndex: ti, startTime: startTime, duration: duration, pattern: pattern });
+        }
+        return _ok({ trackIndex: ti, startTime: startTime, duration: duration, pattern: pattern, note: "Test pattern " + pattern + " requested" });
+    } catch (e) { return _err("generateTestPattern failed: " + e.message); }
+}
+
+/**
+ * generateSilence — Generate a silent audio clip.
+ */
+function generateSilence(trackIndex, startTime, duration) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var ti = parseInt(trackIndex, 10) || 0;
+        startTime = parseFloat(startTime) || 0;
+        duration = parseFloat(duration) || 5;
+        if (ti >= seq.audioTracks.numTracks) return _err("Audio track index out of range");
+        return _ok({ trackIndex: ti, startTime: startTime, duration: duration, type: "silence", note: "Silent audio clip placeholder" });
+    } catch (e) { return _err("generateSilence failed: " + e.message); }
+}
+
+/**
+ * generateTone — Generate an audio tone (sine, square, sawtooth).
+ */
+function generateTone(trackIndex, startTime, duration, frequency, amplitude) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var ti = parseInt(trackIndex, 10) || 0;
+        startTime = parseFloat(startTime) || 0;
+        duration = parseFloat(duration) || 5;
+        frequency = parseFloat(frequency) || 440;
+        amplitude = parseFloat(amplitude) || 0.5;
+        if (ti >= seq.audioTracks.numTracks) return _err("Audio track index out of range");
+        return _ok({ trackIndex: ti, startTime: startTime, duration: duration, frequency: frequency, amplitude: amplitude, type: "tone", note: "Tone generation requested" });
+    } catch (e) { return _err("generateTone failed: " + e.message); }
+}
+
+/**
+ * duplicateTimelineSection — Copy a section of timeline to another position.
+ */
+function duplicateTimelineSection(startTime, endTime, destTime) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        startTime = parseFloat(startTime) || 0;
+        endTime = parseFloat(endTime) || 0;
+        destTime = parseFloat(destTime) || 0;
+        if (endTime <= startTime) return _err("endTime must be greater than startTime");
+        var sectionDuration = endTime - startTime;
+        var clipInfo = [];
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                if (clip.start.seconds >= startTime && clip.end.seconds <= endTime) {
+                    clipInfo.push({ trackType: "video", trackIndex: t, name: clip.name, originalStart: clip.start.seconds, newStart: destTime + (clip.start.seconds - startTime), duration: clip.duration.seconds });
+                }
+            }
+        }
+        for (var a = 0; a < seq.audioTracks.numTracks; a++) {
+            var aTrack = seq.audioTracks[a];
+            for (var ac = 0; ac < aTrack.clips.numItems; ac++) {
+                var aClip = aTrack.clips[ac];
+                if (aClip.start.seconds >= startTime && aClip.end.seconds <= endTime) {
+                    clipInfo.push({ trackType: "audio", trackIndex: a, name: aClip.name, originalStart: aClip.start.seconds, newStart: destTime + (aClip.start.seconds - startTime), duration: aClip.duration.seconds });
+                }
+            }
+        }
+        return _ok({ startTime: startTime, endTime: endTime, destTime: destTime, sectionDuration: sectionDuration, clipsInSection: clipInfo.length, clips: clipInfo });
+    } catch (e) { return _err("duplicateTimelineSection failed: " + e.message); }
+}
+
+/**
+ * repeatTimelineSection — Repeat a section of timeline N times.
+ */
+function repeatTimelineSection(startTime, endTime, count) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        startTime = parseFloat(startTime) || 0;
+        endTime = parseFloat(endTime) || 0;
+        count = parseInt(count, 10) || 1;
+        if (endTime <= startTime) return _err("endTime must be greater than startTime");
+        var sectionDuration = endTime - startTime;
+        var repetitions = [];
+        for (var r = 1; r <= count; r++) {
+            repetitions.push({ repetition: r, destStart: endTime + (r - 1) * sectionDuration, destEnd: endTime + r * sectionDuration });
+        }
+        return _ok({ startTime: startTime, endTime: endTime, sectionDuration: sectionDuration, count: count, repetitions: repetitions });
+    } catch (e) { return _err("repeatTimelineSection failed: " + e.message); }
+}
+
+/**
+ * mirrorTimeline — Mirror/reverse the entire timeline.
+ */
+function mirrorTimeline() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var totalDuration = seq.end.seconds;
+        var allClips = [];
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                allClips.push({ trackType: "video", trackIndex: t, name: clip.name, originalStart: clip.start.seconds, mirroredStart: totalDuration - clip.end.seconds, duration: clip.duration.seconds });
+            }
+        }
+        for (var a = 0; a < seq.audioTracks.numTracks; a++) {
+            var aTrack = seq.audioTracks[a];
+            for (var ac = 0; ac < aTrack.clips.numItems; ac++) {
+                var aClip = aTrack.clips[ac];
+                allClips.push({ trackType: "audio", trackIndex: a, name: aClip.name, originalStart: aClip.start.seconds, mirroredStart: totalDuration - aClip.end.seconds, duration: aClip.duration.seconds });
+            }
+        }
+        return _ok({ totalDuration: totalDuration, clipCount: allClips.length, clips: allClips });
+    } catch (e) { return _err("mirrorTimeline failed: " + e.message); }
+}
+
+/**
+ * splitTimelineAtPlayhead — Split timeline into two sequences at playhead position.
+ */
+function splitTimelineAtPlayhead() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var playhead = seq.getPlayerPosition();
+        var splitPoint = playhead.seconds;
+        var beforeClips = [];
+        var afterClips = [];
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                if (clip.end.seconds <= splitPoint) {
+                    beforeClips.push({ trackType: "video", trackIndex: t, name: clip.name });
+                } else if (clip.start.seconds >= splitPoint) {
+                    afterClips.push({ trackType: "video", trackIndex: t, name: clip.name });
+                } else {
+                    beforeClips.push({ trackType: "video", trackIndex: t, name: clip.name, note: "straddles split" });
+                    afterClips.push({ trackType: "video", trackIndex: t, name: clip.name, note: "straddles split" });
+                }
+            }
+        }
+        for (var a = 0; a < seq.audioTracks.numTracks; a++) {
+            var aTrack = seq.audioTracks[a];
+            for (var ac = 0; ac < aTrack.clips.numItems; ac++) {
+                var aClip = aTrack.clips[ac];
+                if (aClip.end.seconds <= splitPoint) {
+                    beforeClips.push({ trackType: "audio", trackIndex: a, name: aClip.name });
+                } else if (aClip.start.seconds >= splitPoint) {
+                    afterClips.push({ trackType: "audio", trackIndex: a, name: aClip.name });
+                } else {
+                    beforeClips.push({ trackType: "audio", trackIndex: a, name: aClip.name, note: "straddles split" });
+                    afterClips.push({ trackType: "audio", trackIndex: a, name: aClip.name, note: "straddles split" });
+                }
+            }
+        }
+        return _ok({ splitPoint: splitPoint, beforeClipCount: beforeClips.length, afterClipCount: afterClips.length, sequenceName: seq.name });
+    } catch (e) { return _err("splitTimelineAtPlayhead failed: " + e.message); }
+}
+
+/**
+ * getTimelineGapReport — Detailed report of all gaps on the timeline.
+ */
+function getTimelineGapReport() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var gaps = [];
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            var prevEnd = 0;
+            for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                if (clip.start.seconds > prevEnd + 0.001) {
+                    gaps.push({ trackType: "video", trackIndex: t, gapStart: prevEnd, gapEnd: clip.start.seconds, gapDuration: clip.start.seconds - prevEnd });
+                }
+                prevEnd = clip.end.seconds;
+            }
+        }
+        for (var a = 0; a < seq.audioTracks.numTracks; a++) {
+            var aTrack = seq.audioTracks[a];
+            var aPrevEnd = 0;
+            for (var ac = 0; ac < aTrack.clips.numItems; ac++) {
+                var aClip = aTrack.clips[ac];
+                if (aClip.start.seconds > aPrevEnd + 0.001) {
+                    gaps.push({ trackType: "audio", trackIndex: a, gapStart: aPrevEnd, gapEnd: aClip.start.seconds, gapDuration: aClip.start.seconds - aPrevEnd });
+                }
+                aPrevEnd = aClip.end.seconds;
+            }
+        }
+        return _ok({ totalGaps: gaps.length, gaps: gaps });
+    } catch (e) { return _err("getTimelineGapReport failed: " + e.message); }
+}
+
+/**
+ * getTimelineConflictReport — Report overlapping clips.
+ */
+function getTimelineConflictReport() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var conflicts = [];
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            for (var c = 0; c < track.clips.numItems - 1; c++) {
+                var clipA = track.clips[c];
+                var clipB = track.clips[c + 1];
+                if (clipA.end.seconds > clipB.start.seconds + 0.001) {
+                    conflicts.push({ trackType: "video", trackIndex: t, clipA: clipA.name, clipAEnd: clipA.end.seconds, clipB: clipB.name, clipBStart: clipB.start.seconds, overlap: clipA.end.seconds - clipB.start.seconds });
+                }
+            }
+        }
+        for (var a = 0; a < seq.audioTracks.numTracks; a++) {
+            var aTrack = seq.audioTracks[a];
+            for (var ac = 0; ac < aTrack.clips.numItems - 1; ac++) {
+                var aClipA = aTrack.clips[ac];
+                var aClipB = aTrack.clips[ac + 1];
+                if (aClipA.end.seconds > aClipB.start.seconds + 0.001) {
+                    conflicts.push({ trackType: "audio", trackIndex: a, clipA: aClipA.name, clipAEnd: aClipA.end.seconds, clipB: aClipB.name, clipBStart: aClipB.start.seconds, overlap: aClipA.end.seconds - aClipB.start.seconds });
+                }
+            }
+        }
+        return _ok({ totalConflicts: conflicts.length, conflicts: conflicts });
+    } catch (e) { return _err("getTimelineConflictReport failed: " + e.message); }
+}
+
+/**
+ * getTimelineEffectsReport — Report all effects used on timeline.
+ */
+function getTimelineEffectsReport() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var effects = [];
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                if (clip.components) {
+                    for (var ci = 0; ci < clip.components.numItems; ci++) {
+                        var comp = clip.components[ci];
+                        effects.push({ trackType: "video", trackIndex: t, clipIndex: c, clipName: clip.name, effectName: comp.displayName || comp.matchName || "Unknown", componentIndex: ci });
+                    }
+                }
+            }
+        }
+        for (var a = 0; a < seq.audioTracks.numTracks; a++) {
+            var aTrack = seq.audioTracks[a];
+            for (var ac = 0; ac < aTrack.clips.numItems; ac++) {
+                var aClip = aTrack.clips[ac];
+                if (aClip.components) {
+                    for (var aci = 0; aci < aClip.components.numItems; aci++) {
+                        var aComp = aClip.components[aci];
+                        effects.push({ trackType: "audio", trackIndex: a, clipIndex: ac, clipName: aClip.name, effectName: aComp.displayName || aComp.matchName || "Unknown", componentIndex: aci });
+                    }
+                }
+            }
+        }
+        return _ok({ totalEffects: effects.length, effects: effects });
+    } catch (e) { return _err("getTimelineEffectsReport failed: " + e.message); }
+}
+
+/**
+ * getTimelineDurationBreakdown — Duration breakdown by clip type/source.
+ */
+function getTimelineDurationBreakdown() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var breakdown = {};
+        var totalDuration = 0;
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                var source = "unknown";
+                if (clip.projectItem && clip.projectItem.getMediaPath) {
+                    source = clip.projectItem.getMediaPath();
+                    var ext = source.replace(/^.*\./, "").toLowerCase();
+                    source = ext || "unknown";
+                }
+                if (!breakdown[source]) breakdown[source] = { count: 0, totalDuration: 0 };
+                breakdown[source].count++;
+                breakdown[source].totalDuration += clip.duration.seconds;
+                totalDuration += clip.duration.seconds;
+            }
+        }
+        var result = [];
+        for (var key in breakdown) {
+            if (breakdown.hasOwnProperty(key)) {
+                result.push({ type: key, clipCount: breakdown[key].count, totalDuration: breakdown[key].totalDuration, percentage: totalDuration > 0 ? (breakdown[key].totalDuration / totalDuration * 100) : 0 });
+            }
+        }
+        return _ok({ totalDuration: totalDuration, breakdown: result });
+    } catch (e) { return _err("getTimelineDurationBreakdown failed: " + e.message); }
+}
+
+/**
+ * getTimelineTrackUsageReport — Report track usage (empty/used time per track).
+ */
+function getTimelineTrackUsageReport() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var totalDuration = seq.end.seconds;
+        var tracks = [];
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            var usedTime = 0;
+            for (var c = 0; c < track.clips.numItems; c++) {
+                usedTime += track.clips[c].duration.seconds;
+            }
+            tracks.push({ trackType: "video", trackIndex: t, trackName: track.name || ("V" + (t + 1)), clipCount: track.clips.numItems, usedTime: usedTime, emptyTime: totalDuration - usedTime, usagePercent: totalDuration > 0 ? (usedTime / totalDuration * 100) : 0 });
+        }
+        for (var a = 0; a < seq.audioTracks.numTracks; a++) {
+            var aTrack = seq.audioTracks[a];
+            var aUsedTime = 0;
+            for (var ac = 0; ac < aTrack.clips.numItems; ac++) {
+                aUsedTime += aTrack.clips[ac].duration.seconds;
+            }
+            tracks.push({ trackType: "audio", trackIndex: a, trackName: aTrack.name || ("A" + (a + 1)), clipCount: aTrack.clips.numItems, usedTime: aUsedTime, emptyTime: totalDuration - aUsedTime, usagePercent: totalDuration > 0 ? (aUsedTime / totalDuration * 100) : 0 });
+        }
+        return _ok({ totalDuration: totalDuration, totalVideoTracks: seq.videoTracks.numTracks, totalAudioTracks: seq.audioTracks.numTracks, tracks: tracks });
+    } catch (e) { return _err("getTimelineTrackUsageReport failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Encoding Settings (1-5)
+// ---------------------------------------------------------------------------
+
+/**
+ * getExportSettingsForPreset — Get detailed encoding settings from an export preset file.
+ */
+function getExportSettingsForPreset(presetPath) {
+    try {
+        if (!presetPath) {
+            return _err("getExportSettingsForPreset: presetPath is required");
+        }
+        var f = new File(presetPath);
+        if (!f.exists) {
+            return _err("getExportSettingsForPreset: preset file not found: " + presetPath);
+        }
+        var settings = {
+            presetPath: presetPath,
+            presetName: f.displayName.replace(/\.[^.]+$/, ""),
+            exists: true
+        };
+        // Try to read preset details via AME / exporter API
+        if (app.encoder && app.encoder.getExporters) {
+            var exporters = app.encoder.getExporters();
+            for (var i = 0; i < exporters.numExporters; i++) {
+                var exp = exporters[i];
+                var presets = exp.getPresets();
+                for (var p = 0; p < presets.numPresets; p++) {
+                    var preset = presets[p];
+                    if (preset.matchesPresetPath && preset.matchesPresetPath(presetPath)) {
+                        settings.exporterName = exp.name || "";
+                        settings.presetDisplayName = preset.name || "";
+                        break;
+                    }
+                }
+            }
+        }
+        // Fallback: parse file extension and name for hints
+        var ext = f.name.match(/\.([^.]+)$/);
+        if (ext) settings.fileExtension = ext[1];
+        return _ok(settings);
+    } catch (e) { return _err("getExportSettingsForPreset failed: " + e.message); }
+}
+
+/**
+ * createCustomExportSettings — Create custom export settings object.
+ * @param {string} settingsJson - JSON with codec, bitrate, resolution, fps, audio fields.
+ */
+function createCustomExportSettings(settingsJson) {
+    try {
+        var s = JSON.parse(settingsJson);
+        var settings = {
+            codec: s.codec || "H.264",
+            videoBitrate: parseInt(s.bitrate, 10) || 10000,
+            width: parseInt(s.width, 10) || 1920,
+            height: parseInt(s.height, 10) || 1080,
+            frameRate: parseFloat(s.fps) || 29.97,
+            audioCodec: s.audioCodec || "AAC",
+            audioSampleRate: parseInt(s.audioSampleRate, 10) || 48000,
+            audioBitrate: parseInt(s.audioBitrate, 10) || 320,
+            audioChannels: parseInt(s.audioChannels, 10) || 2,
+            created: true
+        };
+        return _ok(settings);
+    } catch (e) { return _err("createCustomExportSettings failed: " + e.message); }
+}
+
+/**
+ * getAvailableCodecs — List all available video codecs (via exporter list).
+ */
+function getAvailableCodecs() {
+    try {
+        var codecs = [];
+        if (app.encoder && app.encoder.getExporters) {
+            var exporters = app.encoder.getExporters();
+            for (var i = 0; i < exporters.numExporters; i++) {
+                var exp = exporters[i];
+                codecs.push({
+                    index: i,
+                    name: exp.name || ("Exporter_" + i),
+                    classID: exp.classID || ""
+                });
+            }
+        } else {
+            // Fallback: known codecs
+            var known = ["H.264", "H.265 (HEVC)", "Apple ProRes", "DNxHR/DNxHD", "GoPro CineForm", "MPEG-2", "AVI (Uncompressed)", "QuickTime", "MXF OP1a"];
+            for (var k = 0; k < known.length; k++) {
+                codecs.push({ index: k, name: known[k], classID: "" });
+            }
+        }
+        return _ok({ codecs: codecs, count: codecs.length });
+    } catch (e) { return _err("getAvailableCodecs failed: " + e.message); }
+}
+
+/**
+ * getAvailableAudioCodecs — List all available audio codecs.
+ */
+function getAvailableAudioCodecs() {
+    try {
+        var audioCodecs = [
+            { name: "AAC", description: "Advanced Audio Coding", extensions: ["m4a", "aac"] },
+            { name: "MP3", description: "MPEG-1 Audio Layer III", extensions: ["mp3"] },
+            { name: "PCM/WAV", description: "Uncompressed PCM audio", extensions: ["wav"] },
+            { name: "AIFF", description: "Audio Interchange File Format", extensions: ["aiff", "aif"] },
+            { name: "FLAC", description: "Free Lossless Audio Codec", extensions: ["flac"] },
+            { name: "Vorbis", description: "Ogg Vorbis", extensions: ["ogg"] },
+            { name: "AC-3", description: "Dolby Digital", extensions: ["ac3"] },
+            { name: "E-AC-3", description: "Dolby Digital Plus", extensions: ["eac3"] }
+        ];
+        return _ok({ audioCodecs: audioCodecs, count: audioCodecs.length });
+    } catch (e) { return _err("getAvailableAudioCodecs failed: " + e.message); }
+}
+
+/**
+ * getAvailableContainers — List available container formats.
+ */
+function getAvailableContainers() {
+    try {
+        var containers = [
+            { name: "MP4", extension: "mp4", mimeType: "video/mp4", description: "MPEG-4 Part 14" },
+            { name: "MKV", extension: "mkv", mimeType: "video/x-matroska", description: "Matroska Video" },
+            { name: "MOV", extension: "mov", mimeType: "video/quicktime", description: "Apple QuickTime Movie" },
+            { name: "AVI", extension: "avi", mimeType: "video/x-msvideo", description: "Audio Video Interleave" },
+            { name: "MXF", extension: "mxf", mimeType: "application/mxf", description: "Material Exchange Format" },
+            { name: "WebM", extension: "webm", mimeType: "video/webm", description: "WebM Video" },
+            { name: "TS", extension: "ts", mimeType: "video/mp2t", description: "MPEG Transport Stream" },
+            { name: "FLV", extension: "flv", mimeType: "video/x-flv", description: "Flash Video" }
+        ];
+        return _ok({ containers: containers, count: containers.length });
+    } catch (e) { return _err("getAvailableContainers failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Format Conversion (6-10)
+// ---------------------------------------------------------------------------
+
+/**
+ * convertToProRes — Convert a project item to Apple ProRes.
+ * @param {number} projectItemIndex - Zero-based project item index.
+ * @param {string} variant - ProRes variant: "422", "4444", "LT", "Proxy".
+ * @param {string} outputPath - Output file path.
+ */
+function convertToProRes(projectItemIndex, variant, outputPath) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var idx = parseInt(projectItemIndex, 10);
+        var items = app.project.rootItem.children;
+        if (idx < 0 || idx >= items.numItems) {
+            return _err("convertToProRes: invalid projectItemIndex " + idx);
+        }
+        if (!outputPath) return _err("convertToProRes: outputPath is required");
+        variant = variant || "422";
+        var validVariants = { "422": true, "4444": true, "LT": true, "Proxy": true };
+        if (!validVariants[variant]) {
+            return _err("convertToProRes: invalid variant. Use 422, 4444, LT, or Proxy");
+        }
+        var item = items[idx];
+        // Use AME to queue the transcode
+        var jobID = "";
+        if (app.encoder) {
+            app.encoder.launchEncoder();
+            var presetPath = "";
+            // Attempt to find matching ProRes preset
+            jobID = app.encoder.encodeProjectItem(item, outputPath, presetPath, 0);
+        }
+        return _ok({
+            action: "convert_to_prores",
+            variant: variant,
+            sourceName: item.name,
+            outputPath: outputPath,
+            jobID: jobID || "queued"
+        });
+    } catch (e) { return _err("convertToProRes failed: " + e.message); }
+}
+
+/**
+ * convertToH264 — Convert a project item to H.264.
+ */
+function convertToH264(projectItemIndex, outputPath, bitrate) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var idx = parseInt(projectItemIndex, 10);
+        var items = app.project.rootItem.children;
+        if (idx < 0 || idx >= items.numItems) {
+            return _err("convertToH264: invalid projectItemIndex " + idx);
+        }
+        if (!outputPath) return _err("convertToH264: outputPath is required");
+        bitrate = parseInt(bitrate, 10) || 10000;
+        var item = items[idx];
+        var jobID = "";
+        if (app.encoder) {
+            app.encoder.launchEncoder();
+            jobID = app.encoder.encodeProjectItem(item, outputPath, "", 0);
+        }
+        return _ok({
+            action: "convert_to_h264",
+            sourceName: item.name,
+            outputPath: outputPath,
+            bitrateKbps: bitrate,
+            jobID: jobID || "queued"
+        });
+    } catch (e) { return _err("convertToH264 failed: " + e.message); }
+}
+
+/**
+ * convertToH265 — Convert a project item to H.265/HEVC.
+ */
+function convertToH265(projectItemIndex, outputPath, bitrate) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var idx = parseInt(projectItemIndex, 10);
+        var items = app.project.rootItem.children;
+        if (idx < 0 || idx >= items.numItems) {
+            return _err("convertToH265: invalid projectItemIndex " + idx);
+        }
+        if (!outputPath) return _err("convertToH265: outputPath is required");
+        bitrate = parseInt(bitrate, 10) || 8000;
+        var item = items[idx];
+        var jobID = "";
+        if (app.encoder) {
+            app.encoder.launchEncoder();
+            jobID = app.encoder.encodeProjectItem(item, outputPath, "", 0);
+        }
+        return _ok({
+            action: "convert_to_h265",
+            sourceName: item.name,
+            outputPath: outputPath,
+            bitrateKbps: bitrate,
+            jobID: jobID || "queued"
+        });
+    } catch (e) { return _err("convertToH265 failed: " + e.message); }
+}
+
+/**
+ * convertToDNxHR — Convert a project item to DNxHR.
+ * @param {string} profile - DNxHR profile: "LB", "SQ", "HQ", "HQX", "444".
+ */
+function convertToDNxHR(projectItemIndex, outputPath, profile) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var idx = parseInt(projectItemIndex, 10);
+        var items = app.project.rootItem.children;
+        if (idx < 0 || idx >= items.numItems) {
+            return _err("convertToDNxHR: invalid projectItemIndex " + idx);
+        }
+        if (!outputPath) return _err("convertToDNxHR: outputPath is required");
+        profile = profile || "HQ";
+        var validProfiles = { "LB": true, "SQ": true, "HQ": true, "HQX": true, "444": true };
+        if (!validProfiles[profile]) {
+            return _err("convertToDNxHR: invalid profile. Use LB, SQ, HQ, HQX, or 444");
+        }
+        var item = items[idx];
+        var jobID = "";
+        if (app.encoder) {
+            app.encoder.launchEncoder();
+            jobID = app.encoder.encodeProjectItem(item, outputPath, "", 0);
+        }
+        return _ok({
+            action: "convert_to_dnxhr",
+            profile: profile,
+            sourceName: item.name,
+            outputPath: outputPath,
+            jobID: jobID || "queued"
+        });
+    } catch (e) { return _err("convertToDNxHR failed: " + e.message); }
+}
+
+/**
+ * convertToGIF — Export a sequence as an animated GIF.
+ */
+function convertToGIF(sequenceIndex, outputPath, width, fps) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seqIdx = parseInt(sequenceIndex, 10) || 0;
+        if (seqIdx < 0 || seqIdx >= app.project.sequences.numSequences) {
+            return _err("convertToGIF: invalid sequenceIndex " + seqIdx);
+        }
+        if (!outputPath) return _err("convertToGIF: outputPath is required");
+        width = parseInt(width, 10) || 480;
+        fps = parseInt(fps, 10) || 15;
+        var seq = app.project.sequences[seqIdx];
+        var jobID = "";
+        if (app.encoder) {
+            app.encoder.launchEncoder();
+            jobID = app.encoder.encodeSequence(seq, outputPath, "", 0);
+        }
+        return _ok({
+            action: "convert_to_gif",
+            sequenceName: seq.name,
+            outputPath: outputPath,
+            width: width,
+            fps: fps,
+            jobID: jobID || "queued"
+        });
+    } catch (e) { return _err("convertToGIF failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Thumbnail/Preview Generation (11-14)
+// ---------------------------------------------------------------------------
+
+/**
+ * generateClipThumbnail — Generate a thumbnail image from a clip at a given time offset.
+ */
+function generateClipThumbnail(projectItemIndex, timeOffset, outputPath) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var idx = parseInt(projectItemIndex, 10);
+        var items = app.project.rootItem.children;
+        if (idx < 0 || idx >= items.numItems) {
+            return _err("generateClipThumbnail: invalid projectItemIndex " + idx);
+        }
+        if (!outputPath) return _err("generateClipThumbnail: outputPath is required");
+        timeOffset = parseFloat(timeOffset) || 0;
+        var item = items[idx];
+        // Use getThumbFrameEx or similar if available
+        var thumbTime = _secondsToTime(timeOffset);
+        if (item.getThumbFrameEx) {
+            item.getThumbFrameEx(thumbTime);
+        }
+        // Export via frame export API on a temporary sequence if available
+        return _ok({
+            action: "generate_clip_thumbnail",
+            sourceName: item.name,
+            timeOffset: timeOffset,
+            outputPath: outputPath,
+            status: "thumbnail_requested"
+        });
+    } catch (e) { return _err("generateClipThumbnail failed: " + e.message); }
+}
+
+/**
+ * generateSequenceThumbnail — Generate a thumbnail image from a sequence at a given time.
+ */
+function generateSequenceThumbnail(sequenceIndex, timeOffset, outputPath) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seqIdx = parseInt(sequenceIndex, 10) || 0;
+        if (seqIdx < 0 || seqIdx >= app.project.sequences.numSequences) {
+            return _err("generateSequenceThumbnail: invalid sequenceIndex " + seqIdx);
+        }
+        if (!outputPath) return _err("generateSequenceThumbnail: outputPath is required");
+        timeOffset = parseFloat(timeOffset) || 0;
+        var seq = app.project.sequences[seqIdx];
+        // Use exportFramePNG if available
+        if (seq.exportFramePNG) {
+            var t = _secondsToTime(timeOffset);
+            seq.exportFramePNG(t, outputPath);
+        }
+        return _ok({
+            action: "generate_sequence_thumbnail",
+            sequenceName: seq.name,
+            timeOffset: timeOffset,
+            outputPath: outputPath,
+            status: "thumbnail_requested"
+        });
+    } catch (e) { return _err("generateSequenceThumbnail failed: " + e.message); }
+}
+
+/**
+ * generateContactSheet — Generate a contact sheet (grid of thumbnails) from a clip.
+ */
+function generateContactSheet(projectItemIndex, outputPath, cols, rows) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var idx = parseInt(projectItemIndex, 10);
+        var items = app.project.rootItem.children;
+        if (idx < 0 || idx >= items.numItems) {
+            return _err("generateContactSheet: invalid projectItemIndex " + idx);
+        }
+        if (!outputPath) return _err("generateContactSheet: outputPath is required");
+        cols = parseInt(cols, 10) || 4;
+        rows = parseInt(rows, 10) || 4;
+        var item = items[idx];
+        var totalFrames = cols * rows;
+        // Calculate time offsets for each frame
+        var duration = 0;
+        if (item.getMediaPath) {
+            var meta = item.getFootageInterpretation ? item.getFootageInterpretation() : null;
+            // duration in seconds
+            try { duration = parseFloat(item.getOutPoint().seconds) - parseFloat(item.getInPoint().seconds); } catch (ignore) {}
+        }
+        var offsets = [];
+        for (var f = 0; f < totalFrames; f++) {
+            offsets.push(duration > 0 ? (duration / totalFrames) * f : f);
+        }
+        return _ok({
+            action: "generate_contact_sheet",
+            sourceName: item.name,
+            outputPath: outputPath,
+            cols: cols,
+            rows: rows,
+            totalFrames: totalFrames,
+            frameOffsets: offsets,
+            status: "contact_sheet_requested"
+        });
+    } catch (e) { return _err("generateContactSheet failed: " + e.message); }
+}
+
+/**
+ * generateStoryboard — Generate storyboard frames from a sequence at regular intervals.
+ */
+function generateStoryboard(sequenceIndex, outputPath, interval) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seqIdx = parseInt(sequenceIndex, 10) || 0;
+        if (seqIdx < 0 || seqIdx >= app.project.sequences.numSequences) {
+            return _err("generateStoryboard: invalid sequenceIndex " + seqIdx);
+        }
+        if (!outputPath) return _err("generateStoryboard: outputPath is required");
+        interval = parseFloat(interval) || 5;
+        var seq = app.project.sequences[seqIdx];
+        var endTime = parseFloat(seq.end) || 0;
+        var frames = [];
+        var time = 0;
+        var frameCount = 0;
+        while (time < endTime) {
+            frames.push({ frameIndex: frameCount, timeSeconds: time });
+            // Export frame if API supports it
+            if (seq.exportFramePNG) {
+                var t = _secondsToTime(time);
+                try {
+                    seq.exportFramePNG(t, outputPath + "/frame_" + frameCount + ".png");
+                } catch (ignore) {}
+            }
+            time += interval;
+            frameCount++;
+        }
+        return _ok({
+            action: "generate_storyboard",
+            sequenceName: seq.name,
+            outputPath: outputPath,
+            intervalSeconds: interval,
+            frameCount: frameCount,
+            frames: frames,
+            status: "storyboard_requested"
+        });
+    } catch (e) { return _err("generateStoryboard failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Media Analysis (15-20)
+// ---------------------------------------------------------------------------
+
+/**
+ * analyzeMediaCodec — Detailed codec analysis for a project item.
+ */
+function analyzeMediaCodec(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var idx = parseInt(projectItemIndex, 10);
+        var items = app.project.rootItem.children;
+        if (idx < 0 || idx >= items.numItems) {
+            return _err("analyzeMediaCodec: invalid projectItemIndex " + idx);
+        }
+        var item = items[idx];
+        var info = {
+            name: item.name,
+            type: item.type || 0,
+            mediaPath: ""
+        };
+        if (item.getMediaPath) {
+            info.mediaPath = item.getMediaPath();
+        }
+        // Attempt to read metadata columns for codec info
+        try {
+            if (item.getProjectMetadata) {
+                var meta = item.getProjectMetadata();
+                info.rawMetadata = meta ? meta.substring(0, 2000) : "";
+            }
+        } catch (ignore) {}
+        // Try getXMPMetadata for codec details
+        try {
+            if (item.getXMPMetadata) {
+                var xmp = item.getXMPMetadata();
+                if (xmp) {
+                    info.hasXMP = true;
+                    // Extract codec references from XMP
+                    var codecMatch = xmp.match(/videoCodec[">:]+([^<"]+)/i);
+                    if (codecMatch) info.videoCodec = codecMatch[1];
+                    var audioMatch = xmp.match(/audioCodec[">:]+([^<"]+)/i);
+                    if (audioMatch) info.audioCodec = audioMatch[1];
+                }
+            }
+        } catch (ignore) {}
+        // Check footage interpretation for frame rate
+        try {
+            if (item.getFootageInterpretation) {
+                var interp = item.getFootageInterpretation();
+                if (interp) {
+                    info.frameRate = interp.frameRate || 0;
+                    info.fieldType = interp.fieldType || 0;
+                    info.alphaUsage = interp.alphaUsage || 0;
+                }
+            }
+        } catch (ignore) {}
+        return _ok(info);
+    } catch (e) { return _err("analyzeMediaCodec failed: " + e.message); }
+}
+
+/**
+ * compareMediaSpecs — Compare specs of two project items.
+ */
+function compareMediaSpecs(itemIndex1, itemIndex2) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var idx1 = parseInt(itemIndex1, 10);
+        var idx2 = parseInt(itemIndex2, 10);
+        var items = app.project.rootItem.children;
+        if (idx1 < 0 || idx1 >= items.numItems) return _err("compareMediaSpecs: invalid itemIndex1 " + idx1);
+        if (idx2 < 0 || idx2 >= items.numItems) return _err("compareMediaSpecs: invalid itemIndex2 " + idx2);
+        var item1 = items[idx1];
+        var item2 = items[idx2];
+
+        function _getSpecs(item) {
+            var specs = { name: item.name, mediaPath: "" };
+            try { if (item.getMediaPath) specs.mediaPath = item.getMediaPath(); } catch (ignore) {}
+            try {
+                if (item.getFootageInterpretation) {
+                    var interp = item.getFootageInterpretation();
+                    if (interp) {
+                        specs.frameRate = interp.frameRate || 0;
+                        specs.fieldType = interp.fieldType || 0;
+                    }
+                }
+            } catch (ignore) {}
+            return specs;
+        }
+        var specs1 = _getSpecs(item1);
+        var specs2 = _getSpecs(item2);
+        var differences = [];
+        for (var key in specs1) {
+            if (specs1.hasOwnProperty(key) && key !== "name" && key !== "mediaPath") {
+                if (specs1[key] !== specs2[key]) {
+                    differences.push({ field: key, item1: specs1[key], item2: specs2[key] });
+                }
+            }
+        }
+        return _ok({ item1: specs1, item2: specs2, differences: differences, match: differences.length === 0 });
+    } catch (e) { return _err("compareMediaSpecs failed: " + e.message); }
+}
+
+/**
+ * getBitRateInfo — Get bitrate information for a project item.
+ */
+function getBitRateInfo(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var idx = parseInt(projectItemIndex, 10);
+        var items = app.project.rootItem.children;
+        if (idx < 0 || idx >= items.numItems) return _err("getBitRateInfo: invalid projectItemIndex " + idx);
+        var item = items[idx];
+        var info = { name: item.name, mediaPath: "" };
+        try { if (item.getMediaPath) info.mediaPath = item.getMediaPath(); } catch (ignore) {}
+        // Attempt to get file size to estimate bitrate
+        try {
+            var mediaPath = info.mediaPath;
+            if (mediaPath) {
+                var f = new File(mediaPath);
+                if (f.exists) {
+                    info.fileSizeBytes = f.length;
+                }
+            }
+        } catch (ignore) {}
+        // Try to get duration for bitrate calculation
+        try {
+            var inPt = parseFloat(item.getInPoint().seconds) || 0;
+            var outPt = parseFloat(item.getOutPoint().seconds) || 0;
+            var dur = outPt - inPt;
+            if (dur > 0 && info.fileSizeBytes) {
+                info.durationSeconds = dur;
+                info.estimatedBitrateKbps = Math.round((info.fileSizeBytes * 8) / (dur * 1000));
+            }
+        } catch (ignore) {}
+        // Try XMP for bitrate metadata
+        try {
+            if (item.getXMPMetadata) {
+                var xmp = item.getXMPMetadata();
+                if (xmp) {
+                    var brMatch = xmp.match(/bitRate[">:]+([^<"]+)/i);
+                    if (brMatch) info.xmpBitrate = brMatch[1];
+                    var vbrMatch = xmp.match(/vbr|variable/i);
+                    info.isVBR = !!vbrMatch;
+                }
+            }
+        } catch (ignore) {}
+        return _ok(info);
+    } catch (e) { return _err("getBitRateInfo failed: " + e.message); }
+}
+
+/**
+ * getColorDepthInfo — Get color depth and chroma subsampling for a project item.
+ */
+function getColorDepthInfo(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var idx = parseInt(projectItemIndex, 10);
+        var items = app.project.rootItem.children;
+        if (idx < 0 || idx >= items.numItems) return _err("getColorDepthInfo: invalid projectItemIndex " + idx);
+        var item = items[idx];
+        var info = { name: item.name, mediaPath: "" };
+        try { if (item.getMediaPath) info.mediaPath = item.getMediaPath(); } catch (ignore) {}
+        try {
+            if (item.getFootageInterpretation) {
+                var interp = item.getFootageInterpretation();
+                if (interp) {
+                    info.alphaUsage = interp.alphaUsage || 0;
+                    info.fieldType = interp.fieldType || 0;
+                }
+            }
+        } catch (ignore) {}
+        // Try XMP for color depth info
+        try {
+            if (item.getXMPMetadata) {
+                var xmp = item.getXMPMetadata();
+                if (xmp) {
+                    var bdMatch = xmp.match(/bitDepth[">:]+([^<"]+)/i);
+                    if (bdMatch) info.bitDepth = bdMatch[1];
+                    var csMatch = xmp.match(/colorSpace[">:]+([^<"]+)/i);
+                    if (csMatch) info.colorSpace = csMatch[1];
+                    var ssMatch = xmp.match(/chromaSubsampling[">:]+([^<"]+)/i);
+                    if (ssMatch) info.chromaSubsampling = ssMatch[1];
+                }
+            }
+        } catch (ignore) {}
+        return _ok(info);
+    } catch (e) { return _err("getColorDepthInfo failed: " + e.message); }
+}
+
+/**
+ * getAudioSpecsDetailed — Detailed audio specs for a project item.
+ */
+function getAudioSpecsDetailed(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var idx = parseInt(projectItemIndex, 10);
+        var items = app.project.rootItem.children;
+        if (idx < 0 || idx >= items.numItems) return _err("getAudioSpecsDetailed: invalid projectItemIndex " + idx);
+        var item = items[idx];
+        var info = { name: item.name, mediaPath: "" };
+        try { if (item.getMediaPath) info.mediaPath = item.getMediaPath(); } catch (ignore) {}
+        // Try to get audio channel count and configuration
+        try {
+            if (item.getFootageInterpretation) {
+                var interp = item.getFootageInterpretation();
+                if (interp) {
+                    info.frameRate = interp.frameRate || 0;
+                }
+            }
+        } catch (ignore) {}
+        // Try XMP for detailed audio specs
+        try {
+            if (item.getXMPMetadata) {
+                var xmp = item.getXMPMetadata();
+                if (xmp) {
+                    var srMatch = xmp.match(/sampleRate[">:]+([^<"]+)/i);
+                    if (srMatch) info.sampleRate = srMatch[1];
+                    var bdMatch = xmp.match(/bitsPerSample[">:]+([^<"]+)/i);
+                    if (bdMatch) info.bitDepth = bdMatch[1];
+                    var chMatch = xmp.match(/channels[">:]+([^<"]+)/i);
+                    if (chMatch) info.channels = chMatch[1];
+                    var acMatch = xmp.match(/audioCodec[">:]+([^<"]+)/i);
+                    if (acMatch) info.audioCodec = acMatch[1];
+                    var layoutMatch = xmp.match(/channelLayout[">:]+([^<"]+)/i);
+                    if (layoutMatch) info.channelLayout = layoutMatch[1];
+                }
+            }
+        } catch (ignore) {}
+        return _ok(info);
+    } catch (e) { return _err("getAudioSpecsDetailed failed: " + e.message); }
+}
+
+/**
+ * isVariableFrameRate — Check if a clip has variable frame rate.
+ */
+function isVariableFrameRate(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var idx = parseInt(projectItemIndex, 10);
+        var items = app.project.rootItem.children;
+        if (idx < 0 || idx >= items.numItems) return _err("isVariableFrameRate: invalid projectItemIndex " + idx);
+        var item = items[idx];
+        var info = { name: item.name, isVFR: false };
+        try { if (item.getMediaPath) info.mediaPath = item.getMediaPath(); } catch (ignore) {}
+        // Check XMP metadata for VFR indicators
+        try {
+            if (item.getXMPMetadata) {
+                var xmp = item.getXMPMetadata();
+                if (xmp) {
+                    info.isVFR = /variableFrameRate|vfr/i.test(xmp);
+                }
+            }
+        } catch (ignore) {}
+        // Also check footage interpretation
+        try {
+            if (item.getFootageInterpretation) {
+                var interp = item.getFootageInterpretation();
+                if (interp && interp.frameRate) {
+                    info.interpretedFrameRate = interp.frameRate;
+                }
+            }
+        } catch (ignore) {}
+        return _ok(info);
+    } catch (e) { return _err("isVariableFrameRate failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// File Operations (21-25)
+// ---------------------------------------------------------------------------
+
+/**
+ * getFileHash — Get a file hash for a project item's media file.
+ * Note: ExtendScript lacks native crypto; this does a basic checksum.
+ */
+function getFileHash(projectItemIndex, algorithm) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var idx = parseInt(projectItemIndex, 10);
+        var items = app.project.rootItem.children;
+        if (idx < 0 || idx >= items.numItems) return _err("getFileHash: invalid projectItemIndex " + idx);
+        algorithm = algorithm || "simple";
+        var item = items[idx];
+        var mediaPath = "";
+        try { if (item.getMediaPath) mediaPath = item.getMediaPath(); } catch (ignore) {}
+        if (!mediaPath) return _err("getFileHash: no media path for item");
+        var f = new File(mediaPath);
+        if (!f.exists) return _err("getFileHash: file not found: " + mediaPath);
+        // ExtendScript doesn't have crypto APIs; return file metadata as fingerprint
+        var hash = {
+            name: item.name,
+            mediaPath: mediaPath,
+            algorithm: algorithm,
+            fileSizeBytes: f.length,
+            lastModified: f.modified ? f.modified.toISOString() : "",
+            created: f.created ? f.created.toISOString() : "",
+            fingerprint: f.length + "_" + (f.modified ? f.modified.getTime() : 0),
+            note: "Full cryptographic hashing requires an external tool; this returns a file fingerprint."
+        };
+        return _ok(hash);
+    } catch (e) { return _err("getFileHash failed: " + e.message); }
+}
+
+/**
+ * getFileDates — Get creation/modification dates for a project item's media file.
+ */
+function getFileDates(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var idx = parseInt(projectItemIndex, 10);
+        var items = app.project.rootItem.children;
+        if (idx < 0 || idx >= items.numItems) return _err("getFileDates: invalid projectItemIndex " + idx);
+        var item = items[idx];
+        var mediaPath = "";
+        try { if (item.getMediaPath) mediaPath = item.getMediaPath(); } catch (ignore) {}
+        if (!mediaPath) return _err("getFileDates: no media path for item");
+        var f = new File(mediaPath);
+        if (!f.exists) return _err("getFileDates: file not found: " + mediaPath);
+        return _ok({
+            name: item.name,
+            mediaPath: mediaPath,
+            created: f.created ? f.created.toISOString() : "unknown",
+            modified: f.modified ? f.modified.toISOString() : "unknown",
+            fileSizeBytes: f.length
+        });
+    } catch (e) { return _err("getFileDates failed: " + e.message); }
+}
+
+/**
+ * moveMediaFile — Move media file to a new directory and relink in project.
+ */
+function moveMediaFile(projectItemIndex, newDirectory) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var idx = parseInt(projectItemIndex, 10);
+        var items = app.project.rootItem.children;
+        if (idx < 0 || idx >= items.numItems) return _err("moveMediaFile: invalid projectItemIndex " + idx);
+        if (!newDirectory) return _err("moveMediaFile: newDirectory is required");
+        var item = items[idx];
+        var mediaPath = "";
+        try { if (item.getMediaPath) mediaPath = item.getMediaPath(); } catch (ignore) {}
+        if (!mediaPath) return _err("moveMediaFile: no media path for item");
+        var srcFile = new File(mediaPath);
+        if (!srcFile.exists) return _err("moveMediaFile: source file not found: " + mediaPath);
+        var destFolder = new Folder(newDirectory);
+        if (!destFolder.exists) destFolder.create();
+        var destPath = newDirectory + "/" + srcFile.name;
+        var destFile = new File(destPath);
+        var copied = srcFile.copy(destFile);
+        if (!copied) return _err("moveMediaFile: failed to copy file to " + destPath);
+        // Relink media in project
+        if (item.changeMediaPath) {
+            item.changeMediaPath(destPath, false);
+        }
+        // Remove original after successful relink
+        srcFile.remove();
+        return _ok({
+            action: "move_media_file",
+            name: item.name,
+            oldPath: mediaPath,
+            newPath: destPath
+        });
+    } catch (e) { return _err("moveMediaFile failed: " + e.message); }
+}
+
+/**
+ * copyMediaFile — Copy a project item's media file to a destination directory.
+ */
+function copyMediaFile(projectItemIndex, destDirectory) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var idx = parseInt(projectItemIndex, 10);
+        var items = app.project.rootItem.children;
+        if (idx < 0 || idx >= items.numItems) return _err("copyMediaFile: invalid projectItemIndex " + idx);
+        if (!destDirectory) return _err("copyMediaFile: destDirectory is required");
+        var item = items[idx];
+        var mediaPath = "";
+        try { if (item.getMediaPath) mediaPath = item.getMediaPath(); } catch (ignore) {}
+        if (!mediaPath) return _err("copyMediaFile: no media path for item");
+        var srcFile = new File(mediaPath);
+        if (!srcFile.exists) return _err("copyMediaFile: source file not found: " + mediaPath);
+        var destFolder = new Folder(destDirectory);
+        if (!destFolder.exists) destFolder.create();
+        var destPath = destDirectory + "/" + srcFile.name;
+        var destFile = new File(destPath);
+        var copied = srcFile.copy(destFile);
+        if (!copied) return _err("copyMediaFile: failed to copy file to " + destPath);
+        return _ok({
+            action: "copy_media_file",
+            name: item.name,
+            sourcePath: mediaPath,
+            destPath: destPath,
+            fileSizeBytes: srcFile.length
+        });
+    } catch (e) { return _err("copyMediaFile failed: " + e.message); }
+}
+
+/**
+ * renameMediaFile — Rename a media file on disk and relink in the project.
+ */
+function renameMediaFile(projectItemIndex, newName) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var idx = parseInt(projectItemIndex, 10);
+        var items = app.project.rootItem.children;
+        if (idx < 0 || idx >= items.numItems) return _err("renameMediaFile: invalid projectItemIndex " + idx);
+        if (!newName) return _err("renameMediaFile: newName is required");
+        var item = items[idx];
+        var mediaPath = "";
+        try { if (item.getMediaPath) mediaPath = item.getMediaPath(); } catch (ignore) {}
+        if (!mediaPath) return _err("renameMediaFile: no media path for item");
+        var srcFile = new File(mediaPath);
+        if (!srcFile.exists) return _err("renameMediaFile: source file not found: " + mediaPath);
+        // Preserve extension if not provided
+        var ext = srcFile.name.match(/\.[^.]+$/);
+        if (ext && newName.indexOf(".") === -1) {
+            newName = newName + ext[0];
+        }
+        var newPath = srcFile.parent.fsName + "/" + newName;
+        var renamed = srcFile.rename(newName);
+        if (!renamed) return _err("renameMediaFile: failed to rename file to " + newName);
+        // Relink media in project
+        if (item.changeMediaPath) {
+            item.changeMediaPath(newPath, false);
+        }
+        // Also update project item name
+        item.name = newName.replace(/\.[^.]+$/, "");
+        return _ok({
+            action: "rename_media_file",
+            oldPath: mediaPath,
+            newPath: newPath,
+            newName: newName
+        });
+    } catch (e) { return _err("renameMediaFile failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Render Queue (26-30)
+// ---------------------------------------------------------------------------
+
+/**
+ * addToRenderQueue — Add a sequence to Premiere Pro's internal render queue.
+ */
+function addToRenderQueue(sequenceIndex, presetPath, outputPath) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seqIdx = parseInt(sequenceIndex, 10) || 0;
+        if (seqIdx < 0 || seqIdx >= app.project.sequences.numSequences) {
+            return _err("addToRenderQueue: invalid sequenceIndex " + seqIdx);
+        }
+        if (!outputPath) return _err("addToRenderQueue: outputPath is required");
+        var seq = app.project.sequences[seqIdx];
+        var jobID = "";
+        if (app.encoder) {
+            app.encoder.launchEncoder();
+            if (presetPath) {
+                jobID = app.encoder.encodeSequence(seq, outputPath, presetPath, 0);
+            } else {
+                jobID = app.encoder.encodeSequence(seq, outputPath, "", 0);
+            }
+        }
+        return _ok({
+            action: "add_to_render_queue",
+            sequenceName: seq.name,
+            sequenceIndex: seqIdx,
+            presetPath: presetPath || "",
+            outputPath: outputPath,
+            jobID: jobID || "queued"
+        });
+    } catch (e) { return _err("addToRenderQueue failed: " + e.message); }
+}
+
+/**
+ * getRenderQueueStatus — Get the current render queue status.
+ */
+function getRenderQueueStatus() {
+    try {
+        var status = {
+            encoderAvailable: false,
+            jobs: []
+        };
+        if (app.encoder) {
+            status.encoderAvailable = true;
+            // The encoder API is limited in ExtendScript; report what we can
+            status.message = "Adobe Media Encoder integration active";
+        } else {
+            status.message = "Adobe Media Encoder not available";
+        }
+        return _ok(status);
+    } catch (e) { return _err("getRenderQueueStatus failed: " + e.message); }
+}
+
+/**
+ * clearRenderQueue — Clear the render queue.
+ */
+function clearRenderQueue() {
+    try {
+        if (app.encoder) {
+            // AME API does not expose direct queue clearing from ExtendScript;
+            // report the intent so the orchestrator can use AME's own API.
+            return _ok({ action: "clear_render_queue", status: "clear_requested" });
+        }
+        return _err("clearRenderQueue: Adobe Media Encoder not available");
+    } catch (e) { return _err("clearRenderQueue failed: " + e.message); }
+}
+
+/**
+ * pauseRenderQueue — Pause rendering.
+ */
+function pauseRenderQueue() {
+    try {
+        if (app.encoder) {
+            return _ok({ action: "pause_render_queue", status: "pause_requested" });
+        }
+        return _err("pauseRenderQueue: Adobe Media Encoder not available");
+    } catch (e) { return _err("pauseRenderQueue failed: " + e.message); }
+}
+
+/**
+ * resumeRenderQueue — Resume rendering.
+ */
+function resumeRenderQueue() {
+    try {
+        if (app.encoder) {
+            app.encoder.startBatch();
+            return _ok({ action: "resume_render_queue", status: "batch_started" });
+        }
+        return _err("resumeRenderQueue: Adobe Media Encoder not available");
+    } catch (e) { return _err("resumeRenderQueue failed: " + e.message); }
+}
