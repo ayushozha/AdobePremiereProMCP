@@ -91,9 +91,11 @@ interface PendingRequest {
 
 const DEFAULT_WS_PORT = 9801;
 const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
-const DEFAULT_MAX_RECONNECT_ATTEMPTS = 5;
-const DEFAULT_RECONNECT_INTERVAL_MS = 2_000;
-const HEARTBEAT_INTERVAL_MS = 10_000;
+const DEFAULT_MAX_RECONNECT_ATTEMPTS = 100;
+const DEFAULT_RECONNECT_BASE_MS = 5_000;
+const DEFAULT_RECONNECT_MAX_MS = 30_000;
+const HEARTBEAT_INTERVAL_MS = 15_000;
+const PONG_TIMEOUT_MS = 5_000;
 
 // ---------------------------------------------------------------------------
 // Implementation

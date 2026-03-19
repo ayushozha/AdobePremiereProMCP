@@ -1,0 +1,65 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  go-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Build Go orchestrator
+        run: cd go-orchestrator && go build ./...
+      - name: Vet Go code
+        run: cd go-orchestrator && go vet ./...
+
+  rust-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install protoc
+        run: sudo apt-get install -y protobuf-compiler
+      - name: Build Rust engine
+        run: cd rust-engine && cargo build
+      - name: Run Rust tests
+        run: cd rust-engine && cargo test
+
+  python-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          pip install grpcio protobuf pydantic structlog numpy scikit-learn pypdf python-docx "protobuf>=7.34.0"
+          pip install pytest
+      - name: Run Python tests
+        run: cd python-intelligence && PYTHONPATH=../gen/python:. pytest tests/ -v
+
+  typescript-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install and build ts-bridge
+        run: cd ts-bridge && npm install && npx tsc --noEmit
+      - name: Install and build CLI
+        run: cd cli && npm install && npx tsc --noEmit
+
+  proto-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bufbuild/buf-setup-action@v1
+      - name: Lint protos
+        run: buf lint

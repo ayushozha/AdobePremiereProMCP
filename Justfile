@@ -133,9 +133,13 @@ stop:
 status:
     ./scripts/status.sh
 
-# Install CEP panel into Premiere Pro
+# Install CEP panel into Premiere Pro (macOS/Linux)
 install-panel:
     ./scripts/install-cep-panel.sh
+
+# Install CEP panel into Premiere Pro (Windows)
+install-panel-win:
+    scripts\\install-cep-panel-win.bat
 
 # ─── Dev ───
 
