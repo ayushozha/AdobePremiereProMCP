@@ -11,8 +11,8 @@
 
     <ExecutionEnvironment>
         <HostList>
-            <!-- Premiere Pro 2023 (v23.0) through 2026 (v26.99) -->
-            <Host Name="PPRO" Version="[23.0,26.99]" />
+            <!-- Premiere Pro 2020 (v14.0) through 2027 (v99.9) -->
+            <Host Name="PPRO" Version="[14.0,99.9]" />
         </HostList>
         <LocaleList>
             <Locale Code="All" />
@@ -41,7 +41,7 @@
                     </StartOn>
                 </Lifecycle>
                 <UI>
-                    <Type>Custom</Type>
+                    <Type>Panel</Type>
                     <Menu>PremierPro MCP Bridge</Menu>
                     <Geometry>
                         <Size>
