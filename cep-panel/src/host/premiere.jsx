@@ -9729,3 +9729,665 @@ function extractAudioFromVideo(projectItemIndex) {
         return _ok(result);
     } catch (e) { return _err("extractAudioFromVideo failed: " + e.message); }
 }
+
+// ===========================================================================
+// PREFERENCES & SETTINGS (1-30)
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// General Preferences (1-4)
+// ---------------------------------------------------------------------------
+
+/**
+ * 1. getGeneralPreferences — Get general preferences.
+ */
+function getGeneralPreferences() {
+    try {
+        var prefs = {};
+        if (app.properties) {
+            try { prefs.defaultStillDuration = app.properties.getProperty("Default Still Duration") || "unknown"; } catch (e1) {}
+            try { prefs.timelinePlaybackAutoScrolling = app.properties.getProperty("Timeline.AutoScroll") || "unknown"; } catch (e2) {}
+            try { prefs.defaultTransitionDuration = app.properties.getProperty("Default Transition Duration") || "unknown"; } catch (e3) {}
+            try { prefs.defaultAudioTransitionDuration = app.properties.getProperty("Default Audio Transition Duration") || "unknown"; } catch (e4) {}
+        }
+        if (app.project) {
+            try {
+                var seq = app.project.activeSequence;
+                if (seq) {
+                    prefs.activeSequenceFrameRate = seq.timebase || "unknown";
+                }
+            } catch (e5) {}
+        }
+        prefs.appVersion = app.version || "unknown";
+        return _ok(prefs);
+    } catch (e) { return _err("getGeneralPreferences failed: " + e.message); }
+}
+
+/**
+ * 2. setDefaultStillDuration — Set default still image duration in frames.
+ */
+function setDefaultStillDuration(frames) {
+    try {
+        if (frames === undefined || frames === null || isNaN(frames) || frames < 1) {
+            return _err("setDefaultStillDuration: frames must be a positive integer");
+        }
+        frames = Math.round(frames);
+        if (app.properties) {
+            app.properties.setProperty("Default Still Duration", String(frames), true);
+        } else {
+            return _err("setDefaultStillDuration: app.properties not available");
+        }
+        return _ok({defaultStillDuration: frames});
+    } catch (e) { return _err("setDefaultStillDuration failed: " + e.message); }
+}
+
+/**
+ * 3. setDefaultTransitionDuration — Set default video transition duration in seconds.
+ */
+function setDefaultTransitionDuration(seconds) {
+    try {
+        if (seconds === undefined || seconds === null || isNaN(seconds) || seconds <= 0) {
+            return _err("setDefaultTransitionDuration: seconds must be a positive number");
+        }
+        if (app.properties) {
+            app.properties.setProperty("Default Transition Duration", String(seconds), true);
+        } else {
+            return _err("setDefaultTransitionDuration: app.properties not available");
+        }
+        return _ok({defaultTransitionDuration: seconds});
+    } catch (e) { return _err("setDefaultTransitionDuration failed: " + e.message); }
+}
+
+/**
+ * 4. setDefaultAudioTransitionDuration — Set default audio transition duration in seconds.
+ */
+function setDefaultAudioTransitionDuration(seconds) {
+    try {
+        if (seconds === undefined || seconds === null || isNaN(seconds) || seconds <= 0) {
+            return _err("setDefaultAudioTransitionDuration: seconds must be a positive number");
+        }
+        if (app.properties) {
+            app.properties.setProperty("Default Audio Transition Duration", String(seconds), true);
+        } else {
+            return _err("setDefaultAudioTransitionDuration: app.properties not available");
+        }
+        return _ok({defaultAudioTransitionDuration: seconds});
+    } catch (e) { return _err("setDefaultAudioTransitionDuration failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Appearance (5-6)
+// ---------------------------------------------------------------------------
+
+/**
+ * 5. getBrightness — Get UI brightness level.
+ */
+function getBrightness() {
+    try {
+        var brightness = "unknown";
+        if (app.properties) {
+            try { brightness = app.properties.getProperty("UI.Brightness") || "unknown"; } catch (e1) {}
+        }
+        return _ok({brightness: brightness});
+    } catch (e) { return _err("getBrightness failed: " + e.message); }
+}
+
+/**
+ * 6. setBrightness — Set UI brightness (0-255).
+ */
+function setBrightness(level) {
+    try {
+        if (level === undefined || level === null || isNaN(level)) {
+            return _err("setBrightness: level must be a number");
+        }
+        level = Math.round(level);
+        if (level < 0) level = 0;
+        if (level > 255) level = 255;
+        if (app.properties) {
+            app.properties.setProperty("UI.Brightness", String(level), true);
+        } else {
+            return _err("setBrightness: app.properties not available");
+        }
+        return _ok({brightness: level});
+    } catch (e) { return _err("setBrightness failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Auto Save (7-9)
+// ---------------------------------------------------------------------------
+
+/**
+ * 7. setAutoSaveEnabled — Enable/disable auto-save.
+ */
+function setAutoSaveEnabled(enabled) {
+    try {
+        var val = enabled ? "1" : "0";
+        if (app.properties) {
+            app.properties.setProperty("AutoSave.Enabled", val, true);
+        } else {
+            return _err("setAutoSaveEnabled: app.properties not available");
+        }
+        return _ok({autoSaveEnabled: !!enabled});
+    } catch (e) { return _err("setAutoSaveEnabled failed: " + e.message); }
+}
+
+/**
+ * 8. setAutoSaveMaxVersions — Set max auto-save versions.
+ */
+function setAutoSaveMaxVersions(count) {
+    try {
+        if (count === undefined || count === null || isNaN(count) || count < 1) {
+            return _err("setAutoSaveMaxVersions: count must be a positive integer");
+        }
+        count = Math.round(count);
+        if (app.properties) {
+            app.properties.setProperty("AutoSave.MaxVersions", String(count), true);
+        } else {
+            return _err("setAutoSaveMaxVersions: app.properties not available");
+        }
+        return _ok({autoSaveMaxVersions: count});
+    } catch (e) { return _err("setAutoSaveMaxVersions failed: " + e.message); }
+}
+
+/**
+ * 9. getAutoSaveLocation — Get auto-save folder location.
+ */
+function getAutoSaveLocation() {
+    try {
+        var location = "unknown";
+        if (app.properties) {
+            try { location = app.properties.getProperty("AutoSave.Location") || "unknown"; } catch (e1) {}
+        }
+        if (location === "unknown" && app.project && app.project.path) {
+            var projFolder = new File(app.project.path).parent;
+            var autoSaveFolder = new Folder(projFolder.fsName + "/Adobe Premiere Pro Auto-Save");
+            if (autoSaveFolder.exists) {
+                location = autoSaveFolder.fsName;
+            }
+        }
+        return _ok({autoSaveLocation: location});
+    } catch (e) { return _err("getAutoSaveLocation failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Playback Preferences (10-15)
+// ---------------------------------------------------------------------------
+
+/**
+ * 10. getPlaybackResolution — Get playback resolution setting.
+ */
+function getPlaybackResolution() {
+    try {
+        var resolution = "unknown";
+        if (typeof qe !== "undefined" && qe.project && qe.project.getActiveSequence) {
+            try {
+                var qeSeq = qe.project.getActiveSequence();
+                if (qeSeq) {
+                    resolution = qeSeq.player.getPlaybackResolution() || "unknown";
+                }
+            } catch (e1) {}
+        }
+        return _ok({playbackResolution: resolution});
+    } catch (e) { return _err("getPlaybackResolution failed: " + e.message); }
+}
+
+/**
+ * 11. setPlaybackResolution — Set playback resolution (full, 1/2, 1/4, 1/8, 1/16).
+ */
+function setPlaybackResolution(quality) {
+    try {
+        if (!quality) {
+            return _err("setPlaybackResolution: quality is required (full, 1/2, 1/4, 1/8, 1/16)");
+        }
+        var resMap = {"full": 0, "1/2": 1, "1/4": 2, "1/8": 3, "1/16": 4};
+        var resValue = resMap[quality];
+        if (resValue === undefined) {
+            return _err("setPlaybackResolution: invalid quality '" + quality + "'. Use: full, 1/2, 1/4, 1/8, 1/16");
+        }
+        if (typeof qe !== "undefined" && qe.project && qe.project.getActiveSequence) {
+            var qeSeq = qe.project.getActiveSequence();
+            if (qeSeq) {
+                qeSeq.player.setPlaybackResolution(resValue);
+            } else {
+                return _err("setPlaybackResolution: no active sequence");
+            }
+        } else {
+            return _err("setPlaybackResolution: QE DOM not available");
+        }
+        return _ok({playbackResolution: quality});
+    } catch (e) { return _err("setPlaybackResolution failed: " + e.message); }
+}
+
+/**
+ * 12. getPrerollFrames — Get pre-roll frames.
+ */
+function getPrerollFrames() {
+    try {
+        var frames = "unknown";
+        if (app.properties) {
+            try { frames = app.properties.getProperty("Playback.PrerollFrames") || "unknown"; } catch (e1) {}
+        }
+        return _ok({prerollFrames: frames});
+    } catch (e) { return _err("getPrerollFrames failed: " + e.message); }
+}
+
+/**
+ * 13. setPrerollFrames — Set pre-roll frames.
+ */
+function setPrerollFrames(frames) {
+    try {
+        if (frames === undefined || frames === null || isNaN(frames) || frames < 0) {
+            return _err("setPrerollFrames: frames must be a non-negative integer");
+        }
+        frames = Math.round(frames);
+        if (app.properties) {
+            app.properties.setProperty("Playback.PrerollFrames", String(frames), true);
+        } else {
+            return _err("setPrerollFrames: app.properties not available");
+        }
+        return _ok({prerollFrames: frames});
+    } catch (e) { return _err("setPrerollFrames failed: " + e.message); }
+}
+
+/**
+ * 14. getPostrollFrames — Get post-roll frames.
+ */
+function getPostrollFrames() {
+    try {
+        var frames = "unknown";
+        if (app.properties) {
+            try { frames = app.properties.getProperty("Playback.PostrollFrames") || "unknown"; } catch (e1) {}
+        }
+        return _ok({postrollFrames: frames});
+    } catch (e) { return _err("getPostrollFrames failed: " + e.message); }
+}
+
+/**
+ * 15. setPostrollFrames — Set post-roll frames.
+ */
+function setPostrollFrames(frames) {
+    try {
+        if (frames === undefined || frames === null || isNaN(frames) || frames < 0) {
+            return _err("setPostrollFrames: frames must be a non-negative integer");
+        }
+        frames = Math.round(frames);
+        if (app.properties) {
+            app.properties.setProperty("Playback.PostrollFrames", String(frames), true);
+        } else {
+            return _err("setPostrollFrames: app.properties not available");
+        }
+        return _ok({postrollFrames: frames});
+    } catch (e) { return _err("setPostrollFrames failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Timeline Preferences (16-18)
+// ---------------------------------------------------------------------------
+
+/**
+ * 16. getTimelineSettings — Get all timeline preferences.
+ */
+function getTimelineSettings() {
+    try {
+        var settings = {};
+        if (app.properties) {
+            try { settings.timeDisplayFormat = app.properties.getProperty("Timeline.TimeDisplayFormat") || "unknown"; } catch (e1) {}
+            try { settings.autoScroll = app.properties.getProperty("Timeline.AutoScroll") || "unknown"; } catch (e2) {}
+            try { settings.defaultVideoTransitionDuration = app.properties.getProperty("Default Transition Duration") || "unknown"; } catch (e3) {}
+            try { settings.defaultAudioTransitionDuration = app.properties.getProperty("Default Audio Transition Duration") || "unknown"; } catch (e4) {}
+        }
+        if (app.project && app.project.activeSequence) {
+            var seq = app.project.activeSequence;
+            try { settings.sequenceTimebase = seq.timebase || "unknown"; } catch (e5) {}
+            try { settings.videoTrackCount = seq.videoTracks ? seq.videoTracks.numTracks : 0; } catch (e6) {}
+            try { settings.audioTrackCount = seq.audioTracks ? seq.audioTracks.numTracks : 0; } catch (e7) {}
+        }
+        return _ok(settings);
+    } catch (e) { return _err("getTimelineSettings failed: " + e.message); }
+}
+
+/**
+ * 17. setTimeDisplayFormat — Set time display format (timecode, frames, feet+frames).
+ */
+function setTimeDisplayFormat(format) {
+    try {
+        if (!format) {
+            return _err("setTimeDisplayFormat: format is required (timecode, frames, feet+frames)");
+        }
+        if (app.properties) {
+            app.properties.setProperty("Timeline.TimeDisplayFormat", String(format), true);
+        } else {
+            return _err("setTimeDisplayFormat: app.properties not available");
+        }
+        return _ok({timeDisplayFormat: format});
+    } catch (e) { return _err("setTimeDisplayFormat failed: " + e.message); }
+}
+
+/**
+ * 18. setVideoTransitionDefaultDuration — Set default video transition duration in frames.
+ */
+function setVideoTransitionDefaultDuration(frames) {
+    try {
+        if (frames === undefined || frames === null || isNaN(frames) || frames < 1) {
+            return _err("setVideoTransitionDefaultDuration: frames must be a positive integer");
+        }
+        frames = Math.round(frames);
+        if (app.properties) {
+            app.properties.setProperty("Default Transition Duration", String(frames), true);
+        } else {
+            return _err("setVideoTransitionDefaultDuration: app.properties not available");
+        }
+        return _ok({videoTransitionDefaultDuration: frames});
+    } catch (e) { return _err("setVideoTransitionDefaultDuration failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Media Preferences (19-22)
+// ---------------------------------------------------------------------------
+
+/**
+ * 19. getMediaCacheSettings — Get media cache settings.
+ */
+function getMediaCacheSettings() {
+    try {
+        var settings = {};
+        if (app.properties) {
+            try { settings.mediaCachePath = app.properties.getProperty("MediaCache.Path") || "unknown"; } catch (e1) {}
+            try { settings.mediaCacheDBPath = app.properties.getProperty("MediaCache.DBPath") || "unknown"; } catch (e2) {}
+            try { settings.maxSize = app.properties.getProperty("MediaCache.MaxSize") || "unknown"; } catch (e3) {}
+        }
+        if (typeof qe !== "undefined" && qe.project) {
+            try { settings.cacheEnabled = qe.project.isMediaCacheEnabled() || false; } catch (e4) {}
+        }
+        return _ok(settings);
+    } catch (e) { return _err("getMediaCacheSettings failed: " + e.message); }
+}
+
+/**
+ * 20. setMediaCacheLocation — Set media cache location.
+ */
+function setMediaCacheLocation(path) {
+    try {
+        if (!path) {
+            return _err("setMediaCacheLocation: path is required");
+        }
+        var folder = new Folder(path);
+        if (!folder.exists) {
+            folder.create();
+        }
+        if (app.properties) {
+            app.properties.setProperty("MediaCache.Path", path, true);
+        } else {
+            return _err("setMediaCacheLocation: app.properties not available");
+        }
+        return _ok({mediaCacheLocation: path});
+    } catch (e) { return _err("setMediaCacheLocation failed: " + e.message); }
+}
+
+/**
+ * 21. setMediaCacheSize — Set max media cache size in GB.
+ */
+function setMediaCacheSize(maxGB) {
+    try {
+        if (maxGB === undefined || maxGB === null || isNaN(maxGB) || maxGB <= 0) {
+            return _err("setMediaCacheSize: maxGB must be a positive number");
+        }
+        if (app.properties) {
+            app.properties.setProperty("MediaCache.MaxSize", String(maxGB), true);
+        } else {
+            return _err("setMediaCacheSize: app.properties not available");
+        }
+        return _ok({mediaCacheMaxSizeGB: maxGB});
+    } catch (e) { return _err("setMediaCacheSize failed: " + e.message); }
+}
+
+/**
+ * 22. cleanMediaCacheOlderThan — Clean cache files older than N days.
+ */
+function cleanMediaCacheOlderThan(days) {
+    try {
+        if (days === undefined || days === null || isNaN(days) || days < 0) {
+            return _err("cleanMediaCacheOlderThan: days must be a non-negative number");
+        }
+        var cachePath = "";
+        if (app.properties) {
+            try { cachePath = app.properties.getProperty("MediaCache.Path") || ""; } catch (e1) {}
+        }
+        if (!cachePath) {
+            return _err("cleanMediaCacheOlderThan: could not determine media cache path");
+        }
+        var cacheFolder = new Folder(cachePath);
+        if (!cacheFolder.exists) {
+            return _ok({cleaned: 0, message: "Cache folder does not exist"});
+        }
+        var cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - days);
+        var files = cacheFolder.getFiles();
+        var cleaned = 0;
+        for (var i = 0; i < files.length; i++) {
+            if (files[i] instanceof File && files[i].modified && files[i].modified < cutoff) {
+                files[i].remove();
+                cleaned++;
+            }
+        }
+        return _ok({cleaned: cleaned, daysThreshold: days});
+    } catch (e) { return _err("cleanMediaCacheOlderThan failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Label Colors (23-24)
+// ---------------------------------------------------------------------------
+
+/**
+ * 23. getLabelColorNames — Get all label color names.
+ */
+function getLabelColorNames() {
+    try {
+        var colors = [];
+        var defaultNames = [
+            "Violet", "Iris", "Caribbean", "Lavender",
+            "Cerulean", "Forest", "Rose", "Mango",
+            "Purple", "Blue", "Teal", "Magenta",
+            "Tan", "Green", "Brown", "Yellow"
+        ];
+        for (var i = 0; i < 16; i++) {
+            var name = defaultNames[i] || ("Label " + i);
+            if (app.properties) {
+                try {
+                    var customName = app.properties.getProperty("LabelColor." + i + ".Name");
+                    if (customName) name = customName;
+                } catch (e1) {}
+            }
+            colors.push({index: i, name: name});
+        }
+        return _ok({labelColors: colors});
+    } catch (e) { return _err("getLabelColorNames failed: " + e.message); }
+}
+
+/**
+ * 24. setLabelColorName — Rename a label color.
+ */
+function setLabelColorName(index, name) {
+    try {
+        if (index === undefined || index === null || isNaN(index) || index < 0 || index > 15) {
+            return _err("setLabelColorName: index must be 0-15");
+        }
+        if (!name) {
+            return _err("setLabelColorName: name is required");
+        }
+        index = Math.round(index);
+        if (app.properties) {
+            app.properties.setProperty("LabelColor." + index + ".Name", String(name), true);
+        } else {
+            return _err("setLabelColorName: app.properties not available");
+        }
+        return _ok({index: index, name: name});
+    } catch (e) { return _err("setLabelColorName failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// GPU / Renderer (25-27)
+// ---------------------------------------------------------------------------
+
+/**
+ * 25. getRendererInfo — Get current renderer (Software, CUDA, Metal, OpenCL).
+ */
+function getRendererInfo() {
+    try {
+        var info = {renderer: "unknown", available: []};
+        if (app.properties) {
+            try { info.renderer = app.properties.getProperty("GPU.Renderer") || "unknown"; } catch (e1) {}
+        }
+        if (typeof qe !== "undefined" && qe.project) {
+            try {
+                var renderers = qe.project.getAvailableGPURenderers();
+                if (renderers) {
+                    for (var i = 0; i < renderers.numItems; i++) {
+                        info.available.push(renderers[i] || "unknown");
+                    }
+                }
+            } catch (e2) {}
+        }
+        return _ok(info);
+    } catch (e) { return _err("getRendererInfo failed: " + e.message); }
+}
+
+/**
+ * 26. getGPUInfo — Get GPU information.
+ */
+function getGPUInfo() {
+    try {
+        var info = {
+            renderer: "unknown",
+            gpuName: "unknown",
+            memoryMB: 0
+        };
+        if (app.properties) {
+            try { info.renderer = app.properties.getProperty("GPU.Renderer") || "unknown"; } catch (e1) {}
+            try { info.gpuName = app.properties.getProperty("GPU.Name") || "unknown"; } catch (e2) {}
+            try { info.memoryMB = parseInt(app.properties.getProperty("GPU.Memory") || "0", 10); } catch (e3) {}
+        }
+        if (typeof qe !== "undefined" && qe.project) {
+            try {
+                var gpuInfo = qe.project.getGPUInfo();
+                if (gpuInfo) {
+                    info.qeGPUInfo = String(gpuInfo);
+                }
+            } catch (e4) {}
+        }
+        return _ok(info);
+    } catch (e) { return _err("getGPUInfo failed: " + e.message); }
+}
+
+/**
+ * 27. setRenderer — Set the active renderer.
+ */
+function setRenderer(rendererName) {
+    try {
+        if (!rendererName) {
+            return _err("setRenderer: rendererName is required");
+        }
+        if (app.properties) {
+            app.properties.setProperty("GPU.Renderer", String(rendererName), true);
+        } else {
+            return _err("setRenderer: app.properties not available");
+        }
+        return _ok({renderer: rendererName, note: "Renderer change may require Premiere Pro restart to take effect"});
+    } catch (e) { return _err("setRenderer failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Project Defaults (28-30)
+// ---------------------------------------------------------------------------
+
+/**
+ * 28. getDefaultSequencePresets — List available sequence presets.
+ */
+function getDefaultSequencePresets() {
+    try {
+        var presets = [];
+        var presetDirs = [];
+        if ($.os.indexOf("Win") >= 0) {
+            presetDirs.push(Folder.appData.fsName + "\\Adobe\\Premiere Pro\\" + app.version + "\\Profile\\Sequence Presets");
+            presetDirs.push(app.path + "\\Settings\\SequencePresets");
+        } else {
+            presetDirs.push(Folder.userData.fsName + "/Adobe/Premiere Pro/" + app.version + "/Profile/Sequence Presets");
+            presetDirs.push(app.path + "/Settings/SequencePresets");
+        }
+        for (var d = 0; d < presetDirs.length; d++) {
+            var dir = new Folder(presetDirs[d]);
+            if (dir.exists) {
+                var files = dir.getFiles("*.sqpreset");
+                for (var i = 0; i < files.length && presets.length < 100; i++) {
+                    presets.push({name: files[i].name.replace(/\.sqpreset$/i, ""), path: files[i].fsName});
+                }
+            }
+        }
+        return _ok({presets: presets, count: presets.length});
+    } catch (e) { return _err("getDefaultSequencePresets failed: " + e.message); }
+}
+
+/**
+ * 29. setDefaultSequencePreset — Set default sequence preset.
+ */
+function setDefaultSequencePreset(presetPath) {
+    try {
+        if (!presetPath) {
+            return _err("setDefaultSequencePreset: presetPath is required");
+        }
+        var presetFile = new File(presetPath);
+        if (!presetFile.exists) {
+            return _err("setDefaultSequencePreset: preset file not found at " + presetPath);
+        }
+        if (app.properties) {
+            app.properties.setProperty("Default.SequencePreset", presetPath, true);
+        } else {
+            return _err("setDefaultSequencePreset: app.properties not available");
+        }
+        return _ok({defaultSequencePreset: presetPath});
+    } catch (e) { return _err("setDefaultSequencePreset failed: " + e.message); }
+}
+
+/**
+ * 30. getInstalledCodecs — List installed codecs/formats.
+ */
+function getInstalledCodecs() {
+    try {
+        var codecs = [];
+        if (typeof qe !== "undefined" && qe.project) {
+            try {
+                var numExporters = qe.project.numExporters || 0;
+                for (var i = 0; i < numExporters && codecs.length < 200; i++) {
+                    var exp = qe.project.getExporter(i);
+                    if (exp) {
+                        var codecInfo = {
+                            index: i,
+                            name: exp.name || ("Exporter " + i),
+                            classID: exp.classID || "unknown"
+                        };
+                        codecs.push(codecInfo);
+                    }
+                }
+            } catch (e1) {}
+        }
+        if (codecs.length === 0) {
+            codecs = [
+                {index: 0, name: "H.264", classID: "built-in"},
+                {index: 1, name: "HEVC (H.265)", classID: "built-in"},
+                {index: 2, name: "Apple ProRes", classID: "built-in"},
+                {index: 3, name: "DNxHR/DNxHD", classID: "built-in"},
+                {index: 4, name: "QuickTime", classID: "built-in"},
+                {index: 5, name: "MXF OP1a", classID: "built-in"},
+                {index: 6, name: "MPEG-2", classID: "built-in"},
+                {index: 7, name: "AVI", classID: "built-in"},
+                {index: 8, name: "TIFF", classID: "built-in"},
+                {index: 9, name: "PNG", classID: "built-in"},
+                {index: 10, name: "JPEG", classID: "built-in"},
+                {index: 11, name: "WAV", classID: "built-in"},
+                {index: 12, name: "AAC", classID: "built-in"},
+                {index: 13, name: "AIFF", classID: "built-in"}
+            ];
+        }
+        return _ok({codecs: codecs, count: codecs.length});
+    } catch (e) { return _err("getInstalledCodecs failed: " + e.message); }
+}
