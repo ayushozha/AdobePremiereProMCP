@@ -106,12 +106,16 @@ export class CepBridge implements PremiereBridge {
   private readonly wsUrl: string;
   private readonly commandTimeoutMs: number;
   private readonly maxReconnectAttempts: number;
-  private readonly reconnectIntervalMs: number;
+  private readonly reconnectBaseMs: number;
+  private readonly reconnectMaxMs: number;
 
   private ws: WebSocket | null = null;
   private pendingRequests = new Map<string, PendingRequest>();
   private reconnectAttempts = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private pongTimer: ReturnType<typeof setTimeout> | null = null;
+  private awaitingPong = false;
   private intentionalClose = false;
   private _isConnected = false;
 
@@ -120,7 +124,8 @@ export class CepBridge implements PremiereBridge {
     this.wsUrl = `ws://localhost:${port}`;
     this.commandTimeoutMs = DEFAULT_COMMAND_TIMEOUT_MS;
     this.maxReconnectAttempts = DEFAULT_MAX_RECONNECT_ATTEMPTS;
-    this.reconnectIntervalMs = DEFAULT_RECONNECT_INTERVAL_MS;
+    this.reconnectBaseMs = DEFAULT_RECONNECT_BASE_MS;
+    this.reconnectMaxMs = DEFAULT_RECONNECT_MAX_MS;
 
     this.log = createLogger({
       level: config.logLevel,
@@ -145,7 +150,6 @@ export class CepBridge implements PremiereBridge {
     }
 
     this.intentionalClose = false;
-    this.reconnectAttempts = 0;
 
     return new Promise<void>((resolve) => {
       this.log.info(`Connecting to CEP panel at ${this.wsUrl}...`);
@@ -183,6 +187,14 @@ export class CepBridge implements PremiereBridge {
         resolve();
       });
 
+      ws.on("pong", () => {
+        this.awaitingPong = false;
+        if (this.pongTimer) {
+          clearTimeout(this.pongTimer);
+          this.pongTimer = null;
+        }
+      });
+
       ws.on("message", (data: WebSocket.Data) => {
         this.handleMessage(data);
       });
@@ -199,7 +211,7 @@ export class CepBridge implements PremiereBridge {
           this.rejectAllPending("WebSocket connection closed");
 
           if (!this.intentionalClose) {
-            this.attemptReconnect();
+            this.scheduleReconnect();
           }
         }
         // If the socket was never opened (initial connection failure),
@@ -225,6 +237,7 @@ export class CepBridge implements PremiereBridge {
   async disconnect(): Promise<void> {
     this.intentionalClose = true;
     this.stopHeartbeat();
+    this.cancelReconnect();
     this.rejectAllPending("Bridge disconnecting");
 
     if (this.ws) {
@@ -501,43 +514,123 @@ export class CepBridge implements PremiereBridge {
   }
 
   // -----------------------------------------------------------------------
-  // Private: reconnection
+  // Private: reconnection with exponential backoff
   // -----------------------------------------------------------------------
 
-  private attemptReconnect(): void {
+  /**
+   * Compute the next reconnection delay using exponential backoff.
+   * Base delay doubles each attempt: 5s, 10s, 20s, capped at 30s.
+   */
+  private getReconnectDelay(): number {
+    const exponential = this.reconnectBaseMs * Math.pow(2, this.reconnectAttempts - 1);
+    return Math.min(exponential, this.reconnectMaxMs);
+  }
+
+  /**
+   * Schedule a reconnection attempt. Called when the WebSocket closes
+   * unexpectedly (not a clean/intentional shutdown).
+   */
+  private scheduleReconnect(): void {
+    if (this.intentionalClose) return;
+
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       this.log.error(
-        `Max reconnection attempts (${this.maxReconnectAttempts}) reached. Giving up.`,
+        `Max reconnection attempts (${this.maxReconnectAttempts}) reached. ` +
+          "Giving up. Restart the bridge manually or call connect() again.",
       );
       this.rejectAllPending("Max reconnection attempts exceeded");
       return;
     }
 
     this.reconnectAttempts++;
-    const delay = this.reconnectIntervalMs * this.reconnectAttempts;
+    const delay = this.getReconnectDelay();
     this.log.info(
       `Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`,
     );
 
-    setTimeout(() => {
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       if (this.intentionalClose) return;
-      this.connect().catch((err: unknown) => {
-        const detail = err instanceof Error ? err.message : String(err);
-        this.log.warn(`Reconnection attempt failed: ${detail}`);
-      });
+
+      this.log.info(
+        `Attempting reconnection (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`,
+      );
+
+      this.connect()
+        .then(() => {
+          if (this._isConnected) {
+            this.log.info(
+              `Reconnected to CEP panel at ${this.wsUrl} after ${this.reconnectAttempts} attempt(s).`,
+            );
+            // Reset attempt counter on successful connection -- already
+            // done inside connect()'s "open" handler.
+          } else {
+            // connect() resolved but we are not connected (timeout/error path).
+            // Schedule another attempt.
+            this.scheduleReconnect();
+          }
+        })
+        .catch((err: unknown) => {
+          const detail = err instanceof Error ? err.message : String(err);
+          this.log.warn(`Reconnection attempt failed: ${detail}`);
+          this.scheduleReconnect();
+        });
     }, delay);
   }
 
+  /**
+   * Cancel any pending reconnection timer.
+   */
+  private cancelReconnect(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+
   // -----------------------------------------------------------------------
-  // Private: heartbeat
+  // Private: heartbeat with dead-connection detection
   // -----------------------------------------------------------------------
 
+  /**
+   * Start a periodic ping. Every HEARTBEAT_INTERVAL_MS we send a WebSocket
+   * ping frame. If no pong is received within PONG_TIMEOUT_MS the connection
+   * is considered dead and we trigger a reconnect.
+   */
   private startHeartbeat(): void {
     this.stopHeartbeat();
+    this.awaitingPong = false;
+
     this.heartbeatTimer = setInterval(() => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.ping();
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+      if (this.awaitingPong) {
+        // Previous ping never got a pong -- connection is dead.
+        this.log.warn("Pong timeout: connection appears dead. Triggering reconnect.");
+        this.awaitingPong = false;
+        if (this.pongTimer) {
+          clearTimeout(this.pongTimer);
+          this.pongTimer = null;
+        }
+        // Force-close the socket so the "close" handler fires and reconnect kicks in.
+        this.ws.terminate();
+        return;
       }
+
+      this.awaitingPong = true;
+      this.ws.ping();
+
+      // Set a deadline for the pong response.
+      this.pongTimer = setTimeout(() => {
+        if (this.awaitingPong && this.ws) {
+          this.log.warn(
+            `No pong received within ${PONG_TIMEOUT_MS}ms. Connection is dead.`,
+          );
+          this.awaitingPong = false;
+          this.pongTimer = null;
+          this.ws.terminate();
+        }
+      }, PONG_TIMEOUT_MS);
     }, HEARTBEAT_INTERVAL_MS);
   }
 
@@ -546,6 +639,11 @@ export class CepBridge implements PremiereBridge {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
     }
+    if (this.pongTimer) {
+      clearTimeout(this.pongTimer);
+      this.pongTimer = null;
+    }
+    this.awaitingPong = false;
   }
 
   // -----------------------------------------------------------------------

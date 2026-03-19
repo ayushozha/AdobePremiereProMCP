@@ -1,0 +1,37 @@
+version: '3.8'
+services:
+  orchestrator:
+    build: .
+    command: premierpro-mcp --transport sse --port 8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      - rust-engine
+      - python-intel
+      - ts-bridge
+
+  rust-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: premierpro-media-engine --port 50052
+    ports:
+      - "50052:50052"
+
+  python-intel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python /app/python-intelligence/src/main.py --port 50053
+    ports:
+      - "50053:50053"
+    environment:
+      - PYTHONPATH=/app/gen/python:/app/python-intelligence
+
+  ts-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: npx tsx /app/ts-bridge/src/index.ts
+    ports:
+      - "50054:50054"

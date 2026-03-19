@@ -17,6 +17,7 @@ import (
 // Orchestrator interface.
 func registerTools(s *server.MCPServer, orch Orchestrator, logger *zap.Logger) {
 	registerAppTools(s, logger)
+	registerHealthTools(s, orch, logger)
 	registerProjectTools(s, orch, logger)
 	registerProjectMgmtTools(s, orch, logger)
 	registerEditingTools(s, orch, logger)
