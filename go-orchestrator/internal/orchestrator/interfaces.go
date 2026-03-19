@@ -732,4 +732,102 @@ type Orchestrator interface {
 	GenerateDeliveryReport(ctx context.Context, specsJSON string) (*GenericResult, error)
 	CheckForBlackFrames(ctx context.Context, thresholdFrames int) (*GenericResult, error)
 	CheckForFlashContent(ctx context.Context, threshold float64) (*GenericResult, error)
+
+	// --- Essential Graphics Panel ---
+	GetEssentialGraphicsComponents(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error)
+	SetEssentialGraphicsProperty(ctx context.Context, trackIndex, clipIndex int, propName, value string) (*GenericResult, error)
+	GetEssentialGraphicsText(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error)
+	ReplaceAllText(ctx context.Context, trackIndex, clipIndex int, searchText, replaceText string) (*GenericResult, error)
+
+	// --- MOGRT Management (extended) ---
+	ListInstalledMOGRTs(ctx context.Context) (*GenericResult, error)
+	GetMOGRTInfo(ctx context.Context, mogrtPath string) (*GenericResult, error)
+	BatchUpdateMOGRTs(ctx context.Context, trackIndex int, propertyName, value string) (*GenericResult, error)
+	CreateMOGRTFromClip(ctx context.Context, trackIndex, clipIndex int, outputPath string) (*GenericResult, error)
+
+	// --- Text Operations ---
+	AddScrollingTitle(ctx context.Context, text string, trackIndex int, startTime, duration, speed float64) (*GenericResult, error)
+	AddTypewriterText(ctx context.Context, text string, trackIndex int, startTime, duration, typeSpeed float64) (*GenericResult, error)
+	AddTextWithBackground(ctx context.Context, text string, trackIndex int, startTime, duration float64, bgColor string, padding int) (*GenericResult, error)
+	SetTextAnimation(ctx context.Context, trackIndex, clipIndex int, animationType string, duration float64) (*GenericResult, error)
+
+	// --- Shape Layers ---
+	AddRectangle(ctx context.Context, trackIndex int, startTime, duration, x, y float64, width, height int, color string, borderWidth int) (*GenericResult, error)
+	AddCircle(ctx context.Context, trackIndex int, startTime, duration, x, y float64, radius int, color string) (*GenericResult, error)
+	AddLine(ctx context.Context, trackIndex int, startTime, duration, x1, y1, x2, y2 float64, color string, thickness int) (*GenericResult, error)
+
+	// --- Countdown / Timers ---
+	AddCountdown(ctx context.Context, trackIndex int, startTime float64, fromSeconds int, style string) (*GenericResult, error)
+	AddTimecode(ctx context.Context, trackIndex int, startTime, duration float64, format string) (*GenericResult, error)
+
+	// --- Watermark ---
+	AddWatermark(ctx context.Context, imagePath, position string, opacity, scale float64) (*GenericResult, error)
+	AddTextWatermark(ctx context.Context, text, position string, opacity float64, fontSize int, color string) (*GenericResult, error)
+	RemoveWatermark(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error)
+
+	// --- Picture Layouts ---
+	CreateSplitScreen(ctx context.Context, layout, clipRefsJSON string) (*GenericResult, error)
+	CreateCollage(ctx context.Context, clipRefsJSON string, rows, cols, gap int) (*GenericResult, error)
+
+	// --- Animated Transitions (custom) ---
+	AddWipeTransition(ctx context.Context, trackIndex, clipIndex int, direction, color string, duration float64) (*GenericResult, error)
+	AddZoomTransition(ctx context.Context, trackIndex, clipIndex int, zoomIn bool, duration float64) (*GenericResult, error)
+	AddGlitchTransition(ctx context.Context, trackIndex, clipIndex int, intensity, duration float64) (*GenericResult, error)
+
+	// --- Subtitling (extended) ---
+	AutoGenerateSubtitles(ctx context.Context, language, style string) (*GenericResult, error)
+	TranslateSubtitles(ctx context.Context, trackIndex int, targetLanguage string) (*GenericResult, error)
+	FormatSubtitles(ctx context.Context, trackIndex, maxCharsPerLine, maxLines int) (*GenericResult, error)
+	BurnInSubtitles(ctx context.Context, trackIndex int) (*GenericResult, error)
+	AdjustSubtitleTiming(ctx context.Context, trackIndex int, offsetSeconds float64) (*GenericResult, error)
+
+	// --- After Effects Integration ---
+	SendToAfterEffects(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	ImportAEComp(ctx context.Context, aepPath, compName, targetBin string) (*GenericResult, error)
+	ImportAllAEComps(ctx context.Context, aepPath, targetBin string) (*GenericResult, error)
+	RefreshAEComp(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+
+	// --- Photoshop Integration ---
+	EditInPhotoshop(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	ImportPSDLayers(ctx context.Context, psdPath, targetBin string, asSequence bool) (*GenericResult, error)
+
+	// --- Audition Integration ---
+	EditInAudition(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error)
+	RefreshAuditionEdit(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error)
+
+	// --- Media Encoder Integration ---
+	QueueInMediaEncoder(ctx context.Context, sequenceIndex int, presetPath string) (*GenericResult, error)
+	GetMediaEncoderQueue(ctx context.Context) (*GenericResult, error)
+	ClearMediaEncoderQueue(ctx context.Context) (*GenericResult, error)
+
+	// --- Dynamic Link ---
+	GetDynamicLinkStatus(ctx context.Context) (*GenericResult, error)
+	RefreshAllDynamicLinks(ctx context.Context) (*GenericResult, error)
+
+	// --- File Format Support / Codec ---
+	GetCodecInfo(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	TranscodeClip(ctx context.Context, projectItemIndex int, outputPath, presetPath string) (*GenericResult, error)
+	ConformMedia(ctx context.Context, projectItemIndex int, targetFps float64, targetCodec string) (*GenericResult, error)
+
+	// --- Project Interchange (OMF/AAF import) ---
+	ImportOMFFile(ctx context.Context, omfPath, targetBin string) (*GenericResult, error)
+	ImportAAFFile(ctx context.Context, aafPath, targetBin string) (*GenericResult, error)
+
+	// --- Clipboard ---
+	CopyToSystemClipboard(ctx context.Context, text string) (*GenericResult, error)
+	GetFromSystemClipboard(ctx context.Context) (*GenericResult, error)
+
+	// --- External Tools ---
+	OpenInExternalEditor(ctx context.Context, projectItemIndex int, editorPath string) (*GenericResult, error)
+	ImportFromExternalSource(ctx context.Context, sourcePath, format string) (*GenericResult, error)
+
+	// --- Team Projects ---
+	GetTeamProjectStatus(ctx context.Context) (*GenericResult, error)
+	CheckInChanges(ctx context.Context, message string) (*GenericResult, error)
+	CheckOutSequence(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+
+	// --- Productions ---
+	GetProductionInfo(ctx context.Context) (*GenericResult, error)
+	ListProductionProjects(ctx context.Context) (*GenericResult, error)
+	OpenProductionProject(ctx context.Context, projectName string) (*GenericResult, error)
 }
