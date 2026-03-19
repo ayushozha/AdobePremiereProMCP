@@ -69,4 +69,14 @@ type (
 	ExportPresetListResult = orchestrator.ExportPresetListResult
 	ExportProgressResult   = orchestrator.ExportProgressResult
 	GenericExportResult    = orchestrator.GenericExportResult
+
+	// Project management types
+	ProjectInfoResult     = orchestrator.ProjectInfoResult
+	ProjectItemsResult    = orchestrator.ProjectItemsResult
+	ProjectItemInfo       = orchestrator.ProjectItemInfo
+	ItemMetadataResult    = orchestrator.ItemMetadataResult
+	ConsolidateResult     = orchestrator.ConsolidateResult
+	ProjectSettingsResult = orchestrator.ProjectSettingsResult
+	BinInfo               = orchestrator.BinInfo
+	ActiveSequenceInfo    = orchestrator.ActiveSequenceInfo
 )

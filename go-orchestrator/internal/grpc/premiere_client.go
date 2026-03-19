@@ -451,6 +451,24 @@ func (c *PremiereBridgeClient) ExecuteEDL(ctx context.Context, params ExecuteEDL
 }
 
 // ---------------------------------------------------------------------------
+// Audio & Track Management (generic command dispatcher)
+// ---------------------------------------------------------------------------
+
+// EvalAudioCommand dispatches a named ExtendScript audio/track command.
+// This is a passthrough: the bridge evaluates the function and returns
+// the JSON result as a map.
+//
+// NOTE: The EvalScript RPC has not yet been added to the proto definition.
+// Once the premiere.proto is updated with an EvalScript RPC and the stubs
+// are regenerated, replace this placeholder with the actual gRPC call.
+func (c *PremiereBridgeClient) EvalAudioCommand(ctx context.Context, command string, args map[string]any) (map[string]any, error) {
+	c.logger.Debug("EvalAudioCommand", zap.String("command", command))
+
+	// TODO: implement once EvalScript RPC is added to premiere.proto
+	return nil, fmt.Errorf("EvalAudioCommand(%s): EvalScript RPC not yet defined in proto", command)
+}
+
+// ---------------------------------------------------------------------------
 // Premiere-specific proto -> native converters
 // ---------------------------------------------------------------------------
 

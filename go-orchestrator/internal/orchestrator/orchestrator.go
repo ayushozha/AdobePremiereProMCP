@@ -266,6 +266,31 @@ func (e *Engine) SetAudioLevel(ctx context.Context, clipID, sequenceID string, l
 	return nil
 }
 
+// EvalAudioCommand is a generic dispatcher for audio and track management
+// ExtendScript commands. The MCP audio_tools layer calls this with a command
+// name (e.g. "setAudioLevelKeyframe") and an args map, and the engine
+// forwards to the Premiere bridge via EvalScript.
+func (e *Engine) EvalAudioCommand(ctx context.Context, command string, args map[string]any) (map[string]any, error) {
+	if command == "" {
+		return nil, fmt.Errorf("eval_audio_command: command must not be empty")
+	}
+	e.logger.Debug("eval_audio_command",
+		zap.String("command", command),
+	)
+	result, err := e.premiere.EvalAudioCommand(ctx, command, args)
+	if err != nil {
+		e.logger.Error("eval_audio_command: failed",
+			zap.String("command", command),
+			zap.Error(err),
+		)
+		return nil, fmt.Errorf("eval audio command %q: %w", command, err)
+	}
+	e.logger.Debug("eval_audio_command: success",
+		zap.String("command", command),
+	)
+	return result, nil
+}
+
 // ---------------------------------------------------------------------------
 // Export
 // ---------------------------------------------------------------------------

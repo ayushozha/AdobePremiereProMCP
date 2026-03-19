@@ -264,6 +264,10 @@ func (a *PremiereAdapter) ExecuteEDL(ctx context.Context, edl *orch.EDL) (*orch.
 	}, nil
 }
 
+func (a *PremiereAdapter) EvalAudioCommand(ctx context.Context, command string, args map[string]any) (map[string]any, error) {
+	return a.C.EvalAudioCommand(ctx, command, args)
+}
+
 // ---------------------------------------------------------------------------
 // MediaAdapter wraps *MediaEngineClient to satisfy orch.MediaClient.
 // ---------------------------------------------------------------------------

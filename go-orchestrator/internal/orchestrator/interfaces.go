@@ -71,6 +71,9 @@ type PremiereClient interface {
 
 	// ExecuteEDL assembles an entire timeline from an edit decision list.
 	ExecuteEDL(ctx context.Context, edl *EDL) (*EDLExecutionResult, error)
+
+	// EvalAudioCommand runs an audio/track management ExtendScript function.
+	EvalAudioCommand(ctx context.Context, command string, args map[string]any) (map[string]any, error)
 }
 
 // Orchestrator defines the complete set of operations exposed by the engine.
@@ -125,10 +128,72 @@ type Orchestrator interface {
 	DeleteSequenceMarker(ctx context.Context, markerIndex int) (*GenericResult, error)
 	NavigateToMarker(ctx context.Context, markerIndex int) (*GenericResult, error)
 
+	// --- Project Management ---
+	NewProject(ctx context.Context, path string) (*GenericResult, error)
+	OpenProject(ctx context.Context, path string) (*GenericResult, error)
+	SaveProject(ctx context.Context) (*GenericResult, error)
+	SaveProjectAs(ctx context.Context, path string) (*GenericResult, error)
+	CloseProject(ctx context.Context, saveFirst bool) (*GenericResult, error)
+	GetProjectInfo(ctx context.Context) (*ProjectInfoResult, error)
+
+	// --- Bin / Item Management ---
+	ImportFiles(ctx context.Context, filePaths []string, targetBin string) (*GenericResult, error)
+	ImportFolder(ctx context.Context, folderPath string, targetBin string) (*GenericResult, error)
+	CreateBin(ctx context.Context, name string, parentBin string) (*GenericResult, error)
+	RenameBin(ctx context.Context, binPath string, newName string) (*GenericResult, error)
+	DeleteBin(ctx context.Context, binPath string) (*GenericResult, error)
+	MoveBinItem(ctx context.Context, itemPath string, destBin string) (*GenericResult, error)
+	FindProjectItems(ctx context.Context, searchQuery string) (*ProjectItemsResult, error)
+	GetProjectItems(ctx context.Context, binPath string) (*ProjectItemsResult, error)
+	SetItemLabel(ctx context.Context, itemPath string, colorIndex int) (*GenericResult, error)
+	GetItemMetadata(ctx context.Context, itemPath string) (*ItemMetadataResult, error)
+	SetItemMetadata(ctx context.Context, itemPath string, key string, value string) (*GenericResult, error)
+
+	// --- Media Management ---
+	RelinkMedia(ctx context.Context, itemPath string, newMediaPath string) (*GenericResult, error)
+	MakeOffline(ctx context.Context, itemPath string) (*GenericResult, error)
+	GetOfflineItems(ctx context.Context) (*ProjectItemsResult, error)
+
+	// --- Project Settings ---
+	SetScratchDisk(ctx context.Context, scratchType string, path string) (*GenericResult, error)
+	ConsolidateDuplicates(ctx context.Context) (*ConsolidateResult, error)
+	GetProjectSettingsInfo(ctx context.Context) (*ProjectSettingsResult, error)
+
 	// --- Clip Operations ---
 	ImportMedia(ctx context.Context, filePath string, targetBin string) (*ImportResult, error)
 	PlaceClip(ctx context.Context, params *PlaceClipParams) (*ClipResult, error)
 	RemoveClip(ctx context.Context, clipID, sequenceID string) error
+
+	// --- Clip Operations (Extended) ---
+	InsertClip(ctx context.Context, projectItemIndex int, time float64, vTrackIndex, aTrackIndex int) (*GenericResult, error)
+	OverwriteClip(ctx context.Context, projectItemIndex int, time float64, vTrackIndex, aTrackIndex int) (*GenericResult, error)
+	RemoveClipFromTrack(ctx context.Context, trackType string, trackIndex, clipIndex int, ripple bool) (*GenericResult, error)
+	MoveClip(ctx context.Context, trackType string, trackIndex, clipIndex int, newStartTime float64) (*GenericResult, error)
+	CopyClip(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error)
+	PasteClip(ctx context.Context, trackType string, trackIndex int, time float64) (*GenericResult, error)
+	DuplicateClip(ctx context.Context, trackType string, trackIndex, clipIndex, destTrackIndex int, destTime float64) (*GenericResult, error)
+	RazorClip(ctx context.Context, trackType string, trackIndex int, time float64) (*GenericResult, error)
+	RazorAllTracks(ctx context.Context, time float64) (*GenericResult, error)
+	GetClipInfo(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error)
+	GetClipsOnTrack(ctx context.Context, trackType string, trackIndex int) (*GenericResult, error)
+	GetAllClips(ctx context.Context) (*GenericResult, error)
+	SetClipName(ctx context.Context, trackType string, trackIndex, clipIndex int, name string) (*GenericResult, error)
+	SetClipEnabled(ctx context.Context, trackType string, trackIndex, clipIndex int, enabled bool) (*GenericResult, error)
+	SetClipSpeed(ctx context.Context, trackType string, trackIndex, clipIndex int, speed float64, ripple bool) (*GenericResult, error)
+	ReverseClip(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error)
+	SetClipInPoint(ctx context.Context, trackType string, trackIndex, clipIndex int, seconds float64) (*GenericResult, error)
+	SetClipOutPoint(ctx context.Context, trackType string, trackIndex, clipIndex int, seconds float64) (*GenericResult, error)
+	GetClipSpeed(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error)
+	TrimClipStart(ctx context.Context, trackType string, trackIndex, clipIndex int, newStartTime float64) (*GenericResult, error)
+	TrimClipEnd(ctx context.Context, trackType string, trackIndex, clipIndex int, newEndTime float64) (*GenericResult, error)
+	ExtendClipToPlayhead(ctx context.Context, trackType string, trackIndex, clipIndex int, trimEnd bool) (*GenericResult, error)
+	CreateSubclip(ctx context.Context, projectItemIndex int, name string, inPoint, outPoint float64) (*GenericResult, error)
+	SelectClip(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error)
+	DeselectAll(ctx context.Context) (*GenericResult, error)
+	GetSelectedClips(ctx context.Context) (*GenericResult, error)
+	LinkClips(ctx context.Context, clipPairsJSON string) (*GenericResult, error)
+	UnlinkClips(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error)
+	GetLinkedClips(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error)
 
 	// --- Effects & Transitions ---
 	AddTransition(ctx context.Context, params *TransitionParams) error
@@ -136,6 +201,9 @@ type Orchestrator interface {
 
 	// --- Audio ---
 	SetAudioLevel(ctx context.Context, clipID, sequenceID string, levelDB float64) error
+
+	// --- Audio & Track Management (extended) ---
+	EvalAudioCommand(ctx context.Context, command string, args map[string]any) (map[string]any, error)
 
 	// --- Export ---
 	Export(ctx context.Context, params *ExportParams) (*ExportResult, error)

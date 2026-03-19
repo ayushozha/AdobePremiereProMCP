@@ -667,6 +667,74 @@ type GenericResult struct {
 }
 
 // ---------------------------------------------------------------------------
+// Project Management types
+// ---------------------------------------------------------------------------
+
+// BinInfo describes a top-level bin in the project.
+type BinInfo struct {
+	Name       string `json:"name"`
+	ChildCount int    `json:"child_count"`
+}
+
+// ActiveSequenceInfo summarises the currently active sequence.
+type ActiveSequenceInfo struct {
+	Name string `json:"name"`
+	ID   string `json:"id"`
+}
+
+// ProjectInfoResult is returned by GetProjectInfo.
+type ProjectInfoResult struct {
+	Name           string              `json:"name"`
+	Path           string              `json:"path"`
+	DocumentID     string              `json:"document_id"`
+	Sequences      []*SequenceListEntry `json:"sequences"`
+	Bins           []*BinInfo          `json:"bins"`
+	TotalItems     int                 `json:"total_items"`
+	ActiveSequence *ActiveSequenceInfo `json:"active_sequence,omitempty"`
+}
+
+// ProjectItemInfo describes a single item in the project panel.
+type ProjectItemInfo struct {
+	Index      int    `json:"index,omitempty"`
+	Name       string `json:"name"`
+	Path       string `json:"path,omitempty"`
+	Type       string `json:"type"`
+	MediaPath  string `json:"media_path,omitempty"`
+	ChildCount int    `json:"child_count,omitempty"`
+}
+
+// ProjectItemsResult is returned by FindProjectItems, GetProjectItems, GetOfflineItems.
+type ProjectItemsResult struct {
+	Query       string             `json:"query,omitempty"`
+	BinPath     string             `json:"bin_path,omitempty"`
+	ItemCount   int                `json:"item_count"`
+	Items       []*ProjectItemInfo `json:"items"`
+}
+
+// ItemMetadataResult is returned by GetItemMetadata.
+type ItemMetadataResult struct {
+	ItemPath string            `json:"item_path"`
+	Metadata map[string]any    `json:"metadata"`
+}
+
+// ConsolidateResult is returned by ConsolidateDuplicates.
+type ConsolidateResult struct {
+	TotalChecked      int `json:"total_checked"`
+	DuplicatesFound   int `json:"duplicates_found"`
+	DuplicatesRemoved int `json:"duplicates_removed"`
+}
+
+// ProjectSettingsResult is returned by GetProjectSettingsInfo.
+type ProjectSettingsResult struct {
+	Name           string `json:"name"`
+	Path           string `json:"path"`
+	DocumentID     string `json:"document_id"`
+	GPURenderer    string `json:"gpu_renderer,omitempty"`
+	RootItemCount  int    `json:"root_item_count,omitempty"`
+	SequenceCount  int    `json:"sequence_count,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
 // AutoEdit types
 // ---------------------------------------------------------------------------
 

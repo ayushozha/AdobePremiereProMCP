@@ -18,9 +18,12 @@ import (
 func registerTools(s *server.MCPServer, orch Orchestrator, logger *zap.Logger) {
 	registerAppTools(s, logger)
 	registerProjectTools(s, orch, logger)
+	registerProjectMgmtTools(s, orch, logger)
 	registerEditingTools(s, orch, logger)
 	registerSequenceTools(s, orch, logger)
+	registerClipTools(s, orch, logger)
 	registerExportTools(s, orch, logger)
+	registerExportTools2(s, orch, logger)
 	registerAITools(s, orch, logger)
 }
 
