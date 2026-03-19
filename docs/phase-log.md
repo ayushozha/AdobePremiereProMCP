@@ -1,6 +1,6 @@
 # PremierPro MCP -- Phase Completion Log
 
-**Total registered MCP tools: 757** (across 28 Go source files)
+**Total registered MCP tools: 907** (across 33 Go source files)
 
 Every phase is listed with its exact features, commit hash, and tool count.
 
@@ -978,3 +978,174 @@ Every phase is listed with its exact features, commit hash, and tool count.
 28. `premiere_archive_project` -- Archive project with media and render files
 29. `premiere_trim_project` -- Analyze and remove unused media
 30. `premiere_consolidate_and_transcode` -- Consolidate media and prepare for transcoding
+
+---
+
+## Phase 14: Encoding, Timeline Assembly, Scripting & Analytics (120 tools added, 877 total)
+**Commit:** `5759c9e`
+**Source files:** `encoding_tools.go` (30), `assembly_tools.go` (30), `scripting_tools.go` (30), `analytics_tools.go` (30)
+
+### Encoding & Formats (30 tools)
+1. `premiere_get_export_settings_for_preset` -- Get detailed encoding settings from an export preset file. Returns codec, bitrate, resolution, and audio settings.
+2. `premiere_create_custom_export_settings` -- Create custom export settings with specific codec, bitrate, resolution, fps, and audio parameters.
+3. `premiere_get_available_codecs` -- List all available video codecs supported by the installed Premiere Pro exporters.
+4. `premiere_get_available_audio_codecs` -- List all available audio codecs (AAC, MP3, PCM/WAV, AIFF, FLAC, etc.) with descriptions.
+5. `premiere_get_available_containers` -- List available container formats (MP4, MKV, MOV, AVI, MXF, WebM, etc.) with extensions and MIME types.
+6. `premiere_convert_to_prores` -- Convert a project item to Apple ProRes format. Supports 422, 4444, LT, and Proxy variants.
+7. `premiere_convert_to_h264` -- Convert a project item to H.264 format with configurable bitrate.
+8. `premiere_convert_to_h265` -- Convert a project item to H.265/HEVC format with configurable bitrate.
+9. `premiere_convert_to_dnxhr` -- Convert a project item to DNxHR format. Supports LB, SQ, HQ, HQX, and 444 profiles.
+10. `premiere_convert_to_gif` -- Export a sequence as an animated GIF with configurable width and frame rate.
+11. `premiere_generate_clip_thumbnail` -- Generate a thumbnail image from a project item at a specified time offset.
+12. `premiere_generate_sequence_thumbnail` -- Generate a thumbnail image from a sequence at a specified time offset.
+13. `premiere_generate_contact_sheet` -- Generate a contact sheet (grid of thumbnails) from a project item at evenly spaced intervals.
+14. `premiere_generate_storyboard` -- Generate storyboard frames from a sequence at regular time intervals.
+15. `premiere_analyze_media_codec` -- Get detailed codec analysis for a project item including video/audio codec, frame rate, and metadata.
+16. `premiere_compare_media_specs` -- Compare the technical specifications of two project items and report differences.
+17. `premiere_get_bit_rate_info` -- Get bitrate information for a project item including VBR/CBR detection, average and estimated bitrate.
+18. `premiere_get_color_depth_info` -- Get color depth, bit depth, color space, and chroma subsampling information for a project item.
+19. `premiere_get_audio_specs_detailed` -- Get detailed audio specifications for a project item: sample rate, bit depth, channels, codec, and channel layout.
+20. `premiere_is_variable_frame_rate` -- Check if a project item has variable frame rate (VFR) which can cause sync issues in editing.
+21. `premiere_get_file_hash` -- Get a file hash/fingerprint for a project item's media file. Uses file size and modification time as fingerprint.
+22. `premiere_get_file_dates` -- Get creation and modification dates for a project item's media file on disk.
+23. `premiere_move_media_file` -- Move a project item's media file to a new directory on disk and automatically relink it in the project.
+24. `premiere_copy_media_file` -- Copy a project item's media file to a destination directory. The original file and project link remain unchanged.
+25. `premiere_rename_media_file` -- Rename a project item's media file on disk and automatically relink it in the project.
+26. `premiere_add_to_render_queue` -- Add a sequence to Premiere Pro's internal render queue via Adobe Media Encoder.
+27. `premiere_get_render_queue_status` -- Get the current status of the render queue including encoder availability and queued jobs.
+28. `premiere_clear_render_queue` -- Clear all pending jobs from the render queue.
+29. `premiere_pause_render_queue` -- Pause the currently active render queue processing.
+30. `premiere_resume_render_queue` -- Resume the paused render queue and start processing pending jobs.
+
+### Timeline Assembly (30 tools)
+1. `premiere_assemble_from_edl` -- Assemble a timeline from an EDL JSON specification containing clips, positions, and transitions.
+2. `premiere_assemble_from_csv` -- Assemble a timeline from a CSV file with columns: file, in, out, track, position.
+3. `premiere_assemble_from_folder_order` -- Import and assemble clips from a folder in filename order, with optional transitions between clips.
+4. `premiere_interleave_clips` -- Interleave clips from two video tracks, alternating clips A-B-A-B with optional transition between each.
+5. `premiere_shuffle_clips` -- Randomly shuffle the order of clips on a track.
+6. `premiere_sort_clips_by_duration` -- Sort clips on a track by their duration, shortest to longest or vice versa.
+7. `premiere_sort_clips_by_name` -- Sort clips on a track alphabetically by clip name.
+8. `premiere_sort_clips_by_file_name` -- Sort clips on a track alphabetically by their source file name.
+9. `premiere_reverse_clip_order` -- Reverse the order of all clips on a track.
+10. `premiere_distribute_clips_evenly` -- Distribute clips evenly across a specified total duration by adding equal gaps between them.
+11. `premiere_stack_clips` -- Remove all gaps on a track and stack clips contiguously from a specified start time.
+12. `premiere_create_overlay_track` -- Create an overlay composition from a source track over a destination track with specified opacity and blend mode.
+13. `premiere_create_green_screen_composite` -- Create a chroma key composite by keying out a color from a foreground clip and compositing over a background clip.
+14. `premiere_create_pip_grid` -- Create a picture-in-picture grid layout from multiple video tracks arranged in a grid pattern.
+15. `premiere_layer_tracks` -- Layer multiple overlay tracks over a base track with individual opacity settings for each layer.
+16. `premiere_generate_black_clip` -- Generate a black video clip and place it on the timeline.
+17. `premiere_generate_color_clip` -- Generate a solid color clip and place it on the timeline.
+18. `premiere_generate_gradient_clip` -- Generate a gradient clip transitioning between two colors.
+19. `premiere_generate_test_pattern` -- Generate a test pattern clip such as color bars, grid, or checkerboard.
+20. `premiere_generate_silence` -- Generate a silent audio clip on the timeline.
+21. `premiere_generate_tone` -- Generate an audio tone clip (sine, square, sawtooth waveform) on the timeline.
+22. `premiere_duplicate_timeline_section` -- Copy a section of the timeline (all tracks) from a time range to another position.
+23. `premiere_repeat_timeline_section` -- Repeat a section of the timeline N times, appending copies after the section end.
+24. `premiere_mirror_timeline` -- Mirror (reverse) the entire timeline so clips play in reverse chronological order.
+25. `premiere_split_timeline_at_playhead` -- Split the timeline into two logical sections at the current playhead position, reporting clips before and after.
+26. `premiere_get_timeline_gap_report` -- Generate a detailed report of all gaps (empty spaces) across all tracks in the timeline.
+27. `premiere_get_timeline_conflict_report` -- Generate a report of all overlapping clips (conflicts) on the timeline.
+28. `premiere_get_timeline_effects_report` -- Generate a report of all effects applied to clips across the entire timeline.
+29. `premiere_get_timeline_duration_breakdown` -- Generate a duration breakdown report showing total time by clip type and source file format.
+30. `premiere_get_timeline_track_usage_report` -- Generate a track usage report showing used vs empty time and clip count per track.
+
+### Scripting (30 tools)
+1. `premiere_evaluate_expression` -- Evaluate an ExtendScript expression and return the result. Useful for querying state or running one-liners.
+2. `premiere_execute_script` -- Execute a .jsx script file in Premiere Pro's ExtendScript engine.
+3. `premiere_execute_script_with_args` -- Execute a .jsx script file with arguments passed as a JSON object.
+4. `premiere_get_script_result` -- Get the result of the last script execution.
+5. `premiere_list_available_scripts` -- List .jsx script files in a directory. Returns file names and paths for scripts that can be executed.
+6. `premiere_set_global_variable` -- Set a global variable accessible to all scripts. Variables persist until cleared or Premiere Pro restarts.
+7. `premiere_get_global_variable` -- Get the value of a global variable previously set via premiere_set_global_variable.
+8. `premiere_list_global_variables` -- List all global variables that have been set. Returns variable names and their current values.
+9. `premiere_clear_global_variables` -- Clear all global variables, removing all previously set name-value pairs.
+10. `premiere_if_clip_exists` -- Conditional execution: run thenScript if a clip exists at the specified track/index, otherwise run elseScript.
+11. `premiere_if_sequence_open` -- Conditional execution: run thenScript if an active sequence is open, otherwise run elseScript.
+12. `premiere_if_project_open` -- Conditional execution: run thenScript if a project is open, otherwise run elseScript.
+13. `premiere_while_condition` -- Loop execution: repeatedly run bodyScript while conditionScript evaluates to true, up to maxIterations.
+14. `premiere_execute_batch` -- Execute multiple scripts in sequence. Each script runs after the previous one completes.
+15. `premiere_execute_parallel` -- Execute scripts that do not depend on each other. Failures are isolated.
+16. `premiere_execute_with_retry` -- Execute a script with automatic retry on failure. Retries up to maxRetries times with a delay.
+17. `premiere_execute_with_timeout` -- Execute a script with a timeout. If the script does not complete within the specified time, it is aborted.
+18. `premiere_schedule_script` -- Schedule a script to execute after a specified delay.
+19. `premiere_schedule_repeating` -- Schedule a script to execute repeatedly at a fixed interval.
+20. `premiere_cancel_scheduled_script` -- Cancel a previously scheduled script by its schedule ID.
+21. `premiere_get_scheduled_scripts` -- List all active scheduled scripts, including their IDs, intervals, and remaining executions.
+22. `premiere_read_json_file` -- Read and parse a JSON file from disk. Returns the parsed data.
+23. `premiere_write_json_file` -- Write data as a JSON file to disk.
+24. `premiere_read_csv_file` -- Read and parse a CSV file. Returns headers and rows as structured data.
+25. `premiere_write_csv_file` -- Write data as a CSV file with headers and rows.
+26. `premiere_read_text_file` -- Read a text file from disk and return its contents as a string.
+27. `premiere_write_text_file` -- Write text content to a file on disk. Overwrites the file if it exists.
+28. `premiere_append_text_file` -- Append text content to an existing file. Creates the file if it does not exist.
+29. `premiere_open_url` -- Open a URL in the system's default web browser.
+30. `premiere_execute_system_command` -- Execute a system command and return its output.
+
+### Analytics (30 tools)
+1. `premiere_get_project_summary` -- Get a comprehensive project summary including sequence count, bin count, clip count, total duration, and disk usage.
+2. `premiere_get_media_type_breakdown` -- Get a breakdown of project media by type (video, audio, image, graphics) with counts and total duration per type.
+3. `premiere_get_codec_breakdown` -- Get a breakdown of all codecs used across project media with counts per codec.
+4. `premiere_get_resolution_breakdown` -- Get a breakdown of all resolutions used across project media with counts per resolution.
+5. `premiere_get_frame_rate_breakdown` -- Get a breakdown of all frame rates used across project media with counts per frame rate.
+6. `premiere_get_duration_distribution` -- Get the distribution of clip durations across the project as histogram data (buckets with counts).
+7. `premiere_get_color_space_breakdown` -- Get a breakdown of all color spaces used across project media with counts per color space.
+8. `premiere_get_sequence_summary` -- Get a comprehensive summary of a specific sequence including track count, clip count, duration, and effects used.
+9. `premiere_get_effects_usage_report` -- List all effects used in a sequence with usage counts per effect.
+10. `premiere_get_transitions_usage_report` -- List all transitions used in a sequence with usage counts per transition type.
+11. `premiere_get_track_utilization_report` -- Get track utilization percentages for each track in a sequence (used time vs total duration).
+12. `premiere_get_edit_point_density` -- Calculate the edit point density (edit points per minute) for a sequence.
+13. `premiere_get_pacing_report` -- Get a pacing report for a sequence including average clip duration and cuts per minute.
+14. `premiere_get_audio_levels_report` -- Get audio level statistics across all audio tracks in a sequence.
+15. `premiere_get_clip_source_report` -- Report which source files are used in a sequence and where each source appears on the timeline.
+16. `premiere_get_timeline_structure_report` -- Get the structural layout of a timeline including sections, acts, and major divisions.
+17. `premiere_get_gap_analysis_report` -- Get a detailed gap analysis report for a sequence, listing all gaps with their positions and durations.
+18. `premiere_get_duplicate_clips_report` -- Find duplicate clips in a sequence timeline (same source file used multiple times).
+19. `premiere_get_unused_tracks_report` -- Identify empty or unused tracks in a sequence that contain no clips.
+20. `premiere_export_project_report` -- Export a comprehensive project report to a file. Supports JSON and HTML formats.
+21. `premiere_export_timeline_as_text` -- Export a sequence timeline as human-readable text to a file.
+22. `premiere_export_clip_list` -- Export the clip list from a sequence to a file. Supports CSV and JSON formats.
+23. `premiere_export_effects_list` -- Export the list of all effects used in a sequence to a JSON file.
+24. `premiere_export_media_list` -- Export a list of all media files in the project to a file. Supports CSV and JSON formats.
+25. `premiere_compare_sequences` -- Compare two sequences side by side: clip counts, duration, effects, track usage, and structural differences.
+26. `premiere_compare_clips` -- Compare two clips including their properties, effects, and timing.
+27. `premiere_get_editing_session_stats` -- Get statistics for the current editing session including uptime, actions performed, and resource usage.
+28. `premiere_get_project_age_info` -- Get project age information including creation date, last modified date, and estimated edit sessions.
+29. `premiere_get_storage_report` -- Get a storage usage report covering source media, renders, previews, and cache sizes.
+30. `premiere_get_performance_report` -- Get a performance report including estimated render times, playback quality, dropped frames, and system resource status.
+
+---
+
+## Phase 17: Effect Chains & Visual Effects Pipeline (30 tools added, 907 total)
+**Commit:** `0498c35`
+**Source file:** `effect_chain_tools.go` (30)
+**Tools:**
+1. `premiere_get_effect_chain` -- Get the full effect chain on a clip including order, enabled state, and all parameter values.
+2. `premiere_reorder_effect` -- Move an effect within the effect chain from one position to another.
+3. `premiere_get_effect_count` -- Get the number of applied effects on a clip (excluding intrinsic Motion and Opacity).
+4. `premiere_clear_all_effects` -- Remove all effects from a clip except the intrinsic Motion and Opacity effects.
+5. `premiere_duplicate_effect` -- Duplicate an existing effect in the effect chain.
+6. `premiere_animate_effect_parameter` -- Set multiple keyframes on an effect parameter at once. Automatically enables time-varying.
+7. `premiere_get_effect_parameter_range` -- Get the minimum and maximum allowed values for an effect parameter.
+8. `premiere_reset_effect_parameter` -- Reset an effect parameter to its default value and clear any keyframes.
+9. `premiere_link_effect_parameters` -- Link two effect parameters so they stay in sync.
+10. `premiere_get_effect_render_order` -- Get the render processing order of all effects on a clip.
+11. `premiere_apply_black_and_white` -- Apply a black and white effect to a video clip by setting saturation to zero.
+12. `premiere_apply_sepia` -- Apply a sepia tone effect to a video clip with adjustable intensity.
+13. `premiere_apply_vintage_film` -- Apply a vintage film look with reduced saturation, warm tones, faded film, and vignette.
+14. `premiere_apply_film_grain` -- Add a film grain noise effect to a video clip.
+15. `premiere_apply_vignette` -- Add a vignette darkening effect to the edges of a video clip via Lumetri Color.
+16. `premiere_apply_glow` -- Add a glow/bloom lighting effect to a video clip.
+17. `premiere_apply_drop_shadow` -- Add a drop shadow effect behind a video clip.
+18. `premiere_apply_stroke` -- Add a stroke/border effect around a video clip.
+19. `premiere_apply_cinematic_bars` -- Add cinematic letterbox bars (widescreen crop) to a video clip.
+20. `premiere_apply_flip_horizontal` -- Flip a video clip horizontally (mirror effect).
+21. `premiere_get_duration_of_transition` -- Get the duration of a transition on a track.
+22. `premiere_set_transition_duration` -- Set the duration of a transition on a track in seconds.
+23. `premiere_set_transition_alignment` -- Set the alignment of a transition relative to the edit point.
+24. `premiere_get_transition_properties` -- Get all properties of a transition including name, duration, start/end times, and parameter values.
+25. `premiere_toggle_effects_preview` -- Enable or disable all applied effects on a clip for before/after comparison preview.
+26. `premiere_get_before_after_snapshot` -- Get information about a clip's effects for before/after comparison.
+27. `premiere_compare_effect_settings` -- Compare the effects and parameter values between two clips, showing which effects differ.
+28. `premiere_save_effect_chain_template` -- Save the entire effect chain of a clip as a named template for later reuse.
+29. `premiere_load_effect_chain_template` -- Apply a previously saved effect chain template to a clip.
+30. `premiere_list_effect_chain_templates` -- List all saved effect chain templates with their names and effect counts.

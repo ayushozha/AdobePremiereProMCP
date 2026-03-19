@@ -24,26 +24,47 @@ Video editors spend hours on repetitive tasks: syncing clips, rough cuts, color 
 
 **No plugins. No subscriptions. Fully open source.**
 
-## Features -- 200+ MCP Tools
+## Features -- 907 MCP Tools
 
 This is the most comprehensive MCP server for any NLE (non-linear editor). Every tool maps to real Adobe Premiere Pro ExtendScript and QE DOM operations.
 
 | Category | Tools | What You Can Do |
 |---|---|---|
-| **Project Management** | 13 | Create, open, save, close projects; manage scratch disks and metadata |
-| **Media Import & Organization** | 12 | Import files/folders, create bins, organize assets, manage project items |
-| **Sequence & Timeline** | 25 | Create sequences, manage tracks, navigate timeline, set in/out points |
-| **Clip Operations** | 20 | Place, move, trim, split, slip, slide clips; adjust speed and opacity |
-| **Audio Mixing & Effects** | 22 | Set levels, pan, apply audio effects, keyframe automation, mix tracks |
-| **Color Grading (Lumetri)** | 28 | Full Lumetri Color control: exposure, contrast, curves, HSL, color wheels |
-| **Video Effects & Transitions** | 24 | Apply/remove effects, adjust parameters, keyframe animation, transitions |
-| **Graphics & Titles (MOGRT)** | 18 | Add text, import MOGRTs, edit properties, create lower thirds |
-| **Export & Encoding (AME)** | 15 | Export with presets, queue to Media Encoder, batch export |
-| **Markers & Metadata** | 14 | Add/edit markers, manage clip metadata, XMP data |
-| **Workspace & Panels** | 10 | Control workspace layout, panel visibility, UI state |
-| **AI/ML Workflows** | 8 | Script parsing, shot matching, auto-edit, pacing analysis |
+| **Core/Foundation** | 14 | Ping, get project state, create sequences, import media, place clips, export |
+| **App Lifecycle** | 3 | Launch, quit, and check Premiere Pro process status |
+| **Project Management** | 23 | Create, open, save, close projects; manage bins, scratch disks, metadata |
+| **Sequence Management** | 26 | Create, duplicate, delete sequences; playhead, in/out points, markers, nesting |
+| **Clip Operations** | 29 | Insert, overwrite, move, trim, split, slip, slide, speed, link/unlink clips |
+| **Effects & Transitions** | 36 | Apply/remove effects and transitions, keyframe animation, motion, Lumetri basics |
+| **Audio (basic)** | 32 | Levels, gain, mute/solo, effects, Essential Sound, track management |
+| **Audio (advanced)** | 30 | Mixer state, EQ, compressor, limiter, de-esser, loudness, sync, waveform analysis |
+| **Color Grading** | 30 | Full Lumetri Color: exposure, contrast, curves, HSL, color wheels, LUTs, vignette |
+| **Graphics & Titles** | 21 | MOGRTs, titles, lower thirds, captions, color mattes, time remapping |
+| **Export (basic)** | 14 | Direct export, AME queue, frame export, AAF/OMF/FCPXML, audio-only export |
+| **Advanced Editing** | 31 | Ripple/roll/slip/slide trims, gap management, grouping, snapping, navigation |
+| **Batch Operations** | 30 | Batch import/export, apply effects to multiple clips, auto-organize, markers |
+| **AI/ML Workflows** | 25 | Smart cut, auto color match, rough cut, B-roll suggestions, social cuts, analysis |
+| **Workspace & Multicam** | 25 | Multicam, proxy management, workspaces, undo/redo, source monitor, cache |
+| **Playback & Navigation** | 30 | Play/pause/stop, shuttle, step, loop, timecode navigation, render status |
+| **Transform & Masking** | 30 | Crop, PIP, fade, stabilizer, noise reduction, blur, sharpen, distortion |
+| **Metadata & Labels** | 30 | XMP metadata, labels, footage interpretation, smart bins, media management |
+| **Preferences** | 30 | Still/transition durations, auto-save, playback resolution, cache, renderer, codecs |
+| **Templates & Presets** | 30 | Sequence/effect/export presets, project templates, batch rename, macros |
+| **Motion Graphics** | 30 | Essential Graphics, scrolling titles, shapes, watermarks, split screen, subtitles |
+| **Collaboration & Review** | 30 | Review comments, version history, snapshots, EDL/AAF/XML import, delivery checks |
+| **VR/Immersive** | 30 | VR projection, HDR, stereoscopic 3D, frame rates, letterboxing, timecode, captions |
+| **App Integration** | 28 | Dynamic Link (AE), Photoshop, Audition, Media Encoder, Team Projects |
+| **Diagnostics** | 30 | Performance metrics, disk space, plugins, render status, health checks, debug logs |
+| **Monitoring & Events** | 30 | Event listeners, playhead/render watchers, state snapshots, notifications |
+| **UI Control** | 30 | Panel management, window control, track display, label filters, dialogs, console |
+| **Compound Operations** | 30 | Montage, slideshow, highlight reel, music bed, social exports, project setup |
+| **Encoding & Formats** | 30 | Codec conversion (ProRes, H.264/265, DNxHR, GIF), thumbnails, render queue |
+| **Timeline Assembly** | 30 | EDL/CSV assembly, clip sorting/shuffling, compositing, generators, timeline reports |
+| **Scripting** | 30 | ExtendScript execution, global variables, conditionals, scheduling, file I/O |
+| **Analytics** | 30 | Project/sequence summaries, codec/resolution breakdowns, pacing, comparison reports |
+| **Effect Chains** | 30 | Effect chain management, visual presets (sepia, vintage, glow), transition control |
 
-**Total: 200+ tools** across 7 development phases. [View the full feature plan](docs/feature-plan.md).
+**Total: 907 tools** across 33 source files. [View the full feature plan](docs/feature-plan.md).
 
 ## Supported Premiere Pro Versions
 
@@ -102,7 +123,7 @@ PremierProMCP/
 +-- go-orchestrator/          # Go -- MCP server & task orchestrator
 |   +-- cmd/server/           #   Entry point
 |   +-- internal/             #   Core packages
-|   |   +-- mcp/              #     MCP protocol handler (200+ tool definitions)
+|   |   +-- mcp/              #     MCP protocol handler (907 tool definitions)
 |   |   +-- orchestrator/     #     Task orchestration
 |   |   +-- health/           #     Health checks
 |   |   +-- grpc/             #     gRPC client/server
