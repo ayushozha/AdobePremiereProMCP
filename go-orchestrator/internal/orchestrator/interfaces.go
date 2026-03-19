@@ -684,4 +684,46 @@ type Orchestrator interface {
 	GetDefaultSequencePresets(ctx context.Context) (*GenericResult, error)
 	SetDefaultSequencePreset(ctx context.Context, presetPath string) (*GenericResult, error)
 	GetInstalledCodecs(ctx context.Context) (*GenericResult, error)
+
+	// --- Review & Collaboration ---
+	AddReviewComment(ctx context.Context, time float64, text, author string) (*GenericResult, error)
+	GetReviewComments(ctx context.Context) (*GenericResult, error)
+	ResolveReviewComment(ctx context.Context, markerIndex int) (*GenericResult, error)
+	GetUnresolvedComments(ctx context.Context) (*GenericResult, error)
+	ExportReviewReport(ctx context.Context, outputPath, format string) (*GenericResult, error)
+
+	// --- Version Control ---
+	GetProjectVersionHistory(ctx context.Context) (*GenericResult, error)
+	RevertToVersion(ctx context.Context, versionPath string) (*GenericResult, error)
+	CreateSnapshot(ctx context.Context, name, description string) (*GenericResult, error)
+	CompareSnapshots(ctx context.Context, snapshot1, snapshot2 string) (*GenericResult, error)
+
+	// --- EDL/XML Interchange ---
+	ImportEDL(ctx context.Context, edlPath string) (*GenericResult, error)
+	ImportAAF(ctx context.Context, aafPath string) (*GenericResult, error)
+	ImportFCPXML(ctx context.Context, xmlPath string) (*GenericResult, error)
+	ImportXMLTimeline(ctx context.Context, xmlPath string) (*GenericResult, error)
+	ExportEDLFile(ctx context.Context, outputPath, format string) (*GenericResult, error)
+	ExportProjectSnapshot(ctx context.Context, outputPath string) (*GenericResult, error)
+
+	// --- Collaboration Metadata ---
+	SetEditorialNote(ctx context.Context, trackType string, trackIndex, clipIndex int, note string) (*GenericResult, error)
+	GetEditorialNotes(ctx context.Context) (*GenericResult, error)
+	ClearEditorialNotes(ctx context.Context) (*GenericResult, error)
+	TagClipForReview(ctx context.Context, trackType string, trackIndex, clipIndex int, reviewType string) (*GenericResult, error)
+	GetClipReviewStatus(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error)
+
+	// --- Change Tracking ---
+	GetSequenceChangeLog(ctx context.Context) (*GenericResult, error)
+	GetProjectActivity(ctx context.Context) (*GenericResult, error)
+	GetLastModifiedClips(ctx context.Context, count int) (*GenericResult, error)
+
+	// --- Delivery Checklist ---
+	CheckAudioLevels(ctx context.Context, targetLUFS, tolerance float64) (*GenericResult, error)
+	CheckFrameRate(ctx context.Context, targetFPS float64) (*GenericResult, error)
+	CheckResolution(ctx context.Context, targetWidth, targetHeight int) (*GenericResult, error)
+	CheckDuration(ctx context.Context, minSeconds, maxSeconds float64) (*GenericResult, error)
+	GenerateDeliveryReport(ctx context.Context, specsJSON string) (*GenericResult, error)
+	CheckForBlackFrames(ctx context.Context, thresholdFrames int) (*GenericResult, error)
+	CheckForFlashContent(ctx context.Context, threshold float64) (*GenericResult, error)
 }
