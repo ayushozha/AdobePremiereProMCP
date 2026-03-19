@@ -27,7 +27,7 @@
             <DispatchInfo>
                 <Resources>
                     <MainPath>./src/index.html</MainPath>
-                    <ScriptPath>./src/host/premiere.jsx</ScriptPath>
+                    <ScriptPath>./src/host/core.jsx</ScriptPath>
                     <CEFCommandLine>
                         <Parameter>--enable-nodejs</Parameter>
                         <Parameter>--mixed-context</Parameter>

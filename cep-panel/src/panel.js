@@ -321,6 +321,24 @@
         }
     }
 
+    // ---------------------------------------------------------------------------
+    // Load ExtendScript host functions
+    // ---------------------------------------------------------------------------
+    function loadHostScript() {
+        var jsxPath = path.join(__dirname, "host", "core.jsx").replace(/\\/g, "/");
+        log("Loading ExtendScript: " + jsxPath);
+        csInterface.evalScript('$.evalFile("' + jsxPath + '")', function (result) {
+            if (result === "EvalScript error.") {
+                log("Failed to load premiere.jsx — ExtendScript error", "error");
+            } else {
+                log("ExtendScript host loaded successfully", "success");
+            }
+        });
+    }
+
+    // Load the host script at startup
+    loadHostScript();
+
     // Listen for panel close event
     csInterface.addEventListener("com.adobe.csxs.events.WindowVisibilityChanged", function (event) {
         if (event.data === "false") {
