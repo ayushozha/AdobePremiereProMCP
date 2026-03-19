@@ -19176,3 +19176,772 @@ function resumeRenderQueue() {
         return _err("resumeRenderQueue: Adobe Media Encoder not available");
     } catch (e) { return _err("resumeRenderQueue failed: " + e.message); }
 }
+
+// ===========================================================================
+// Scripting, Expression & Programmatic Control
+// ===========================================================================
+
+// Module-level state for scripting subsystem
+var _lastScriptResult = null;
+var _globalVars = {};
+var _scheduledScripts = {};
+var _nextScheduleId = 1;
+
+// ---------------------------------------------------------------------------
+// Script Execution (1-5)
+// ---------------------------------------------------------------------------
+
+/**
+ * 1. evaluateExpression - Evaluate an ExtendScript expression and return result.
+ */
+function evaluateExpression(expression) {
+    try {
+        if (!expression || expression === "") return _err("No expression provided");
+        var result;
+        try {
+            result = eval(expression);
+        } catch (evalErr) {
+            return _err("Expression evaluation failed: " + evalErr.message);
+        }
+        _lastScriptResult = result;
+        var resultStr;
+        if (result === undefined) {
+            resultStr = "undefined";
+        } else if (result === null) {
+            resultStr = "null";
+        } else {
+            try {
+                resultStr = JSON.stringify(result);
+            } catch (jsonErr) {
+                resultStr = String(result);
+            }
+        }
+        return _ok({ expression: expression, result: resultStr, type: typeof result });
+    } catch (e) { return _err("evaluateExpression failed: " + e.message); }
+}
+
+/**
+ * 2. executeScript - Execute a .jsx script file.
+ */
+function executeScript(scriptPath) {
+    try {
+        if (!scriptPath || scriptPath === "") return _err("No script path provided");
+        var f = new File(scriptPath);
+        if (!f.exists) return _err("Script file not found: " + scriptPath);
+        if (f.open("r")) {
+            var code = f.read();
+            f.close();
+            var result;
+            try {
+                result = eval(code);
+            } catch (evalErr) {
+                return _err("Script execution failed: " + evalErr.message);
+            }
+            _lastScriptResult = result;
+            var resultStr;
+            try { resultStr = JSON.stringify(result); } catch (jsonErr) { resultStr = String(result); }
+            return _ok({ scriptPath: scriptPath, result: resultStr, status: "executed" });
+        }
+        return _err("Could not open script file: " + scriptPath);
+    } catch (e) { return _err("executeScript failed: " + e.message); }
+}
+
+/**
+ * 3. executeScriptWithArgs - Execute a .jsx script file with arguments.
+ */
+function executeScriptWithArgs(scriptPath, argsJson) {
+    try {
+        if (!scriptPath || scriptPath === "") return _err("No script path provided");
+        if (!argsJson || argsJson === "") return _err("No arguments provided");
+        var f = new File(scriptPath);
+        if (!f.exists) return _err("Script file not found: " + scriptPath);
+        // Parse and set args on $.global
+        var args;
+        try { args = JSON.parse(argsJson); } catch (parseErr) {
+            return _err("Invalid args JSON: " + parseErr.message);
+        }
+        $.global._scriptArgs = args;
+        if (f.open("r")) {
+            var code = f.read();
+            f.close();
+            var result;
+            try {
+                result = eval(code);
+            } catch (evalErr) {
+                delete $.global._scriptArgs;
+                return _err("Script execution failed: " + evalErr.message);
+            }
+            delete $.global._scriptArgs;
+            _lastScriptResult = result;
+            var resultStr;
+            try { resultStr = JSON.stringify(result); } catch (jsonErr) { resultStr = String(result); }
+            return _ok({ scriptPath: scriptPath, result: resultStr, argsProvided: true, status: "executed" });
+        }
+        return _err("Could not open script file: " + scriptPath);
+    } catch (e) { return _err("executeScriptWithArgs failed: " + e.message); }
+}
+
+/**
+ * 4. getScriptResult - Get the last script execution result.
+ */
+function getScriptResult() {
+    try {
+        var resultStr;
+        if (_lastScriptResult === undefined) {
+            resultStr = "undefined";
+        } else if (_lastScriptResult === null) {
+            resultStr = "null";
+        } else {
+            try { resultStr = JSON.stringify(_lastScriptResult); } catch (jsonErr) { resultStr = String(_lastScriptResult); }
+        }
+        return _ok({ lastResult: resultStr, type: typeof _lastScriptResult, hasResult: _lastScriptResult !== null && _lastScriptResult !== undefined });
+    } catch (e) { return _err("getScriptResult failed: " + e.message); }
+}
+
+/**
+ * 5. listAvailableScripts - List .jsx scripts in a directory.
+ */
+function listAvailableScripts(directory) {
+    try {
+        if (!directory || directory === "") return _err("No directory provided");
+        var folder = new Folder(directory);
+        if (!folder.exists) return _err("Directory not found: " + directory);
+        var files = folder.getFiles("*.jsx");
+        var scripts = [];
+        for (var i = 0; i < files.length; i++) {
+            var fi = files[i];
+            if (fi instanceof File) {
+                scripts.push({
+                    name: fi.name,
+                    path: fi.fsName,
+                    size: fi.length,
+                    modified: fi.modified ? fi.modified.toString() : ""
+                });
+            }
+        }
+        return _ok({ directory: directory, scripts: scripts, count: scripts.length });
+    } catch (e) { return _err("listAvailableScripts failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Variable/State Management (6-9)
+// ---------------------------------------------------------------------------
+
+/**
+ * 6. setGlobalVariable - Set a global variable accessible to scripts.
+ */
+function setGlobalVariable(name, value) {
+    try {
+        if (!name || name === "") return _err("No variable name provided");
+        _globalVars[name] = value;
+        $.global["_mcp_" + name] = value;
+        return _ok({ name: name, value: value, status: "set" });
+    } catch (e) { return _err("setGlobalVariable failed: " + e.message); }
+}
+
+/**
+ * 7. getGlobalVariable - Get a global variable value.
+ */
+function getGlobalVariable(name) {
+    try {
+        if (!name || name === "") return _err("No variable name provided");
+        if (!_globalVars.hasOwnProperty(name)) {
+            return _ok({ name: name, exists: false, value: null });
+        }
+        return _ok({ name: name, exists: true, value: _globalVars[name] });
+    } catch (e) { return _err("getGlobalVariable failed: " + e.message); }
+}
+
+/**
+ * 8. listGlobalVariables - List all set global variables.
+ */
+function listGlobalVariables() {
+    try {
+        var vars = [];
+        for (var key in _globalVars) {
+            if (_globalVars.hasOwnProperty(key)) {
+                vars.push({ name: key, value: _globalVars[key] });
+            }
+        }
+        return _ok({ variables: vars, count: vars.length });
+    } catch (e) { return _err("listGlobalVariables failed: " + e.message); }
+}
+
+/**
+ * 9. clearGlobalVariables - Clear all global variables.
+ */
+function clearGlobalVariables() {
+    try {
+        var count = 0;
+        for (var key in _globalVars) {
+            if (_globalVars.hasOwnProperty(key)) {
+                delete $.global["_mcp_" + key];
+                count++;
+            }
+        }
+        _globalVars = {};
+        return _ok({ cleared: count, status: "cleared" });
+    } catch (e) { return _err("clearGlobalVariables failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Conditional Operations (10-13)
+// ---------------------------------------------------------------------------
+
+/**
+ * 10. ifClipExists - Conditional execution based on clip existence.
+ */
+function ifClipExists(trackType, trackIndex, clipIndex, thenScript, elseScript) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var s = app.project.activeSequence;
+        if (!s) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        clipIndex = parseInt(clipIndex, 10) || 0;
+        var exists = false;
+        var tracks = (trackType === "audio") ? s.audioTracks : s.videoTracks;
+        if (trackIndex < tracks.numTracks) {
+            var t = tracks[trackIndex];
+            if (t.clips && clipIndex < t.clips.numItems) {
+                exists = true;
+            }
+        }
+        var scriptToRun = exists ? thenScript : (elseScript || "");
+        var result = null;
+        if (scriptToRun && scriptToRun !== "") {
+            try { result = eval(scriptToRun); } catch (evalErr) {
+                return _err("Conditional script failed: " + evalErr.message);
+            }
+        }
+        var resultStr;
+        try { resultStr = JSON.stringify(result); } catch (jsonErr) { resultStr = String(result); }
+        return _ok({ clipExists: exists, branch: exists ? "then" : "else", executed: scriptToRun !== "", result: resultStr });
+    } catch (e) { return _err("ifClipExists failed: " + e.message); }
+}
+
+/**
+ * 11. ifSequenceOpen - Execute based on whether a sequence is open.
+ */
+function ifSequenceOpen(thenScript, elseScript) {
+    try {
+        var isOpen = !!(app.project && app.project.activeSequence);
+        var scriptToRun = isOpen ? thenScript : (elseScript || "");
+        var result = null;
+        if (scriptToRun && scriptToRun !== "") {
+            try { result = eval(scriptToRun); } catch (evalErr) {
+                return _err("Conditional script failed: " + evalErr.message);
+            }
+        }
+        var resultStr;
+        try { resultStr = JSON.stringify(result); } catch (jsonErr) { resultStr = String(result); }
+        return _ok({ sequenceOpen: isOpen, branch: isOpen ? "then" : "else", executed: scriptToRun !== "", result: resultStr });
+    } catch (e) { return _err("ifSequenceOpen failed: " + e.message); }
+}
+
+/**
+ * 12. ifProjectOpen - Execute based on whether a project is open.
+ */
+function ifProjectOpen(thenScript, elseScript) {
+    try {
+        var isOpen = !!(app.project);
+        var scriptToRun = isOpen ? thenScript : (elseScript || "");
+        var result = null;
+        if (scriptToRun && scriptToRun !== "") {
+            try { result = eval(scriptToRun); } catch (evalErr) {
+                return _err("Conditional script failed: " + evalErr.message);
+            }
+        }
+        var resultStr;
+        try { resultStr = JSON.stringify(result); } catch (jsonErr) { resultStr = String(result); }
+        return _ok({ projectOpen: isOpen, branch: isOpen ? "then" : "else", executed: scriptToRun !== "", result: resultStr });
+    } catch (e) { return _err("ifProjectOpen failed: " + e.message); }
+}
+
+/**
+ * 13. whileCondition - Loop with condition and max iterations.
+ */
+function whileCondition(conditionScript, bodyScript, maxIterations) {
+    try {
+        if (!conditionScript || conditionScript === "") return _err("No condition script provided");
+        if (!bodyScript || bodyScript === "") return _err("No body script provided");
+        maxIterations = parseInt(maxIterations, 10) || 100;
+        if (maxIterations <= 0) maxIterations = 100;
+        if (maxIterations > 10000) maxIterations = 10000;
+        var iterations = 0;
+        var lastResult = null;
+        while (iterations < maxIterations) {
+            var condResult;
+            try { condResult = eval(conditionScript); } catch (condErr) {
+                return _err("Condition evaluation failed at iteration " + iterations + ": " + condErr.message);
+            }
+            if (!condResult) break;
+            try { lastResult = eval(bodyScript); } catch (bodyErr) {
+                return _err("Body execution failed at iteration " + iterations + ": " + bodyErr.message);
+            }
+            iterations++;
+        }
+        var resultStr;
+        try { resultStr = JSON.stringify(lastResult); } catch (jsonErr) { resultStr = String(lastResult); }
+        return _ok({ iterations: iterations, maxReached: iterations >= maxIterations, lastResult: resultStr });
+    } catch (e) { return _err("whileCondition failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Batch Scripting (14-17)
+// ---------------------------------------------------------------------------
+
+/**
+ * 14. executeBatch - Execute multiple scripts in sequence.
+ */
+function executeBatch(scriptsJson) {
+    try {
+        if (!scriptsJson || scriptsJson === "") return _err("No scripts provided");
+        var scripts;
+        try { scripts = JSON.parse(scriptsJson); } catch (parseErr) {
+            return _err("Invalid scripts JSON: " + parseErr.message);
+        }
+        if (!(scripts instanceof Array)) return _err("Scripts must be an array");
+        var results = [];
+        for (var i = 0; i < scripts.length; i++) {
+            var entry = scripts[i];
+            var name = entry.name || ("script_" + i);
+            var code = entry.script || "";
+            if (code === "") {
+                results.push({ name: name, status: "skipped", error: "empty script" });
+                continue;
+            }
+            try {
+                var r = eval(code);
+                var rStr;
+                try { rStr = JSON.stringify(r); } catch (jsonErr) { rStr = String(r); }
+                results.push({ name: name, status: "ok", result: rStr });
+            } catch (execErr) {
+                results.push({ name: name, status: "error", error: execErr.message });
+            }
+        }
+        return _ok({ results: results, totalScripts: scripts.length, succeeded: results.filter(function(r) { return r.status === "ok"; }).length });
+    } catch (e) { return _err("executeBatch failed: " + e.message); }
+}
+
+/**
+ * 15. executeParallel - Execute independent scripts (sequentially but with isolated failures).
+ */
+function executeParallel(scriptsJson) {
+    try {
+        if (!scriptsJson || scriptsJson === "") return _err("No scripts provided");
+        var scripts;
+        try { scripts = JSON.parse(scriptsJson); } catch (parseErr) {
+            return _err("Invalid scripts JSON: " + parseErr.message);
+        }
+        if (!(scripts instanceof Array)) return _err("Scripts must be an array");
+        var results = [];
+        for (var i = 0; i < scripts.length; i++) {
+            var entry = scripts[i];
+            var name = entry.name || ("script_" + i);
+            var code = entry.script || "";
+            if (code === "") {
+                results.push({ name: name, status: "skipped", error: "empty script" });
+                continue;
+            }
+            try {
+                var r = eval(code);
+                var rStr;
+                try { rStr = JSON.stringify(r); } catch (jsonErr) { rStr = String(r); }
+                results.push({ name: name, status: "ok", result: rStr });
+            } catch (execErr) {
+                results.push({ name: name, status: "error", error: execErr.message });
+            }
+        }
+        var succeeded = 0;
+        for (var j = 0; j < results.length; j++) { if (results[j].status === "ok") succeeded++; }
+        return _ok({ results: results, totalScripts: scripts.length, succeeded: succeeded, mode: "parallel_isolated" });
+    } catch (e) { return _err("executeParallel failed: " + e.message); }
+}
+
+/**
+ * 16. executeWithRetry - Execute a script with retry on failure.
+ */
+function executeWithRetry(script, maxRetries, delayMs) {
+    try {
+        if (!script || script === "") return _err("No script provided");
+        maxRetries = parseInt(maxRetries, 10) || 3;
+        delayMs = parseInt(delayMs, 10) || 1000;
+        if (maxRetries < 1) maxRetries = 1;
+        if (maxRetries > 20) maxRetries = 20;
+        var lastError = "";
+        for (var attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                var result = eval(script);
+                var resultStr;
+                try { resultStr = JSON.stringify(result); } catch (jsonErr) { resultStr = String(result); }
+                return _ok({ result: resultStr, attempts: attempt + 1, status: "ok" });
+            } catch (execErr) {
+                lastError = execErr.message;
+                if (attempt < maxRetries) {
+                    $.sleep(delayMs);
+                }
+            }
+        }
+        return _err("Script failed after " + (maxRetries + 1) + " attempts. Last error: " + lastError);
+    } catch (e) { return _err("executeWithRetry failed: " + e.message); }
+}
+
+/**
+ * 17. executeWithTimeout - Execute a script with a timeout.
+ * Note: ExtendScript does not support true async timeouts, so this uses a
+ * pre-check approach with $.sleep for cooperative multitasking.
+ */
+function executeWithTimeout(script, timeoutMs) {
+    try {
+        if (!script || script === "") return _err("No script provided");
+        timeoutMs = parseInt(timeoutMs, 10) || 30000;
+        var startTime = new Date().getTime();
+        var result;
+        try {
+            result = eval(script);
+        } catch (execErr) {
+            return _err("Script execution failed: " + execErr.message);
+        }
+        var elapsed = new Date().getTime() - startTime;
+        if (elapsed > timeoutMs) {
+            return _err("Script completed but exceeded timeout (" + elapsed + "ms > " + timeoutMs + "ms)");
+        }
+        var resultStr;
+        try { resultStr = JSON.stringify(result); } catch (jsonErr) { resultStr = String(result); }
+        return _ok({ result: resultStr, elapsedMs: elapsed, timeoutMs: timeoutMs, status: "ok" });
+    } catch (e) { return _err("executeWithTimeout failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Timer/Scheduling (18-21)
+// ---------------------------------------------------------------------------
+
+/**
+ * 18. scheduleScript - Execute a script after a delay.
+ */
+function scheduleScript(script, delayMs) {
+    try {
+        if (!script || script === "") return _err("No script provided");
+        delayMs = parseInt(delayMs, 10) || 1000;
+        var scheduleId = "sched_" + (_nextScheduleId++);
+        var timerId = app.setTimeout(function() {
+            try { eval(script); } catch (ignore) {}
+            delete _scheduledScripts[scheduleId];
+        }, delayMs);
+        _scheduledScripts[scheduleId] = {
+            id: scheduleId,
+            type: "once",
+            delayMs: delayMs,
+            timerId: timerId,
+            createdAt: new Date().toString()
+        };
+        return _ok({ scheduleId: scheduleId, delayMs: delayMs, status: "scheduled" });
+    } catch (e) { return _err("scheduleScript failed: " + e.message); }
+}
+
+/**
+ * 19. scheduleRepeating - Execute a script repeatedly at an interval.
+ */
+function scheduleRepeating(script, intervalMs, count) {
+    try {
+        if (!script || script === "") return _err("No script provided");
+        intervalMs = parseInt(intervalMs, 10) || 1000;
+        count = parseInt(count, 10) || 10;
+        if (count <= 0) count = 1000000;
+        var scheduleId = "sched_" + (_nextScheduleId++);
+        var remaining = count;
+        var timerId = app.setInterval(function() {
+            try { eval(script); } catch (ignore) {}
+            remaining--;
+            if (remaining <= 0) {
+                if (_scheduledScripts[scheduleId] && _scheduledScripts[scheduleId].timerId) {
+                    app.clearInterval(_scheduledScripts[scheduleId].timerId);
+                }
+                delete _scheduledScripts[scheduleId];
+            } else if (_scheduledScripts[scheduleId]) {
+                _scheduledScripts[scheduleId].remaining = remaining;
+            }
+        }, intervalMs);
+        _scheduledScripts[scheduleId] = {
+            id: scheduleId,
+            type: "repeating",
+            intervalMs: intervalMs,
+            totalCount: count,
+            remaining: remaining,
+            timerId: timerId,
+            createdAt: new Date().toString()
+        };
+        return _ok({ scheduleId: scheduleId, intervalMs: intervalMs, count: count, status: "scheduled" });
+    } catch (e) { return _err("scheduleRepeating failed: " + e.message); }
+}
+
+/**
+ * 20. cancelScheduledScript - Cancel a scheduled script.
+ */
+function cancelScheduledScript(scheduleId) {
+    try {
+        if (!scheduleId || scheduleId === "") return _err("No schedule ID provided");
+        if (!_scheduledScripts[scheduleId]) {
+            return _err("Schedule ID not found: " + scheduleId);
+        }
+        var entry = _scheduledScripts[scheduleId];
+        if (entry.type === "repeating") {
+            app.clearInterval(entry.timerId);
+        } else {
+            app.clearTimeout(entry.timerId);
+        }
+        delete _scheduledScripts[scheduleId];
+        return _ok({ scheduleId: scheduleId, status: "cancelled" });
+    } catch (e) { return _err("cancelScheduledScript failed: " + e.message); }
+}
+
+/**
+ * 21. getScheduledScripts - List all active scheduled scripts.
+ */
+function getScheduledScripts() {
+    try {
+        var active = [];
+        for (var id in _scheduledScripts) {
+            if (_scheduledScripts.hasOwnProperty(id)) {
+                var entry = _scheduledScripts[id];
+                active.push({
+                    id: entry.id,
+                    type: entry.type,
+                    intervalMs: entry.intervalMs || entry.delayMs || 0,
+                    remaining: entry.remaining || 0,
+                    createdAt: entry.createdAt
+                });
+            }
+        }
+        return _ok({ scheduledScripts: active, count: active.length });
+    } catch (e) { return _err("getScheduledScripts failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Data Operations (22-28)
+// ---------------------------------------------------------------------------
+
+/**
+ * 22. readJSONFile - Read and parse a JSON file.
+ */
+function readJSONFile(filePath) {
+    try {
+        if (!filePath || filePath === "") return _err("No file path provided");
+        var f = new File(filePath);
+        if (!f.exists) return _err("File not found: " + filePath);
+        if (f.open("r")) {
+            var content = f.read();
+            f.close();
+            var data;
+            try { data = JSON.parse(content); } catch (parseErr) {
+                return _err("JSON parse failed: " + parseErr.message);
+            }
+            return _ok({ filePath: filePath, data: data, size: content.length });
+        }
+        return _err("Could not open file: " + filePath);
+    } catch (e) { return _err("readJSONFile failed: " + e.message); }
+}
+
+/**
+ * 23. writeJSONFile - Write data as a JSON file.
+ */
+function writeJSONFile(filePath, dataJson) {
+    try {
+        if (!filePath || filePath === "") return _err("No file path provided");
+        if (!dataJson || dataJson === "") return _err("No data provided");
+        // Validate JSON
+        var parsed;
+        try { parsed = JSON.parse(dataJson); } catch (parseErr) {
+            return _err("Invalid JSON data: " + parseErr.message);
+        }
+        var formatted = JSON.stringify(parsed, null, 2);
+        var f = new File(filePath);
+        if (f.open("w")) {
+            f.encoding = "UTF-8";
+            f.write(formatted);
+            f.close();
+            return _ok({ filePath: filePath, bytesWritten: formatted.length, status: "written" });
+        }
+        return _err("Could not open file for writing: " + filePath);
+    } catch (e) { return _err("writeJSONFile failed: " + e.message); }
+}
+
+/**
+ * 24. readCSVFile - Read and parse a CSV file.
+ */
+function readCSVFile(filePath) {
+    try {
+        if (!filePath || filePath === "") return _err("No file path provided");
+        var f = new File(filePath);
+        if (!f.exists) return _err("File not found: " + filePath);
+        if (f.open("r")) {
+            var content = f.read();
+            f.close();
+            var lines = content.split(/\r?\n/);
+            var headers = [];
+            var rows = [];
+            for (var i = 0; i < lines.length; i++) {
+                var line = lines[i];
+                if (line === "") continue;
+                var fields = [];
+                var inQuote = false;
+                var field = "";
+                for (var c = 0; c < line.length; c++) {
+                    var ch = line.charAt(c);
+                    if (ch === '"') {
+                        inQuote = !inQuote;
+                    } else if (ch === ',' && !inQuote) {
+                        fields.push(field);
+                        field = "";
+                    } else {
+                        field += ch;
+                    }
+                }
+                fields.push(field);
+                if (i === 0) {
+                    headers = fields;
+                } else {
+                    rows.push(fields);
+                }
+            }
+            return _ok({ filePath: filePath, headers: headers, rows: rows, rowCount: rows.length });
+        }
+        return _err("Could not open file: " + filePath);
+    } catch (e) { return _err("readCSVFile failed: " + e.message); }
+}
+
+/**
+ * 25. writeCSVFile - Write data as a CSV file.
+ */
+function writeCSVFile(filePath, headersJson, rowsJson) {
+    try {
+        if (!filePath || filePath === "") return _err("No file path provided");
+        if (!headersJson || headersJson === "") return _err("No headers provided");
+        if (!rowsJson || rowsJson === "") return _err("No rows provided");
+        var headers;
+        try { headers = JSON.parse(headersJson); } catch (parseErr) {
+            return _err("Invalid headers JSON: " + parseErr.message);
+        }
+        var rows;
+        try { rows = JSON.parse(rowsJson); } catch (parseErr) {
+            return _err("Invalid rows JSON: " + parseErr.message);
+        }
+        function csvEscape(val) {
+            var s = String(val);
+            if (s.indexOf(",") >= 0 || s.indexOf('"') >= 0 || s.indexOf("\n") >= 0) {
+                return '"' + s.replace(/"/g, '""') + '"';
+            }
+            return s;
+        }
+        var lines = [];
+        var headerLine = [];
+        for (var h = 0; h < headers.length; h++) headerLine.push(csvEscape(headers[h]));
+        lines.push(headerLine.join(","));
+        for (var r = 0; r < rows.length; r++) {
+            var rowLine = [];
+            var row = rows[r];
+            for (var c = 0; c < row.length; c++) rowLine.push(csvEscape(row[c]));
+            lines.push(rowLine.join(","));
+        }
+        var content = lines.join("\n");
+        var f = new File(filePath);
+        if (f.open("w")) {
+            f.encoding = "UTF-8";
+            f.write(content);
+            f.close();
+            return _ok({ filePath: filePath, headerCount: headers.length, rowCount: rows.length, status: "written" });
+        }
+        return _err("Could not open file for writing: " + filePath);
+    } catch (e) { return _err("writeCSVFile failed: " + e.message); }
+}
+
+/**
+ * 26. readTextFile - Read a text file.
+ */
+function readTextFile(filePath) {
+    try {
+        if (!filePath || filePath === "") return _err("No file path provided");
+        var f = new File(filePath);
+        if (!f.exists) return _err("File not found: " + filePath);
+        if (f.open("r")) {
+            var content = f.read();
+            f.close();
+            return _ok({ filePath: filePath, content: content, size: content.length, lineCount: content.split(/\r?\n/).length });
+        }
+        return _err("Could not open file: " + filePath);
+    } catch (e) { return _err("readTextFile failed: " + e.message); }
+}
+
+/**
+ * 27. writeTextFile - Write text to a file.
+ */
+function writeTextFile(filePath, content) {
+    try {
+        if (!filePath || filePath === "") return _err("No file path provided");
+        var f = new File(filePath);
+        if (f.open("w")) {
+            f.encoding = "UTF-8";
+            f.write(content || "");
+            f.close();
+            return _ok({ filePath: filePath, bytesWritten: (content || "").length, status: "written" });
+        }
+        return _err("Could not open file for writing: " + filePath);
+    } catch (e) { return _err("writeTextFile failed: " + e.message); }
+}
+
+/**
+ * 28. appendTextFile - Append text to a file.
+ */
+function appendTextFile(filePath, content) {
+    try {
+        if (!filePath || filePath === "") return _err("No file path provided");
+        if (!content) content = "";
+        var f = new File(filePath);
+        var mode = f.exists ? "a" : "w";
+        if (f.open(mode)) {
+            f.encoding = "UTF-8";
+            f.write(content);
+            f.close();
+            return _ok({ filePath: filePath, bytesAppended: content.length, created: mode === "w", status: "appended" });
+        }
+        return _err("Could not open file for appending: " + filePath);
+    } catch (e) { return _err("appendTextFile failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// System Integration (29-30)
+// ---------------------------------------------------------------------------
+
+/**
+ * 29. openURL - Open a URL in the default browser.
+ */
+function openURL(url) {
+    try {
+        if (!url || url === "") return _err("No URL provided");
+        // Use File object to resolve and open URL via system
+        if ($.os.indexOf("Windows") >= 0) {
+            var cmd = 'cmd /c start "" "' + url + '"';
+            system.callSystem(cmd);
+        } else {
+            var cmd2 = 'open "' + url + '"';
+            system.callSystem(cmd2);
+        }
+        return _ok({ url: url, status: "opened" });
+    } catch (e) { return _err("openURL failed: " + e.message); }
+}
+
+/**
+ * 30. executeSystemCommand - Execute a system command and return output.
+ */
+function executeSystemCommand(command) {
+    try {
+        if (!command || command === "") return _err("No command provided");
+        var output = "";
+        try {
+            output = system.callSystem(command);
+        } catch (sysErr) {
+            return _err("System command failed: " + sysErr.message);
+        }
+        return _ok({ command: command, output: output, status: "executed" });
+    } catch (e) { return _err("executeSystemCommand failed: " + e.message); }
+}
