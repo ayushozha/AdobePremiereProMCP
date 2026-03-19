@@ -83,4 +83,7 @@ type (
 	// Media browser & stock types
 	StockSearchResponse = orchestrator.StockSearchResponse
 	StockSearchResult   = orchestrator.StockSearchResult
+
+	// Frame capture types
+	FrameCaptureResult = orchestrator.FrameCaptureResult
 )
