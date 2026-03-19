@@ -364,6 +364,50 @@ type Orchestrator interface {
 	ClearMediaCache(ctx context.Context) (*GenericResult, error)
 	GetMediaCachePath(ctx context.Context) (*GenericResult, error)
 
+	// --- Clip/Item Metadata ---
+	GetClipMetadata(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	SetClipMetadata(ctx context.Context, projectItemIndex int, field, value string) (*GenericResult, error)
+	AddCustomMetadataField(ctx context.Context, fieldName, fieldLabel string, fieldType int) (*GenericResult, error)
+	GetMetadataSchema(ctx context.Context) (*GenericResult, error)
+	BatchSetMetadata(ctx context.Context, itemIndices []int, field, value string) (*GenericResult, error)
+
+	// --- Labels & Colors ---
+	GetAvailableLabelColors(ctx context.Context) (*GenericResult, error)
+	SetClipLabelByName(ctx context.Context, projectItemIndex int, colorName string) (*GenericResult, error)
+	GetLabelColorForClip(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	BatchSetLabels(ctx context.Context, itemIndices []int, colorIndex int) (*GenericResult, error)
+	FilterByLabel(ctx context.Context, colorIndex int) (*GenericResult, error)
+
+	// --- Footage Interpretation ---
+	GetFootageInterpretation(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	SetFootageFrameRate(ctx context.Context, projectItemIndex int, fps float64) (*GenericResult, error)
+	SetFootageFieldOrder(ctx context.Context, projectItemIndex int, fieldOrder int) (*GenericResult, error)
+	SetFootageAlphaChannel(ctx context.Context, projectItemIndex int, alphaType int) (*GenericResult, error)
+	SetFootagePixelAspectRatio(ctx context.Context, projectItemIndex int, num, den float64) (*GenericResult, error)
+	ResetFootageInterpretation(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+
+	// --- Media Info ---
+	GetMediaInfo(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	GetMediaPath(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	RevealInFinder(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	RefreshMedia(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	ReplaceMedia(ctx context.Context, projectItemIndex int, newFilePath string) (*GenericResult, error)
+	DuplicateProjectItem(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+
+	// --- Smart Bins ---
+	CreateSmartBin(ctx context.Context, name, searchQuery string) (*GenericResult, error)
+	GetSmartBinResults(ctx context.Context, binPath string) (*GenericResult, error)
+
+	// --- Clip Usage ---
+	GetClipUsageInSequences(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	GetUnusedClips(ctx context.Context) (*GenericResult, error)
+	GetUsedClips(ctx context.Context) (*GenericResult, error)
+	GetClipUsageCount(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+
+	// --- File Management ---
+	GetProjectFileSize(ctx context.Context) (*GenericResult, error)
+	GetMediaDiskUsage(ctx context.Context) (*GenericResult, error)
+
 	// --- Advanced Editing ---
 	RippleTrim(ctx context.Context, trackType string, trackIndex, clipIndex int, trimEnd bool, deltaSeconds float64) (*GenericResult, error)
 	RollTrim(ctx context.Context, trackType string, trackIndex, clipIndex int, deltaSeconds float64) (*GenericResult, error)
