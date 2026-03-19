@@ -830,4 +830,48 @@ type Orchestrator interface {
 	GetProductionInfo(ctx context.Context) (*GenericResult, error)
 	ListProductionProjects(ctx context.Context) (*GenericResult, error)
 	OpenProductionProject(ctx context.Context, projectName string) (*GenericResult, error)
+
+	// --- Performance Monitoring ---
+	GetPerformanceMetrics(ctx context.Context) (*GenericResult, error)
+	GetProjectMemoryUsage(ctx context.Context) (*GenericResult, error)
+	GetDiskSpace(ctx context.Context, drivePath string) (*GenericResult, error)
+	GetOpenProjectCount(ctx context.Context) (*GenericResult, error)
+	GetLoadedPlugins(ctx context.Context) (*GenericResult, error)
+
+	// --- Timeline Performance ---
+	GetDroppedFrameCount(ctx context.Context) (*GenericResult, error)
+	ResetDroppedFrameCount(ctx context.Context) (*GenericResult, error)
+	GetTimelineRenderStatus(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	GetEstimatedRenderTime2(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	GetSequenceComplexity(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+
+	// --- Diagnostics ---
+	GetPremiereVersion(ctx context.Context) (*GenericResult, error)
+	GetInstalledPlugins2(ctx context.Context) (*GenericResult, error)
+	GetInstalledEffects2(ctx context.Context) (*GenericResult, error)
+	GetInstalledTransitions2(ctx context.Context) (*GenericResult, error)
+	CheckProjectIntegrity(ctx context.Context) (*GenericResult, error)
+
+	// --- Error Handling ---
+	GetLastError(ctx context.Context) (*GenericResult, error)
+	ClearErrors(ctx context.Context) (*GenericResult, error)
+	SetErrorLogging(ctx context.Context, enabled bool, logPath string) (*GenericResult, error)
+	GetErrorLog(ctx context.Context) (*GenericResult, error)
+
+	// --- Debug Tools ---
+	EnableDebugMode(ctx context.Context, enabled bool) (*GenericResult, error)
+	GetDebugLog(ctx context.Context) (*GenericResult, error)
+	DumpProjectState(ctx context.Context) (*GenericResult, error)
+	DumpSequenceState(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	TestBridgeConnection(ctx context.Context) (*GenericResult, error)
+
+	// --- Health Checks ---
+	HealthCheck(ctx context.Context) (*GenericResult, error)
+	GetServiceStatus(ctx context.Context) (*GenericResult, error)
+	GetBridgeLatency(ctx context.Context) (*GenericResult, error)
+	GetExtendScriptVersion(ctx context.Context) (*GenericResult, error)
+
+	// --- Cleanup ---
+	CleanTempFiles(ctx context.Context) (*GenericResult, error)
+	OptimizeProject(ctx context.Context) (*GenericResult, error)
 }

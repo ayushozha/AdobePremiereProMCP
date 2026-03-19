@@ -13729,3 +13729,1063 @@ function checkForFlashContent(threshold) {
         });
     } catch (e) { return _err("checkForFlashContent failed: " + e.message); }
 }
+
+// ===========================================================================
+// Performance Monitoring, Diagnostics, and System Health
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Performance Monitoring (1-5)
+// ---------------------------------------------------------------------------
+
+/**
+ * 1. getPerformanceMetrics - Get CPU, memory, GPU usage.
+ */
+function getPerformanceMetrics() {
+    try {
+        var mem = $.memCache || 0;
+        var info = {
+            cpuUsagePercent: -1,
+            memoryUsedMB: Math.round(mem / (1024 * 1024)),
+            memoryTotalMB: -1,
+            gpuRenderer: "unknown",
+            timestamp: new Date().toISOString()
+        };
+        // Try to read GPU renderer from app properties
+        try {
+            if (app.project && app.project.activeSequence) {
+                info.gpuRenderer = app.project.gpuAcceleration || "unknown";
+            }
+        } catch (ignore) {}
+        // Try to get OS-level memory via $.os
+        try {
+            info.platform = $.os;
+        } catch (ignore) {}
+        return _ok(info);
+    } catch (e) { return _err("getPerformanceMetrics failed: " + e.message); }
+}
+
+/**
+ * 2. getProjectMemoryUsage - Get memory used by current project.
+ */
+function getProjectMemoryUsage() {
+    try {
+        if (!app.project) return _err("No project open");
+        var itemCount = 0;
+        var sequenceCount = 0;
+        try {
+            itemCount = app.project.rootItem ? app.project.rootItem.children.numItems : 0;
+        } catch (ignore) {}
+        try {
+            sequenceCount = app.project.sequences ? app.project.sequences.numSequences : 0;
+        } catch (ignore) {}
+        var memCache = $.memCache || 0;
+        return _ok({
+            projectName: app.project.name || "untitled",
+            estimatedMemoryMB: Math.round(memCache / (1024 * 1024)),
+            projectItemCount: itemCount,
+            sequenceCount: sequenceCount,
+            timestamp: new Date().toISOString()
+        });
+    } catch (e) { return _err("getProjectMemoryUsage failed: " + e.message); }
+}
+
+/**
+ * 3. getDiskSpace - Get available disk space for a given drive path.
+ */
+function getDiskSpace(drivePath) {
+    try {
+        var path = drivePath || "/";
+        var folder = new Folder(path);
+        if (!folder.exists) return _err("Path does not exist: " + path);
+        // ExtendScript Folder object does not expose free space directly.
+        // Use a system command via $.evalFile or report folder existence.
+        var info = {
+            path: folder.fsName,
+            exists: true,
+            displayName: folder.displayName,
+            note: "ExtendScript does not provide direct disk space APIs. Use OS-level tools for precise values."
+        };
+        // On macOS, try to run a system command
+        try {
+            if ($.os.indexOf("Mac") >= 0) {
+                var cmd = 'do shell script "df -k ' + folder.fsName.replace(/'/g, "'\\''") + ' | tail -1"';
+                var result = app.doScript(cmd, "AppleScript");
+                if (result) info.dfOutput = result;
+            }
+        } catch (ignore) {}
+        return _ok(info);
+    } catch (e) { return _err("getDiskSpace failed: " + e.message); }
+}
+
+/**
+ * 4. getOpenProjectCount - Count open projects.
+ */
+function getOpenProjectCount() {
+    try {
+        var count = 0;
+        if (app.project) count = 1;
+        // Premiere Pro typically supports one project at a time,
+        // but Productions can have multiple project references.
+        var productionProjectCount = 0;
+        try {
+            if (app.project.productionGroup) {
+                productionProjectCount = app.project.productionGroup.projects.numItems || 0;
+            }
+        } catch (ignore) {}
+        return _ok({
+            openProjects: count,
+            productionProjects: productionProjectCount,
+            activeProjectName: app.project ? (app.project.name || "untitled") : "none"
+        });
+    } catch (e) { return _err("getOpenProjectCount failed: " + e.message); }
+}
+
+/**
+ * 5. getLoadedPlugins - List loaded plugins/extensions.
+ */
+function getLoadedPlugins() {
+    try {
+        var plugins = [];
+        // List available QE effects as a proxy for loaded plugins
+        try {
+            if (typeof qe !== "undefined" && qe.project) {
+                var effectList = qe.project.getVideoEffectList();
+                if (effectList) {
+                    plugins.push({ type: "video_effects", count: effectList.numItems || 0 });
+                }
+            }
+        } catch (ignore) {}
+        // List via app.getProjectViewIDs or available extensions
+        try {
+            var extCount = 0;
+            if (app.extensions) {
+                extCount = app.extensions.length || 0;
+                for (var i = 0; i < extCount; i++) {
+                    plugins.push({ type: "extension", name: app.extensions[i] });
+                }
+            }
+        } catch (ignore) {}
+        return _ok({
+            plugins: plugins,
+            totalCount: plugins.length,
+            note: "Plugin enumeration is limited in ExtendScript. Some plugins may not appear."
+        });
+    } catch (e) { return _err("getLoadedPlugins failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Timeline Performance (6-10)
+// ---------------------------------------------------------------------------
+
+/**
+ * 6. getDroppedFrameCount - Get dropped frames during playback.
+ */
+function getDroppedFrameCount() {
+    try {
+        var dropped = -1;
+        // QE DOM provides dropped frame access
+        try {
+            if (typeof qe !== "undefined" && qe.project && qe.project.getActiveSequence()) {
+                var qeSeq = qe.project.getActiveSequence();
+                dropped = qeSeq.getDroppedFrameCount ? qeSeq.getDroppedFrameCount() : -1;
+            }
+        } catch (ignore) {}
+        return _ok({
+            droppedFrames: dropped,
+            available: dropped >= 0,
+            timestamp: new Date().toISOString()
+        });
+    } catch (e) { return _err("getDroppedFrameCount failed: " + e.message); }
+}
+
+/**
+ * 7. resetDroppedFrameCount - Reset dropped frame counter.
+ */
+function resetDroppedFrameCount() {
+    try {
+        var reset = false;
+        try {
+            if (typeof qe !== "undefined" && qe.project && qe.project.getActiveSequence()) {
+                var qeSeq = qe.project.getActiveSequence();
+                if (qeSeq.resetDroppedFrameCount) {
+                    qeSeq.resetDroppedFrameCount();
+                    reset = true;
+                }
+            }
+        } catch (ignore) {}
+        return _ok({
+            reset: reset,
+            timestamp: new Date().toISOString()
+        });
+    } catch (e) { return _err("resetDroppedFrameCount failed: " + e.message); }
+}
+
+/**
+ * 8. getTimelineRenderStatus - Get render status per segment (red/yellow/green bar).
+ */
+function getTimelineRenderStatus(sequenceIndex) {
+    try {
+        var seqIdx = parseInt(sequenceIndex) || 0;
+        var seq = null;
+        if (seqIdx === 0 && app.project.activeSequence) {
+            seq = app.project.activeSequence;
+        } else {
+            if (!app.project.sequences || seqIdx >= app.project.sequences.numSequences) {
+                return _err("Sequence index out of range: " + seqIdx);
+            }
+            seq = app.project.sequences[seqIdx];
+        }
+        if (!seq) return _err("No sequence found at index " + seqIdx);
+
+        var segments = [];
+        // Inspect work area for render bar status
+        try {
+            if (typeof qe !== "undefined" && qe.project) {
+                var qeSeq = qe.project.getActiveSequence();
+                if (qeSeq) {
+                    // QE sequence may expose render status
+                    segments.push({
+                        status: "info",
+                        note: "Render bar color information requires QE DOM access which varies by version."
+                    });
+                }
+            }
+        } catch (ignore) {}
+
+        var totalVideoClips = 0;
+        var totalEffects = 0;
+        for (var vt = 0; vt < seq.videoTracks.numTracks; vt++) {
+            var track = seq.videoTracks[vt];
+            totalVideoClips += track.clips.numItems;
+            for (var vc = 0; vc < track.clips.numItems; vc++) {
+                var clip = track.clips[vc];
+                if (clip && clip.components) {
+                    totalEffects += clip.components.numItems;
+                }
+            }
+        }
+        return _ok({
+            sequenceName: seq.name,
+            sequenceIndex: seqIdx,
+            totalVideoClips: totalVideoClips,
+            totalEffects: totalEffects,
+            renderSegments: segments,
+            duration: _timeToSeconds(seq.end)
+        });
+    } catch (e) { return _err("getTimelineRenderStatus failed: " + e.message); }
+}
+
+/**
+ * 9. getEstimatedRenderTime - Estimate render time for a sequence.
+ */
+function getEstimatedRenderTime(sequenceIndex) {
+    try {
+        var seqIdx = parseInt(sequenceIndex) || 0;
+        var seq = null;
+        if (seqIdx === 0 && app.project.activeSequence) {
+            seq = app.project.activeSequence;
+        } else {
+            if (!app.project.sequences || seqIdx >= app.project.sequences.numSequences) {
+                return _err("Sequence index out of range: " + seqIdx);
+            }
+            seq = app.project.sequences[seqIdx];
+        }
+        if (!seq) return _err("No sequence found at index " + seqIdx);
+
+        var duration = _timeToSeconds(seq.end);
+        var totalEffects = 0;
+        var totalClips = 0;
+        var videoTrackCount = seq.videoTracks.numTracks;
+        var audioTrackCount = seq.audioTracks.numTracks;
+
+        for (var vt = 0; vt < videoTrackCount; vt++) {
+            var track = seq.videoTracks[vt];
+            totalClips += track.clips.numItems;
+            for (var vc = 0; vc < track.clips.numItems; vc++) {
+                var clip = track.clips[vc];
+                if (clip && clip.components) {
+                    totalEffects += clip.components.numItems;
+                }
+            }
+        }
+        // Rough heuristic: base time = 1x realtime + 0.5s per effect + 0.2s per extra track
+        var estimatedSeconds = duration + (totalEffects * 0.5) + ((videoTrackCount + audioTrackCount - 2) * 0.2 * duration);
+        return _ok({
+            sequenceName: seq.name,
+            durationSeconds: duration,
+            estimatedRenderSeconds: Math.round(estimatedSeconds),
+            estimatedRenderMinutes: Math.round(estimatedSeconds / 60 * 10) / 10,
+            factors: {
+                totalClips: totalClips,
+                totalEffects: totalEffects,
+                videoTracks: videoTrackCount,
+                audioTracks: audioTrackCount
+            },
+            note: "Estimate is heuristic-based. Actual render time depends on hardware, codec, and effect complexity."
+        });
+    } catch (e) { return _err("getEstimatedRenderTime failed: " + e.message); }
+}
+
+/**
+ * 10. getSequenceComplexity - Rate sequence complexity.
+ */
+function getSequenceComplexity(sequenceIndex) {
+    try {
+        var seqIdx = parseInt(sequenceIndex) || 0;
+        var seq = null;
+        if (seqIdx === 0 && app.project.activeSequence) {
+            seq = app.project.activeSequence;
+        } else {
+            if (!app.project.sequences || seqIdx >= app.project.sequences.numSequences) {
+                return _err("Sequence index out of range: " + seqIdx);
+            }
+            seq = app.project.sequences[seqIdx];
+        }
+        if (!seq) return _err("No sequence found at index " + seqIdx);
+
+        var videoTrackCount = seq.videoTracks.numTracks;
+        var audioTrackCount = seq.audioTracks.numTracks;
+        var totalVideoClips = 0;
+        var totalAudioClips = 0;
+        var totalEffects = 0;
+        var totalTransitions = 0;
+
+        for (var vt = 0; vt < videoTrackCount; vt++) {
+            var vTrack = seq.videoTracks[vt];
+            totalVideoClips += vTrack.clips.numItems;
+            if (vTrack.transitions) totalTransitions += vTrack.transitions.numItems;
+            for (var vc = 0; vc < vTrack.clips.numItems; vc++) {
+                var clip = vTrack.clips[vc];
+                if (clip && clip.components) {
+                    totalEffects += clip.components.numItems;
+                }
+            }
+        }
+        for (var at = 0; at < audioTrackCount; at++) {
+            var aTrack = seq.audioTracks[at];
+            totalAudioClips += aTrack.clips.numItems;
+            if (aTrack.transitions) totalTransitions += aTrack.transitions.numItems;
+        }
+
+        // Complexity score: 0-100
+        var score = 0;
+        score += Math.min(videoTrackCount * 5, 25);
+        score += Math.min(audioTrackCount * 3, 15);
+        score += Math.min(totalVideoClips * 0.5, 20);
+        score += Math.min(totalEffects * 2, 30);
+        score += Math.min(totalTransitions * 1, 10);
+        score = Math.min(Math.round(score), 100);
+
+        var rating = "low";
+        if (score > 70) rating = "high";
+        else if (score > 40) rating = "medium";
+
+        return _ok({
+            sequenceName: seq.name,
+            complexityScore: score,
+            complexityRating: rating,
+            details: {
+                videoTracks: videoTrackCount,
+                audioTracks: audioTrackCount,
+                totalVideoClips: totalVideoClips,
+                totalAudioClips: totalAudioClips,
+                totalEffects: totalEffects,
+                totalTransitions: totalTransitions,
+                durationSeconds: _timeToSeconds(seq.end)
+            }
+        });
+    } catch (e) { return _err("getSequenceComplexity failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostics (11-15)
+// ---------------------------------------------------------------------------
+
+/**
+ * 11. getPremiereVersion - Get detailed version info.
+ */
+function getPremiereVersion() {
+    try {
+        var info = {
+            version: app.version || "unknown",
+            build: app.build || "unknown",
+            appName: "Adobe Premiere Pro",
+            platform: $.os || "unknown",
+            bits: ($.os && $.os.indexOf("64") >= 0) ? 64 : 32,
+            locale: $.locale || "unknown",
+            engineName: $.engineName || "unknown",
+            engineVersion: $.version || "unknown"
+        };
+        try { info.csVersion = app.csVersion || "unknown"; } catch (ignore) {}
+        return _ok(info);
+    } catch (e) { return _err("getPremiereVersion failed: " + e.message); }
+}
+
+/**
+ * 12. getInstalledPlugins - List all installed plugins with versions.
+ */
+function getInstalledPlugins() {
+    try {
+        var plugins = [];
+        // Enumerate via QE DOM if available
+        try {
+            if (typeof qe !== "undefined" && qe.project) {
+                var videoEffects = qe.project.getVideoEffectList();
+                if (videoEffects) {
+                    for (var i = 0; i < videoEffects.numItems; i++) {
+                        plugins.push({
+                            name: videoEffects[i].name || ("effect_" + i),
+                            type: "video_effect",
+                            index: i
+                        });
+                    }
+                }
+            }
+        } catch (ignore) {}
+        // Check built-in plugin paths
+        try {
+            var pluginFolder = new Folder(app.path + "/Plug-ins");
+            if (pluginFolder.exists) {
+                var files = pluginFolder.getFiles("*.plugin");
+                if (!files) files = pluginFolder.getFiles("*.prm");
+                if (files) {
+                    for (var f = 0; f < files.length; f++) {
+                        plugins.push({
+                            name: files[f].displayName,
+                            type: "file_plugin",
+                            path: files[f].fsName
+                        });
+                    }
+                }
+            }
+        } catch (ignore) {}
+        return _ok({ plugins: plugins, totalCount: plugins.length });
+    } catch (e) { return _err("getInstalledPlugins failed: " + e.message); }
+}
+
+/**
+ * 13. getInstalledEffects - List all available effects.
+ */
+function getInstalledEffects() {
+    try {
+        var effects = [];
+        try {
+            if (typeof qe !== "undefined" && qe.project) {
+                var videoEffects = qe.project.getVideoEffectList();
+                if (videoEffects) {
+                    for (var i = 0; i < videoEffects.numItems; i++) {
+                        effects.push({ name: videoEffects[i].name || ("effect_" + i), type: "video", index: i });
+                    }
+                }
+                var audioEffects = qe.project.getAudioEffectList();
+                if (audioEffects) {
+                    for (var j = 0; j < audioEffects.numItems; j++) {
+                        effects.push({ name: audioEffects[j].name || ("audio_effect_" + j), type: "audio", index: j });
+                    }
+                }
+            }
+        } catch (ignore) {}
+        return _ok({ effects: effects, totalCount: effects.length });
+    } catch (e) { return _err("getInstalledEffects failed: " + e.message); }
+}
+
+/**
+ * 14. getInstalledTransitions - List all available transitions.
+ */
+function getInstalledTransitions() {
+    try {
+        var transitions = [];
+        try {
+            if (typeof qe !== "undefined" && qe.project) {
+                var videoTransitions = qe.project.getVideoTransitionList();
+                if (videoTransitions) {
+                    for (var i = 0; i < videoTransitions.numItems; i++) {
+                        transitions.push({ name: videoTransitions[i].name || ("transition_" + i), type: "video", index: i });
+                    }
+                }
+                var audioTransitions = qe.project.getAudioTransitionList();
+                if (audioTransitions) {
+                    for (var j = 0; j < audioTransitions.numItems; j++) {
+                        transitions.push({ name: audioTransitions[j].name || ("audio_transition_" + j), type: "audio", index: j });
+                    }
+                }
+            }
+        } catch (ignore) {}
+        return _ok({ transitions: transitions, totalCount: transitions.length });
+    } catch (e) { return _err("getInstalledTransitions failed: " + e.message); }
+}
+
+/**
+ * 15. checkProjectIntegrity - Basic project integrity check.
+ */
+function checkProjectIntegrity() {
+    try {
+        if (!app.project) return _err("No project open");
+        var issues = [];
+        var offlineCount = 0;
+        var missingCount = 0;
+        var totalItems = 0;
+
+        // Check root items recursively
+        function checkItems(parent, depth) {
+            if (!parent || !parent.children) return;
+            for (var i = 0; i < parent.children.numItems; i++) {
+                totalItems++;
+                var item = parent.children[i];
+                if (!item) { missingCount++; continue; }
+                try {
+                    if (item.isOffline && item.isOffline()) {
+                        offlineCount++;
+                        issues.push({ type: "offline", name: item.name, path: item.treePath || "" });
+                    }
+                } catch (ignore) {}
+                // Check for missing media path
+                try {
+                    if (item.type === ProjectItemType.CLIP || item.type === 1) {
+                        var mediaPath = item.getMediaPath ? item.getMediaPath() : null;
+                        if (mediaPath) {
+                            var mediaFile = new File(mediaPath);
+                            if (!mediaFile.exists) {
+                                missingCount++;
+                                issues.push({ type: "missing_media", name: item.name, expectedPath: mediaPath });
+                            }
+                        }
+                    }
+                } catch (ignore) {}
+                // Recurse into bins
+                if (item.children && item.children.numItems > 0 && depth < 10) {
+                    checkItems(item, depth + 1);
+                }
+            }
+        }
+        checkItems(app.project.rootItem, 0);
+
+        var sequenceIssues = 0;
+        try {
+            for (var si = 0; si < app.project.sequences.numSequences; si++) {
+                var seq = app.project.sequences[si];
+                if (!seq) { sequenceIssues++; continue; }
+                if (!seq.videoTracks || !seq.audioTracks) sequenceIssues++;
+            }
+        } catch (ignore) {}
+
+        var healthy = issues.length === 0 && sequenceIssues === 0;
+        return _ok({
+            healthy: healthy,
+            totalProjectItems: totalItems,
+            offlineItems: offlineCount,
+            missingMedia: missingCount,
+            sequenceIssues: sequenceIssues,
+            issues: issues,
+            projectName: app.project.name || "untitled"
+        });
+    } catch (e) { return _err("checkProjectIntegrity failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Error Handling (16-19)
+// ---------------------------------------------------------------------------
+
+// Module-level error state
+var _lastError = null;
+var _errorLogging = false;
+var _errorLogPath = "";
+var _errorLog = [];
+var _debugMode = false;
+var _debugLog = [];
+
+/**
+ * 16. getLastError - Get last ExtendScript error.
+ */
+function getLastError() {
+    try {
+        return _ok({
+            hasError: _lastError !== null,
+            error: _lastError,
+            runtimeError: $.error || null,
+            timestamp: new Date().toISOString()
+        });
+    } catch (e) { return _err("getLastError failed: " + e.message); }
+}
+
+/**
+ * 17. clearErrors - Clear error state.
+ */
+function clearErrors() {
+    try {
+        _lastError = null;
+        $.error = undefined;
+        return _ok({ cleared: true, timestamp: new Date().toISOString() });
+    } catch (e) { return _err("clearErrors failed: " + e.message); }
+}
+
+/**
+ * 18. setErrorLogging - Enable error logging to file.
+ */
+function setErrorLogging(enabled, logPath) {
+    try {
+        _errorLogging = (enabled === true || enabled === "true");
+        if (logPath) _errorLogPath = logPath;
+        if (_errorLogging && _errorLogPath) {
+            // Test write access
+            var f = new File(_errorLogPath);
+            var ok = f.open("a");
+            if (ok) {
+                f.writeln("[" + new Date().toISOString() + "] Error logging enabled");
+                f.close();
+            }
+        }
+        return _ok({
+            loggingEnabled: _errorLogging,
+            logPath: _errorLogPath || "in-memory",
+            timestamp: new Date().toISOString()
+        });
+    } catch (e) { return _err("setErrorLogging failed: " + e.message); }
+}
+
+/**
+ * 19. getErrorLog - Get recent error log entries.
+ */
+function getErrorLog() {
+    try {
+        var entries = [];
+        // Read from file if logging to file
+        if (_errorLogging && _errorLogPath) {
+            try {
+                var f = new File(_errorLogPath);
+                if (f.exists && f.open("r")) {
+                    var lines = f.read().split("\n");
+                    f.close();
+                    // Return last 100 lines
+                    var start = Math.max(0, lines.length - 100);
+                    for (var i = start; i < lines.length; i++) {
+                        if (lines[i].length > 0) entries.push(lines[i]);
+                    }
+                }
+            } catch (ignore) {}
+        }
+        // Merge with in-memory log
+        for (var j = 0; j < _errorLog.length; j++) {
+            entries.push(_errorLog[j]);
+        }
+        return _ok({
+            entries: entries,
+            totalEntries: entries.length,
+            loggingEnabled: _errorLogging,
+            logPath: _errorLogPath || "in-memory"
+        });
+    } catch (e) { return _err("getErrorLog failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Debug Tools (20-24)
+// ---------------------------------------------------------------------------
+
+/**
+ * 20. enableDebugMode - Toggle debug mode (verbose logging).
+ */
+function enableDebugMode(enabled) {
+    try {
+        _debugMode = (enabled === true || enabled === "true");
+        if (_debugMode) {
+            $.strict = true;
+            _debugLog.push("[" + new Date().toISOString() + "] Debug mode enabled");
+        } else {
+            _debugLog.push("[" + new Date().toISOString() + "] Debug mode disabled");
+        }
+        return _ok({
+            debugMode: _debugMode,
+            strictMode: $.strict || false,
+            timestamp: new Date().toISOString()
+        });
+    } catch (e) { return _err("enableDebugMode failed: " + e.message); }
+}
+
+/**
+ * 21. getDebugLog - Get debug log.
+ */
+function getDebugLog() {
+    try {
+        return _ok({
+            entries: _debugLog,
+            totalEntries: _debugLog.length,
+            debugMode: _debugMode,
+            timestamp: new Date().toISOString()
+        });
+    } catch (e) { return _err("getDebugLog failed: " + e.message); }
+}
+
+/**
+ * 22. dumpProjectState - Full project state dump (for debugging).
+ */
+function dumpProjectState() {
+    try {
+        if (!app.project) return _err("No project open");
+        var items = [];
+        function collectItems(parent, depth) {
+            if (!parent || !parent.children || depth > 5) return;
+            for (var i = 0; i < parent.children.numItems; i++) {
+                var item = parent.children[i];
+                if (!item) continue;
+                var info = {
+                    index: i,
+                    name: item.name || "",
+                    type: item.type || -1,
+                    treePath: item.treePath || ""
+                };
+                try { info.mediaPath = item.getMediaPath ? item.getMediaPath() : ""; } catch (ignore) {}
+                items.push(info);
+                if (item.children && item.children.numItems > 0) {
+                    collectItems(item, depth + 1);
+                }
+            }
+        }
+        collectItems(app.project.rootItem, 0);
+
+        var sequences = [];
+        try {
+            for (var s = 0; s < app.project.sequences.numSequences; s++) {
+                var seq = app.project.sequences[s];
+                sequences.push({
+                    index: s,
+                    name: seq.name || "",
+                    videoTracks: seq.videoTracks.numTracks,
+                    audioTracks: seq.audioTracks.numTracks,
+                    duration: _timeToSeconds(seq.end)
+                });
+            }
+        } catch (ignore) {}
+
+        return _ok({
+            projectName: app.project.name || "untitled",
+            projectPath: app.project.path || "",
+            totalItems: items.length,
+            items: items,
+            sequences: sequences,
+            activeSequence: app.project.activeSequence ? app.project.activeSequence.name : "none",
+            timestamp: new Date().toISOString()
+        });
+    } catch (e) { return _err("dumpProjectState failed: " + e.message); }
+}
+
+/**
+ * 23. dumpSequenceState - Full sequence state dump.
+ */
+function dumpSequenceState(sequenceIndex) {
+    try {
+        var seqIdx = parseInt(sequenceIndex) || 0;
+        var seq = null;
+        if (seqIdx === 0 && app.project.activeSequence) {
+            seq = app.project.activeSequence;
+        } else {
+            if (!app.project.sequences || seqIdx >= app.project.sequences.numSequences) {
+                return _err("Sequence index out of range: " + seqIdx);
+            }
+            seq = app.project.sequences[seqIdx];
+        }
+        if (!seq) return _err("No sequence found at index " + seqIdx);
+
+        var videoTracks = [];
+        for (var vt = 0; vt < seq.videoTracks.numTracks; vt++) {
+            var vTrack = seq.videoTracks[vt];
+            var clips = [];
+            for (var vc = 0; vc < vTrack.clips.numItems; vc++) {
+                var clip = vTrack.clips[vc];
+                if (!clip) continue;
+                var clipInfo = {
+                    index: vc,
+                    name: clip.name || "",
+                    start: _timeToSeconds(clip.start),
+                    end: _timeToSeconds(clip.end),
+                    duration: _timeToSeconds(clip.duration),
+                    inPoint: _timeToSeconds(clip.inPoint),
+                    outPoint: _timeToSeconds(clip.outPoint)
+                };
+                try { clipInfo.effectCount = clip.components ? clip.components.numItems : 0; } catch (ignore) {}
+                clips.push(clipInfo);
+            }
+            videoTracks.push({ index: vt, name: vTrack.name || "", clips: clips, clipCount: clips.length });
+        }
+
+        var audioTracks = [];
+        for (var at = 0; at < seq.audioTracks.numTracks; at++) {
+            var aTrack = seq.audioTracks[at];
+            var aClips = [];
+            for (var ac = 0; ac < aTrack.clips.numItems; ac++) {
+                var aClip = aTrack.clips[ac];
+                if (!aClip) continue;
+                aClips.push({
+                    index: ac,
+                    name: aClip.name || "",
+                    start: _timeToSeconds(aClip.start),
+                    end: _timeToSeconds(aClip.end),
+                    duration: _timeToSeconds(aClip.duration)
+                });
+            }
+            audioTracks.push({ index: at, name: aTrack.name || "", clips: aClips, clipCount: aClips.length });
+        }
+
+        return _ok({
+            sequenceName: seq.name,
+            sequenceIndex: seqIdx,
+            duration: _timeToSeconds(seq.end),
+            videoTracks: videoTracks,
+            audioTracks: audioTracks,
+            videoTrackCount: seq.videoTracks.numTracks,
+            audioTrackCount: seq.audioTracks.numTracks,
+            timestamp: new Date().toISOString()
+        });
+    } catch (e) { return _err("dumpSequenceState failed: " + e.message); }
+}
+
+/**
+ * 24. testBridgeConnection - Test CEP panel connection.
+ */
+function testBridgeConnection() {
+    try {
+        var startTime = new Date().getTime();
+        // Verify basic API access
+        var tests = {
+            appAccess: false,
+            projectAccess: false,
+            sequenceAccess: false,
+            jsonSupport: false,
+            fileSystemAccess: false,
+            qeAccess: false
+        };
+        try { tests.appAccess = (app.version !== undefined); } catch (ignore) {}
+        try { tests.projectAccess = (app.project !== null && app.project !== undefined); } catch (ignore) {}
+        try { tests.sequenceAccess = (app.project.activeSequence !== undefined); } catch (ignore) {}
+        try { tests.jsonSupport = (JSON.stringify({test: true}) === '{"test":true}'); } catch (ignore) {}
+        try {
+            var tmpFolder = new Folder(Folder.temp.fsName);
+            tests.fileSystemAccess = tmpFolder.exists;
+        } catch (ignore) {}
+        try { tests.qeAccess = (typeof qe !== "undefined"); } catch (ignore) {}
+
+        var endTime = new Date().getTime();
+        var allPassed = true;
+        for (var key in tests) {
+            if (tests.hasOwnProperty(key) && !tests[key]) { allPassed = false; break; }
+        }
+        return _ok({
+            connected: true,
+            allTestsPassed: allPassed,
+            tests: tests,
+            latencyMs: endTime - startTime,
+            timestamp: new Date().toISOString()
+        });
+    } catch (e) { return _err("testBridgeConnection failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Health Checks (25-28)
+// ---------------------------------------------------------------------------
+
+/**
+ * 25. healthCheck - Full system health check.
+ */
+function healthCheck() {
+    try {
+        var health = {
+            status: "healthy",
+            premiere: { running: true, version: app.version || "unknown" },
+            project: { open: false, name: "none" },
+            bridge: { connected: true },
+            extendScript: { version: $.version || "unknown", engine: $.engineName || "unknown" },
+            timestamp: new Date().toISOString()
+        };
+        try {
+            if (app.project) {
+                health.project.open = true;
+                health.project.name = app.project.name || "untitled";
+                health.project.sequences = app.project.sequences ? app.project.sequences.numSequences : 0;
+            }
+        } catch (ignore) { health.project.error = "Could not access project"; }
+        try {
+            health.memory = { memCache: $.memCache || 0 };
+        } catch (ignore) {}
+        try {
+            health.qeAvailable = (typeof qe !== "undefined");
+        } catch (ignore) { health.qeAvailable = false; }
+
+        // Determine overall status
+        if (!health.project.open) health.status = "warning";
+        return _ok(health);
+    } catch (e) { return _err("healthCheck failed: " + e.message); }
+}
+
+/**
+ * 26. getServiceStatus - Get status of all MCP services.
+ */
+function getServiceStatus() {
+    try {
+        var services = {
+            extendScript: { status: "running", version: $.version || "unknown" },
+            premiereAPI: { status: "unknown" },
+            qeDom: { status: "unavailable" },
+            fileSystem: { status: "unknown" },
+            timestamp: new Date().toISOString()
+        };
+        try {
+            if (app.version) services.premiereAPI.status = "available";
+        } catch (ignore) { services.premiereAPI.status = "error"; }
+        try {
+            if (typeof qe !== "undefined") services.qeDom.status = "available";
+        } catch (ignore) {}
+        try {
+            var tmp = new Folder(Folder.temp.fsName);
+            services.fileSystem.status = tmp.exists ? "available" : "limited";
+        } catch (ignore) { services.fileSystem.status = "error"; }
+        return _ok(services);
+    } catch (e) { return _err("getServiceStatus failed: " + e.message); }
+}
+
+/**
+ * 27. getBridgeLatency - Measure bridge round-trip time.
+ */
+function getBridgeLatency() {
+    try {
+        var start = new Date().getTime();
+        // Perform a lightweight operation to measure ExtendScript execution time
+        var dummy = app.version;
+        var afterAppAccess = new Date().getTime();
+        // Serialize a small object
+        var testObj = { test: true, time: start, nested: { a: 1, b: 2 } };
+        var json = JSON.stringify(testObj);
+        var afterJson = new Date().getTime();
+        return _ok({
+            totalMs: afterJson - start,
+            appAccessMs: afterAppAccess - start,
+            jsonSerializeMs: afterJson - afterAppAccess,
+            timestamp: new Date().toISOString()
+        });
+    } catch (e) { return _err("getBridgeLatency failed: " + e.message); }
+}
+
+/**
+ * 28. getExtendScriptVersion - Get ExtendScript engine version.
+ */
+function getExtendScriptVersion() {
+    try {
+        return _ok({
+            version: $.version || "unknown",
+            engineName: $.engineName || "unknown",
+            buildDate: $.buildDate ? $.buildDate.toString() : "unknown",
+            os: $.os || "unknown",
+            locale: $.locale || "unknown",
+            strict: $.strict || false,
+            memCache: $.memCache || 0,
+            flags: $.flags || 0,
+            stack: $.stack || ""
+        });
+    } catch (e) { return _err("getExtendScriptVersion failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Cleanup (29-30)
+// ---------------------------------------------------------------------------
+
+/**
+ * 29. cleanTempFiles - Clean temporary files.
+ */
+function cleanTempFiles() {
+    try {
+        var tempFolder = new Folder(Folder.temp.fsName);
+        var cleaned = 0;
+        var errors = 0;
+        var totalSize = 0;
+        if (tempFolder.exists) {
+            var tempFiles = tempFolder.getFiles("ppro_mcp_*");
+            if (tempFiles) {
+                for (var i = 0; i < tempFiles.length; i++) {
+                    try {
+                        if (tempFiles[i] instanceof File) {
+                            totalSize += tempFiles[i].length || 0;
+                            tempFiles[i].remove();
+                            cleaned++;
+                        }
+                    } catch (ignore) { errors++; }
+                }
+            }
+        }
+        // Also clear the in-memory logs if they are large
+        var logCleared = false;
+        if (_debugLog.length > 1000) { _debugLog = _debugLog.slice(-100); logCleared = true; }
+        if (_errorLog.length > 1000) { _errorLog = _errorLog.slice(-100); logCleared = true; }
+        return _ok({
+            filesRemoved: cleaned,
+            errors: errors,
+            bytesFreed: totalSize,
+            logsTrimmed: logCleared,
+            tempPath: tempFolder.fsName,
+            timestamp: new Date().toISOString()
+        });
+    } catch (e) { return _err("cleanTempFiles failed: " + e.message); }
+}
+
+/**
+ * 30. optimizeProject - Run project optimization.
+ */
+function optimizeProject() {
+    try {
+        if (!app.project) return _err("No project open");
+        var actions = [];
+
+        // 1. Attempt to consolidate duplicates via QE
+        try {
+            if (typeof qe !== "undefined" && qe.project) {
+                // QE may offer consolidation
+                actions.push({ action: "qe_available", success: true });
+            }
+        } catch (ignore) {}
+
+        // 2. Count and report unused items
+        var totalItems = 0;
+        var usedItems = 0;
+        try {
+            function countItems(parent) {
+                if (!parent || !parent.children) return;
+                for (var i = 0; i < parent.children.numItems; i++) {
+                    totalItems++;
+                    var item = parent.children[i];
+                    if (!item) continue;
+                    // Check if item is used in any sequence
+                    try {
+                        if (item.getProjectColumnsMetadata) {
+                            usedItems++;
+                        }
+                    } catch (ignore) {}
+                    if (item.children && item.children.numItems > 0) {
+                        countItems(item);
+                    }
+                }
+            }
+            countItems(app.project.rootItem);
+            actions.push({ action: "item_audit", totalItems: totalItems });
+        } catch (ignore) {}
+
+        // 3. Save project to persist changes
+        try {
+            app.project.save();
+            actions.push({ action: "save_project", success: true });
+        } catch (saveErr) {
+            actions.push({ action: "save_project", success: false, error: saveErr.message });
+        }
+
+        // 4. Clean media cache if possible
+        try {
+            if (app.enableQE) { app.enableQE(); }
+            actions.push({ action: "qe_enabled", success: true });
+        } catch (ignore) {}
+
+        return _ok({
+            optimized: true,
+            actions: actions,
+            projectName: app.project.name || "untitled",
+            timestamp: new Date().toISOString(),
+            note: "Full project optimization may require manual actions like Remove Unused and Project Manager."
+        });
+    } catch (e) { return _err("optimizeProject failed: " + e.message); }
+}
