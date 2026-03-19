@@ -8,6 +8,8 @@ import (
 	gomcp "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"go.uber.org/zap"
+
+	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/orchestrator"
 )
 
 // registerTools registers every MCP tool with the server. Each tool is defined
@@ -78,10 +80,9 @@ func registerEditingTools(s *server.MCPServer, orch Orchestrator, logger *zap.Lo
 	s.AddTool(
 		gomcp.NewTool("premiere_import_media",
 			gomcp.WithDescription("Import media files into the Premiere Pro project."),
-			gomcp.WithArray("file_paths",
+			gomcp.WithString("file_path",
 				gomcp.Required(),
-				gomcp.Description("List of absolute file paths to import"),
-				gomcp.WithStringItems(),
+				gomcp.Description("Absolute file path to import"),
 			),
 			gomcp.WithString("target_bin",
 				gomcp.Description("Name of the bin to import into (default: root)"),
@@ -367,13 +368,15 @@ func makeCreateSequenceHandler(orch Orchestrator, logger *zap.Logger) server.Too
 			return gomcp.NewToolResultError("parameter 'name' is required"), nil
 		}
 
+		width := gomcp.ParseInt(req, "width", 1920)
+		height := gomcp.ParseInt(req, "height", 1080)
+
 		params := &CreateSequenceParams{
 			Name:        name,
-			Width:       gomcp.ParseInt(req, "width", 1920),
-			Height:      gomcp.ParseInt(req, "height", 1080),
+			Resolution:  Resolution{Width: uint32(width), Height: uint32(height)},
 			FrameRate:   gomcp.ParseFloat64(req, "frame_rate", 24),
-			VideoTracks: gomcp.ParseInt(req, "video_tracks", 3),
-			AudioTracks: gomcp.ParseInt(req, "audio_tracks", 2),
+			VideoTracks: uint32(gomcp.ParseInt(req, "video_tracks", 3)),
+			AudioTracks: uint32(gomcp.ParseInt(req, "audio_tracks", 2)),
 		}
 
 		result, err := orch.CreateSequence(ctx, params)
@@ -389,17 +392,13 @@ func makeImportMediaHandler(orch Orchestrator, logger *zap.Logger) server.ToolHa
 	return func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
 		logger.Debug("handling premiere_import_media")
 
-		filePaths, err := extractStringSlice(req, "file_paths")
-		if err != nil || len(filePaths) == 0 {
-			return gomcp.NewToolResultError("parameter 'file_paths' is required and must be a non-empty array of strings"), nil
+		filePath := gomcp.ParseString(req, "file_path", "")
+		if filePath == "" {
+			return gomcp.NewToolResultError("parameter 'file_path' is required"), nil
 		}
+		targetBin := gomcp.ParseString(req, "target_bin", "")
 
-		params := &ImportMediaParams{
-			FilePaths: filePaths,
-			TargetBin: gomcp.ParseString(req, "target_bin", ""),
-		}
-
-		result, err := orch.ImportMedia(ctx, params)
+		result, err := orch.ImportMedia(ctx, filePath, targetBin)
 		if err != nil {
 			logger.Error("import media failed", zap.Error(err))
 			return gomcp.NewToolResultError(fmt.Sprintf("failed to import media: %v", err)), nil
@@ -417,14 +416,30 @@ func makePlaceClipHandler(orch Orchestrator, logger *zap.Logger) server.ToolHand
 			return gomcp.NewToolResultError("parameter 'source_path' is required"), nil
 		}
 
+		trackType := orchestrator.TrackTypeVideo
+		if gomcp.ParseString(req, "track_type", "video") == "audio" {
+			trackType = orchestrator.TrackTypeAudio
+		}
+
+		positionSecs := gomcp.ParseFloat64(req, "position_seconds", 0)
+		inSecs := gomcp.ParseFloat64(req, "in_point_seconds", 0)
+		outSecs := gomcp.ParseFloat64(req, "out_point_seconds", 0)
+
 		params := &PlaceClipParams{
-			SourcePath:      sourcePath,
-			TrackType:       gomcp.ParseString(req, "track_type", "video"),
-			TrackIndex:      gomcp.ParseInt(req, "track_index", 0),
-			PositionSeconds: gomcp.ParseFloat64(req, "position_seconds", 0),
-			InPointSeconds:  gomcp.ParseFloat64(req, "in_point_seconds", 0),
-			OutPointSeconds: gomcp.ParseFloat64(req, "out_point_seconds", 0),
-			Speed:           gomcp.ParseFloat64(req, "speed", 1.0),
+			SourcePath: sourcePath,
+			Track: TrackTarget{
+				Type:       trackType,
+				TrackIndex: uint32(gomcp.ParseInt(req, "track_index", 0)),
+			},
+			Position: secondsToTimecode(positionSecs, 24),
+			Speed:    gomcp.ParseFloat64(req, "speed", 1.0),
+		}
+
+		if inSecs > 0 || outSecs > 0 {
+			params.SourceRange = &TimeRange{
+				InPoint:  secondsToTimecode(inSecs, 24),
+				OutPoint: secondsToTimecode(outSecs, 24),
+			}
 		}
 
 		result, err := orch.PlaceClip(ctx, params)
@@ -466,11 +481,16 @@ func makeAddTransitionHandler(orch Orchestrator, logger *zap.Logger) server.Tool
 			return gomcp.NewToolResultError("parameter 'sequence_id' is required"), nil
 		}
 
+		positionSecs := gomcp.ParseFloat64(req, "position_seconds", 0)
+
 		params := &TransitionParams{
-			SequenceID:      sequenceID,
-			TrackIndex:      gomcp.ParseInt(req, "track_index", 0),
-			PositionSeconds: gomcp.ParseFloat64(req, "position_seconds", 0),
-			Type:            gomcp.ParseString(req, "type", "cross_dissolve"),
+			SequenceID: sequenceID,
+			Track: TrackTarget{
+				Type:       orchestrator.TrackTypeVideo,
+				TrackIndex: uint32(gomcp.ParseInt(req, "track_index", 0)),
+			},
+			Position:        secondsToTimecode(positionSecs, 24),
+			TransitionType:  gomcp.ParseString(req, "type", "cross_dissolve"),
 			DurationSeconds: gomcp.ParseFloat64(req, "duration_seconds", 1.0),
 		}
 
@@ -495,16 +515,25 @@ func makeAddTextHandler(orch Orchestrator, logger *zap.Logger) server.ToolHandle
 			return gomcp.NewToolResultError("parameter 'text' is required"), nil
 		}
 
+		positionSecs := gomcp.ParseFloat64(req, "position_seconds", 0)
+
 		params := &TextParams{
-			SequenceID:      sequenceID,
-			Text:            text,
-			TrackIndex:      gomcp.ParseInt(req, "track_index", 0),
-			PositionSeconds: gomcp.ParseFloat64(req, "position_seconds", 0),
+			SequenceID: sequenceID,
+			Text:       text,
+			Style: TextStyle{
+				FontSize: gomcp.ParseFloat64(req, "font_size", 48),
+				ColorHex: gomcp.ParseString(req, "color", "#FFFFFF"),
+				Position: Position{
+					X: gomcp.ParseFloat64(req, "x", 0.5),
+					Y: gomcp.ParseFloat64(req, "y", 0.5),
+				},
+			},
+			Track: TrackTarget{
+				Type:       orchestrator.TrackTypeVideo,
+				TrackIndex: uint32(gomcp.ParseInt(req, "track_index", 0)),
+			},
+			Position:        secondsToTimecode(positionSecs, 24),
 			DurationSeconds: gomcp.ParseFloat64(req, "duration_seconds", 5.0),
-			FontSize:        gomcp.ParseFloat64(req, "font_size", 48),
-			Color:           gomcp.ParseString(req, "color", "#FFFFFF"),
-			X:               gomcp.ParseFloat64(req, "x", 0.5),
-			Y:               gomcp.ParseFloat64(req, "y", 0.5),
 		}
 
 		result, err := orch.AddText(ctx, params)
@@ -565,7 +594,7 @@ func makeExportHandler(orch Orchestrator, logger *zap.Logger) server.ToolHandler
 		params := &ExportParams{
 			SequenceID: gomcp.ParseString(req, "sequence_id", ""),
 			OutputPath: outputPath,
-			Preset:     gomcp.ParseString(req, "preset", "h264_1080p"),
+			Preset:     exportPresetFromString(gomcp.ParseString(req, "preset", "h264_1080p")),
 		}
 
 		result, err := orch.Export(ctx, params)
@@ -586,15 +615,10 @@ func makeScanAssetsHandler(orch Orchestrator, logger *zap.Logger) server.ToolHan
 			return gomcp.NewToolResultError("parameter 'directory' is required"), nil
 		}
 
+		recursive := gomcp.ParseBoolean(req, "recursive", true)
 		extensions, _ := extractStringSlice(req, "extensions")
 
-		params := &ScanAssetsParams{
-			Directory:  directory,
-			Recursive:  gomcp.ParseBoolean(req, "recursive", true),
-			Extensions: extensions,
-		}
-
-		result, err := orch.ScanAssets(ctx, params)
+		result, err := orch.ScanAssets(ctx, directory, recursive, extensions)
 		if err != nil {
 			logger.Error("scan assets failed", zap.Error(err))
 			return gomcp.NewToolResultError(fmt.Sprintf("failed to scan assets: %v", err)), nil
@@ -613,13 +637,9 @@ func makeParseScriptHandler(orch Orchestrator, logger *zap.Logger) server.ToolHa
 			return gomcp.NewToolResultError("either 'file_path' or 'text' must be provided"), nil
 		}
 
-		params := &ParseScriptParams{
-			FilePath: filePath,
-			Text:     text,
-			Format:   gomcp.ParseString(req, "format", ""),
-		}
+		format := gomcp.ParseString(req, "format", "")
 
-		result, err := orch.ParseScript(ctx, params)
+		result, err := orch.ParseScript(ctx, text, filePath, format)
 		if err != nil {
 			logger.Error("parse script failed", zap.Error(err))
 			return gomcp.NewToolResultError(fmt.Sprintf("failed to parse script: %v", err)), nil
@@ -643,13 +663,26 @@ func makeAutoEditHandler(orch Orchestrator, logger *zap.Logger) server.ToolHandl
 			return gomcp.NewToolResultError("either 'script_path' or 'script_text' must be provided"), nil
 		}
 
+		resolution := gomcp.ParseString(req, "resolution", "1080p")
+		var resWidth, resHeight uint32 = 1920, 1080
+		if resolution == "4k" {
+			resWidth, resHeight = 3840, 2160
+		}
+
+		pacing := gomcp.ParseString(req, "pacing", "moderate")
+
 		params := &AutoEditParams{
 			ScriptPath:      scriptPath,
 			ScriptText:      scriptText,
 			AssetsDirectory: assetsDir,
 			OutputName:      gomcp.ParseString(req, "output_name", ""),
-			Resolution:      gomcp.ParseString(req, "resolution", "1080p"),
-			Pacing:          gomcp.ParseString(req, "pacing", "moderate"),
+			Recursive:       true,
+			MatchStrategy:   "hybrid",
+			EDLSettings: &EDLSettings{
+				Resolution: Resolution{Width: resWidth, Height: resHeight},
+				FrameRate:  24,
+				Pacing:     pacingFromString(pacing),
+			},
 		}
 
 		result, err := orch.AutoEdit(ctx, params)
@@ -697,5 +730,52 @@ func extractStringSlice(req gomcp.CallToolRequest, key string) ([]string, error)
 		return out, nil
 	default:
 		return nil, fmt.Errorf("key %q is not an array (got %T)", key, raw)
+	}
+}
+
+// secondsToTimecode converts a floating-point seconds value to a Timecode struct.
+func secondsToTimecode(secs float64, fps float64) Timecode {
+	totalSecs := uint32(secs)
+	fracFrames := uint32((secs - float64(totalSecs)) * fps)
+	return Timecode{
+		Hours:     totalSecs / 3600,
+		Minutes:   (totalSecs % 3600) / 60,
+		Seconds:   totalSecs % 60,
+		Frames:    fracFrames,
+		FrameRate: fps,
+	}
+}
+
+// exportPresetFromString converts a string preset name to the ExportPreset enum.
+func exportPresetFromString(s string) ExportPreset {
+	switch s {
+	case "h264_1080p":
+		return orchestrator.ExportPresetH264_1080P
+	case "h264_4k":
+		return orchestrator.ExportPresetH264_4K
+	case "prores_422":
+		return orchestrator.ExportPresetProRes422
+	case "prores_4444":
+		return orchestrator.ExportPresetProRes4444
+	case "dnxhd":
+		return orchestrator.ExportPresetDNxHR
+	default:
+		return orchestrator.ExportPresetH264_1080P
+	}
+}
+
+// pacingFromString converts a string pacing name to the PacingPreset enum.
+func pacingFromString(s string) orchestrator.PacingPreset {
+	switch s {
+	case "slow":
+		return orchestrator.PacingPresetSlow
+	case "moderate":
+		return orchestrator.PacingPresetModerate
+	case "fast":
+		return orchestrator.PacingPresetFast
+	case "dynamic":
+		return orchestrator.PacingPresetDynamic
+	default:
+		return orchestrator.PacingPresetModerate
 	}
 }

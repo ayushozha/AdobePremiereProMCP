@@ -58,3 +58,4 @@ Thumbs.db
 *.log
 tmp/
 .cache/
+go-orchestrator/cli

@@ -31,17 +31,13 @@ func newPremiereBridgeClient(addr string, dialTimeout, callTimeout time.Duration
 	logger = logger.With(zap.String("client", "premiere_bridge"), zap.String("addr", addr))
 	logger.Info("connecting to premiere bridge service")
 
-	ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
-	defer cancel()
-
-	conn, err := grpc.DialContext(ctx, addr,
+	conn, err := grpc.NewClient(addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:                30 * time.Second,
 			Timeout:             10 * time.Second,
 			PermitWithoutStream: true,
 		}),
-		grpc.WithBlock(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("premiere bridge dial %s: %w", addr, err)

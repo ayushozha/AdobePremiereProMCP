@@ -11,20 +11,27 @@ import (
 //
 // The orchestrator parameter provides the concrete implementation that
 // each tool handler delegates to for performing actual editing operations.
-func NewMCPServer(orchestrator Orchestrator, logger *zap.Logger) *server.MCPServer {
+func NewMCPServer(orchestrator Orchestrator, version string, logger *zap.Logger) *server.MCPServer {
+	if version == "" {
+		version = "dev"
+	}
+
 	s := server.NewMCPServer(
 		"premierpro-mcp",
-		"0.1.0",
+		version,
 		server.WithToolCapabilities(true),
 		server.WithRecovery(),
 		server.WithLogging(),
+		server.WithInstructions("PremierPro MCP orchestrator — controls Adobe Premiere Pro through natural language. "+
+			"Available tool categories: project inspection, media scanning, timeline editing, "+
+			"script-to-edit pipeline, and export."),
 	)
 
 	registerTools(s, orchestrator, logger)
 
 	logger.Info("MCP server initialized",
 		zap.String("name", "premierpro-mcp"),
-		zap.String("version", "0.1.0"),
+		zap.String("version", version),
 	)
 
 	return s
