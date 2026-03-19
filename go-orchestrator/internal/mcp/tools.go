@@ -34,6 +34,7 @@ func registerTools(s *server.MCPServer, orch Orchestrator, logger *zap.Logger) {
 	registerTransformTools(s, orch, logger)
 	registerAITools(s, orch, logger)
 	registerAITools2(s, orch, logger)
+	registerMetadataTools(s, orch, logger)
 }
 
 // ---------------------------------------------------------------------------

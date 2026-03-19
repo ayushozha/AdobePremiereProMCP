@@ -8609,3 +8609,733 @@ function getMediaDiskUsage() {
         });
     } catch (e) { return _err("getMediaDiskUsage failed: " + e.message); }
 }
+
+// ===========================================================================
+// Batch Operations & Automation
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Batch Import
+// ---------------------------------------------------------------------------
+
+function batchImportWithMetadata(itemsJson) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = JSON.parse(itemsJson);
+        if (!(items instanceof Array)) return _err("itemsJson must be a JSON array");
+        var results = [];
+        for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            var filePath = item.path;
+            if (!filePath) { results.push({index: i, success: false, error: "missing path"}); continue; }
+            var targetBin = app.project.rootItem;
+            if (item.bin) {
+                var found = _findBinByPath(item.bin);
+                if (found) targetBin = found;
+            }
+            var importOk = app.project.importFiles([filePath], true, targetBin, false);
+            if (!importOk) { results.push({index: i, success: false, error: "import failed for " + filePath}); continue; }
+            var imported = null;
+            for (var c = targetBin.children.numItems - 1; c >= 0; c--) {
+                var child = targetBin.children[c];
+                if (child.getMediaPath && child.getMediaPath() === filePath) { imported = child; break; }
+            }
+            if (imported) {
+                if (item.label !== undefined && item.label !== null) {
+                    imported.setColorLabel(parseInt(item.label, 10) || 0);
+                }
+                if (item.metadata && typeof item.metadata === "object") {
+                    for (var key in item.metadata) {
+                        if (item.metadata.hasOwnProperty(key)) {
+                            try { imported.setOverrideProjectMetadata(item.metadata[key], key); } catch (me) {}
+                        }
+                    }
+                }
+            }
+            results.push({index: i, success: true, path: filePath, bin: item.bin || "/"});
+        }
+        return _ok({imported: results.length, details: results});
+    } catch (e) { return _err("batchImportWithMetadata failed: " + e.message); }
+}
+
+function importImageSequence(folderPath, fps, targetBin) {
+    try {
+        if (!app.project) return _err("No project is open");
+        if (!folderPath) return _err("folderPath is required");
+        fps = parseFloat(fps) || 24;
+        var bin = app.project.rootItem;
+        if (targetBin) { var found = _findBinByPath(targetBin); if (found) bin = found; }
+        var importOk = app.project.importFiles([folderPath], true, bin, true);
+        if (!importOk) return _err("Failed to import image sequence from " + folderPath);
+        var lastItem = null;
+        for (var c = bin.children.numItems - 1; c >= 0; c--) { lastItem = bin.children[c]; break; }
+        return _ok({folderPath: folderPath, fps: fps, targetBin: targetBin || "/", imported: true, itemName: lastItem ? lastItem.name : "unknown"});
+    } catch (e) { return _err("importImageSequence failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Batch Export
+// ---------------------------------------------------------------------------
+
+function batchExportSequences(sequenceIndicesJson, outputDir, presetPath) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var indices = JSON.parse(sequenceIndicesJson);
+        if (!(indices instanceof Array)) return _err("sequenceIndicesJson must be a JSON array");
+        if (!outputDir) return _err("outputDir is required");
+        if (!presetPath) return _err("presetPath is required");
+        var results = [];
+        for (var i = 0; i < indices.length; i++) {
+            var seqIndex = parseInt(indices[i], 10);
+            if (seqIndex < 0 || seqIndex >= app.project.sequences.numSequences) {
+                results.push({index: seqIndex, success: false, error: "sequence index out of range"}); continue;
+            }
+            var seq = app.project.sequences[seqIndex];
+            var outPath = outputDir + "/" + seq.name.replace(/[^a-zA-Z0-9_\-\.]/g, "_") + ".mp4";
+            try {
+                app.project.activeSequence = seq;
+                seq.exportAsMediaDirect(outPath, presetPath, 1);
+                results.push({index: seqIndex, name: seq.name, outputPath: outPath, success: true});
+            } catch (ex) { results.push({index: seqIndex, name: seq.name, success: false, error: ex.message}); }
+        }
+        return _ok({exported: results.length, details: results});
+    } catch (e) { return _err("batchExportSequences failed: " + e.message); }
+}
+
+function exportAllSequences(outputDir, presetPath) {
+    try {
+        if (!app.project) return _err("No project is open");
+        if (!outputDir) return _err("outputDir is required");
+        if (!presetPath) return _err("presetPath is required");
+        var results = [];
+        var count = app.project.sequences.numSequences;
+        for (var i = 0; i < count; i++) {
+            var seq = app.project.sequences[i];
+            var outPath = outputDir + "/" + seq.name.replace(/[^a-zA-Z0-9_\-\.]/g, "_") + ".mp4";
+            try {
+                app.project.activeSequence = seq;
+                seq.exportAsMediaDirect(outPath, presetPath, 1);
+                results.push({index: i, name: seq.name, outputPath: outPath, success: true});
+            } catch (ex) { results.push({index: i, name: seq.name, success: false, error: ex.message}); }
+        }
+        return _ok({totalSequences: count, exported: results.length, details: results});
+    } catch (e) { return _err("exportAllSequences failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Batch Effects
+// ---------------------------------------------------------------------------
+
+function applyEffectToMultipleClips(trackType, trackIndex, clipIndicesJson, effectName) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase();
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        if (!effectName) return _err("effectName is required");
+        var clipIndices = JSON.parse(clipIndicesJson);
+        if (!(clipIndices instanceof Array)) return _err("clipIndicesJson must be a JSON array");
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex >= tracks.numTracks) return _err("Track index out of range");
+        var qe = null;
+        try { qe = app.enableQE(); } catch(qex) {}
+        if (!qe) return _err("QE DOM not available; effects require QE");
+        var qeSeq = qe.project.getActiveSequence();
+        var qeTrack = (trackType === "audio") ? qeSeq.getAudioTrackAt(trackIndex) : qeSeq.getVideoTrackAt(trackIndex);
+        var results = [];
+        for (var i = 0; i < clipIndices.length; i++) {
+            var ci = parseInt(clipIndices[i], 10);
+            try {
+                var qeClip = qeTrack.getItemAt(ci);
+                if (!qeClip) { results.push({clipIndex: ci, success: false, error: "clip not found"}); continue; }
+                qeClip.addVideoEffect(qe.project.getVideoEffectByName(effectName));
+                results.push({clipIndex: ci, success: true, effect: effectName});
+            } catch (ex) { results.push({clipIndex: ci, success: false, error: ex.message}); }
+        }
+        return _ok({trackType: trackType, trackIndex: trackIndex, effect: effectName, results: results});
+    } catch (e) { return _err("applyEffectToMultipleClips failed: " + e.message); }
+}
+
+function removeAllEffects(trackType, trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase();
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        clipIndex = parseInt(clipIndex, 10) || 0;
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex >= tracks.numTracks) return _err("Track index out of range");
+        var track = tracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+        var clip = track.clips[clipIndex];
+        if (!clip.components) return _err("Clip has no components");
+        var removed = 0;
+        var startIdx = (trackType === "video") ? 2 : 1;
+        for (var ci = clip.components.numItems - 1; ci >= startIdx; ci--) {
+            try { clip.components[ci].remove(); removed++; } catch (re) {}
+        }
+        return _ok({trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, effectsRemoved: removed});
+    } catch (e) { return _err("removeAllEffects failed: " + e.message); }
+}
+
+function applyTransitionToAllCuts(trackIndex, transitionName, duration) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        transitionName = transitionName || "Cross Dissolve";
+        duration = parseFloat(duration) || 1.0;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
+        var track = seq.videoTracks[trackIndex];
+        var qe = null;
+        try { qe = app.enableQE(); } catch(qex) {}
+        if (!qe) return _err("QE DOM not available");
+        var qeSeq = qe.project.getActiveSequence();
+        var qeTrack = qeSeq.getVideoTrackAt(trackIndex);
+        var applied = 0;
+        var numClips = track.clips.numItems;
+        for (var i = 0; i < numClips - 1; i++) {
+            try {
+                var qeClip = qeTrack.getItemAt(i);
+                if (qeClip) { qeClip.addTransition(qe.project.getVideoTransitionByName(transitionName), false, duration.toString()); applied++; }
+            } catch (te) {}
+        }
+        return _ok({trackIndex: trackIndex, transitionName: transitionName, duration: duration, cutsProcessed: numClips - 1, transitionsApplied: applied});
+    } catch (e) { return _err("applyTransitionToAllCuts failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Batch Color
+// ---------------------------------------------------------------------------
+
+function applyLUTToAllClips(trackIndex, lutPath) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        if (!lutPath) return _err("lutPath is required");
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
+        var track = seq.videoTracks[trackIndex];
+        var applied = 0; var errors = [];
+        for (var i = 0; i < track.clips.numItems; i++) {
+            try {
+                var lumetri = _getLumetriComponent(trackIndex, i);
+                if (lumetri && lumetri.comp) {
+                    var lutProp = null;
+                    for (var p = 0; p < lumetri.comp.properties.numItems; p++) {
+                        var prop = lumetri.comp.properties[p];
+                        if (prop.displayName === "Input LUT" || prop.displayName === "LUT") { lutProp = prop; break; }
+                    }
+                    if (lutProp) { lutProp.setValue(lutPath); applied++; }
+                    else { errors.push({clipIndex: i, error: "LUT property not found"}); }
+                } else { errors.push({clipIndex: i, error: "Could not get Lumetri component"}); }
+            } catch (ce) { errors.push({clipIndex: i, error: ce.message}); }
+        }
+        return _ok({trackIndex: trackIndex, lutPath: lutPath, totalClips: track.clips.numItems, applied: applied, errors: errors});
+    } catch (e) { return _err("applyLUTToAllClips failed: " + e.message); }
+}
+
+function resetColorOnAllClips(trackIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
+        var track = seq.videoTracks[trackIndex];
+        var resetCount = 0;
+        for (var i = 0; i < track.clips.numItems; i++) {
+            try {
+                var clip = track.clips[i];
+                if (clip.components) {
+                    for (var ci = clip.components.numItems - 1; ci >= 2; ci--) {
+                        var comp = clip.components[ci];
+                        if (comp.displayName === "Lumetri Color" || comp.matchName === "AdjustmentLumetriEffect") { comp.remove(); resetCount++; break; }
+                    }
+                }
+            } catch (re) {}
+        }
+        return _ok({trackIndex: trackIndex, totalClips: track.clips.numItems, lumetriReset: resetCount});
+    } catch (e) { return _err("resetColorOnAllClips failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Batch Audio
+// ---------------------------------------------------------------------------
+
+function normalizeAllAudio(targetDb) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        targetDb = _clampDb(targetDb);
+        var normalized = 0;
+        for (var ti = 0; ti < seq.audioTracks.numTracks; ti++) {
+            var track = seq.audioTracks[ti];
+            if (!track.clips) continue;
+            for (var ci = 0; ci < track.clips.numItems; ci++) {
+                try { var p = _findVolumeParam(track.clips[ci]); if (p) { p.setValue(targetDb, true); normalized++; } } catch (ne) {}
+            }
+        }
+        return _ok({targetDb: targetDb, clipsNormalized: normalized});
+    } catch (e) { return _err("normalizeAllAudio failed: " + e.message); }
+}
+
+function muteAllAudioTracks() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var muted = 0;
+        for (var i = 0; i < seq.audioTracks.numTracks; i++) { try { seq.audioTracks[i].setMute(1); muted++; } catch (me) {} }
+        return _ok({tracksMuted: muted, totalAudioTracks: seq.audioTracks.numTracks});
+    } catch (e) { return _err("muteAllAudioTracks failed: " + e.message); }
+}
+
+function unmuteAllAudioTracks() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var unmuted = 0;
+        for (var i = 0; i < seq.audioTracks.numTracks; i++) { try { seq.audioTracks[i].setMute(0); unmuted++; } catch (me) {} }
+        return _ok({tracksUnmuted: unmuted, totalAudioTracks: seq.audioTracks.numTracks});
+    } catch (e) { return _err("unmuteAllAudioTracks failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Conforming
+// ---------------------------------------------------------------------------
+
+function conformSequenceToClip(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        projectItemIndex = parseInt(projectItemIndex, 10) || 0;
+        var rootItem = app.project.rootItem;
+        if (projectItemIndex >= rootItem.children.numItems) return _err("Project item index out of range");
+        var item = rootItem.children[projectItemIndex];
+        var newSeq = app.project.createNewSequenceFromClips(item.name + "_conformed", [item], app.project.rootItem);
+        if (newSeq) {
+            var settings = newSeq.getSettings();
+            if (settings) { seq.setSettings(settings); }
+            return _ok({conformed: true, sourceItem: item.name, sequenceName: seq.name});
+        }
+        return _err("Could not create reference sequence from clip");
+    } catch (e) { return _err("conformSequenceToClip failed: " + e.message); }
+}
+
+function scaleAllClipsToFrame() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var seqWidth = seq.frameSizeHorizontal;
+        var seqHeight = seq.frameSizeVertical;
+        var scaled = 0;
+        for (var ti = 0; ti < seq.videoTracks.numTracks; ti++) {
+            var track = seq.videoTracks[ti];
+            if (!track.clips) continue;
+            for (var ci = 0; ci < track.clips.numItems; ci++) {
+                try {
+                    var clip = track.clips[ci];
+                    if (!clip.components) continue;
+                    var motion = clip.components[0];
+                    if (!motion || motion.displayName !== "Motion") continue;
+                    for (var pi = 0; pi < motion.properties.numItems; pi++) {
+                        if (motion.properties[pi].displayName === "Scale") { motion.properties[pi].setValue(100, true); scaled++; break; }
+                    }
+                } catch (se) {}
+            }
+        }
+        return _ok({sequenceSize: seqWidth + "x" + seqHeight, clipsScaled: scaled});
+    } catch (e) { return _err("scaleAllClipsToFrame failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Timeline Operations
+// ---------------------------------------------------------------------------
+
+function selectAllClipsOnTrack(trackType, trackIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase();
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex >= tracks.numTracks) return _err("Track index out of range");
+        var track = tracks[trackIndex];
+        var selected = 0;
+        if (track.clips) { for (var i = 0; i < track.clips.numItems; i++) { try { track.clips[i].setSelected(true, true); selected++; } catch (se) {} } }
+        return _ok({trackType: trackType, trackIndex: trackIndex, clipsSelected: selected});
+    } catch (e) { return _err("selectAllClipsOnTrack failed: " + e.message); }
+}
+
+function selectAllClipsBetween(startSeconds, endSeconds) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        startSeconds = parseFloat(startSeconds) || 0;
+        endSeconds = parseFloat(endSeconds) || 0;
+        if (endSeconds <= startSeconds) return _err("endSeconds must be greater than startSeconds");
+        var selected = 0;
+        for (var vt = 0; vt < seq.videoTracks.numTracks; vt++) {
+            var vTrack = seq.videoTracks[vt];
+            if (!vTrack.clips) continue;
+            for (var ci = 0; ci < vTrack.clips.numItems; ci++) {
+                var clip = vTrack.clips[ci];
+                if (_timeToSeconds(clip.start) < endSeconds && _timeToSeconds(clip.end) > startSeconds) { try { clip.setSelected(true, true); selected++; } catch (se) {} }
+            }
+        }
+        for (var at = 0; at < seq.audioTracks.numTracks; at++) {
+            var aTrack = seq.audioTracks[at];
+            if (!aTrack.clips) continue;
+            for (var aci = 0; aci < aTrack.clips.numItems; aci++) {
+                var aclip = aTrack.clips[aci];
+                if (_timeToSeconds(aclip.start) < endSeconds && _timeToSeconds(aclip.end) > startSeconds) { try { aclip.setSelected(true, true); selected++; } catch (se2) {} }
+            }
+        }
+        return _ok({startSeconds: startSeconds, endSeconds: endSeconds, clipsSelected: selected});
+    } catch (e) { return _err("selectAllClipsBetween failed: " + e.message); }
+}
+
+function deleteAllClipsBetween(trackType, trackIndex, startSeconds, endSeconds) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase();
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        startSeconds = parseFloat(startSeconds) || 0;
+        endSeconds = parseFloat(endSeconds) || 0;
+        if (endSeconds <= startSeconds) return _err("endSeconds must be greater than startSeconds");
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex >= tracks.numTracks) return _err("Track index out of range");
+        var track = tracks[trackIndex];
+        var deleted = 0;
+        if (track.clips) {
+            for (var i = track.clips.numItems - 1; i >= 0; i--) {
+                var clip = track.clips[i];
+                if (_timeToSeconds(clip.start) >= startSeconds && _timeToSeconds(clip.end) <= endSeconds) {
+                    try { clip.remove(false, false); deleted++; } catch (de) {}
+                }
+            }
+        }
+        return _ok({trackType: trackType, trackIndex: trackIndex, startSeconds: startSeconds, endSeconds: endSeconds, clipsDeleted: deleted});
+    } catch (e) { return _err("deleteAllClipsBetween failed: " + e.message); }
+}
+
+function rippleDeleteAllGaps() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var gapsClosed = 0;
+        for (var vt = 0; vt < seq.videoTracks.numTracks; vt++) {
+            var vTrack = seq.videoTracks[vt];
+            if (!vTrack.clips || vTrack.clips.numItems < 2) continue;
+            for (var ci = 1; ci < vTrack.clips.numItems; ci++) {
+                var prevEnd = _timeToSeconds(vTrack.clips[ci - 1].end);
+                var currStart = _timeToSeconds(vTrack.clips[ci].start);
+                if (currStart > prevEnd + 0.001) { try { vTrack.clips[ci].move(prevEnd); gapsClosed++; } catch (me) {} }
+            }
+        }
+        for (var at = 0; at < seq.audioTracks.numTracks; at++) {
+            var aTrack = seq.audioTracks[at];
+            if (!aTrack.clips || aTrack.clips.numItems < 2) continue;
+            for (var aci = 1; aci < aTrack.clips.numItems; aci++) {
+                var aPrevEnd = _timeToSeconds(aTrack.clips[aci - 1].end);
+                var aCurrStart = _timeToSeconds(aTrack.clips[aci].start);
+                if (aCurrStart > aPrevEnd + 0.001) { try { aTrack.clips[aci].move(aPrevEnd); gapsClosed++; } catch (ame) {} }
+            }
+        }
+        return _ok({gapsClosed: gapsClosed});
+    } catch (e) { return _err("rippleDeleteAllGaps failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Project Cleanup
+// ---------------------------------------------------------------------------
+
+function removeUnusedMedia() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var usedPaths = {};
+        for (var si = 0; si < app.project.sequences.numSequences; si++) {
+            var seq = app.project.sequences[si];
+            for (var vt = 0; vt < seq.videoTracks.numTracks; vt++) {
+                var vTrack = seq.videoTracks[vt]; if (!vTrack.clips) continue;
+                for (var ci = 0; ci < vTrack.clips.numItems; ci++) { var clip = vTrack.clips[ci]; if (clip.projectItem && clip.projectItem.getMediaPath) usedPaths[clip.projectItem.getMediaPath()] = true; }
+            }
+            for (var at = 0; at < seq.audioTracks.numTracks; at++) {
+                var aTrack = seq.audioTracks[at]; if (!aTrack.clips) continue;
+                for (var aci = 0; aci < aTrack.clips.numItems; aci++) { var aclip = aTrack.clips[aci]; if (aclip.projectItem && aclip.projectItem.getMediaPath) usedPaths[aclip.projectItem.getMediaPath()] = true; }
+            }
+        }
+        var toRemove = [];
+        function _collectUnused(parent) {
+            for (var i = parent.children.numItems - 1; i >= 0; i--) {
+                var child = parent.children[i];
+                if (child.type === 2) { _collectUnused(child); }
+                else if (child.getMediaPath) { var path = child.getMediaPath(); if (path && !usedPaths[path]) toRemove.push(child); }
+            }
+        }
+        _collectUnused(app.project.rootItem);
+        var removed = 0;
+        for (var ri = 0; ri < toRemove.length; ri++) { try { toRemove[ri].remove(); removed++; } catch (re) {} }
+        return _ok({unusedFound: toRemove.length, removed: removed});
+    } catch (e) { return _err("removeUnusedMedia failed: " + e.message); }
+}
+
+function getUnusedMedia() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var usedPaths = {};
+        for (var si = 0; si < app.project.sequences.numSequences; si++) {
+            var seq = app.project.sequences[si];
+            for (var vt = 0; vt < seq.videoTracks.numTracks; vt++) {
+                var vTrack = seq.videoTracks[vt]; if (!vTrack.clips) continue;
+                for (var ci = 0; ci < vTrack.clips.numItems; ci++) { var clip = vTrack.clips[ci]; if (clip.projectItem && clip.projectItem.getMediaPath) usedPaths[clip.projectItem.getMediaPath()] = true; }
+            }
+            for (var at = 0; at < seq.audioTracks.numTracks; at++) {
+                var aTrack = seq.audioTracks[at]; if (!aTrack.clips) continue;
+                for (var aci = 0; aci < aTrack.clips.numItems; aci++) { var aclip = aTrack.clips[aci]; if (aclip.projectItem && aclip.projectItem.getMediaPath) usedPaths[aclip.projectItem.getMediaPath()] = true; }
+            }
+        }
+        var unused = [];
+        function _findUnused(parent) {
+            for (var i = 0; i < parent.children.numItems; i++) {
+                var child = parent.children[i];
+                if (child.type === 2) { _findUnused(child); }
+                else if (child.getMediaPath) { var path = child.getMediaPath(); if (path && !usedPaths[path]) unused.push({name: child.name, path: path, type: child.type}); }
+            }
+        }
+        _findUnused(app.project.rootItem);
+        return _ok({unusedCount: unused.length, items: unused});
+    } catch (e) { return _err("getUnusedMedia failed: " + e.message); }
+}
+
+function flattenAllBins() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var rootItem = app.project.rootItem;
+        var moved = 0;
+        function _flatten(parent) {
+            for (var i = parent.children.numItems - 1; i >= 0; i--) {
+                var child = parent.children[i];
+                if (child.type === 2) { _flatten(child); }
+                else { if (parent !== rootItem) { try { child.moveBin(rootItem); moved++; } catch (me) {} } }
+            }
+        }
+        _flatten(rootItem);
+        var binsRemoved = 0;
+        function _removeEmptyBins(parent) {
+            for (var i = parent.children.numItems - 1; i >= 0; i--) {
+                var child = parent.children[i];
+                if (child.type === 2) { _removeEmptyBins(child); if (child.children.numItems === 0) { try { child.remove(); binsRemoved++; } catch (re) {} } }
+            }
+        }
+        _removeEmptyBins(rootItem);
+        return _ok({itemsMoved: moved, emptyBinsRemoved: binsRemoved});
+    } catch (e) { return _err("flattenAllBins failed: " + e.message); }
+}
+
+function autoOrganizeBins() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var rootItem = app.project.rootItem;
+        var binNames = ["Video", "Audio", "Images", "Graphics"];
+        var bins = {};
+        for (var b = 0; b < binNames.length; b++) {
+            var found = null;
+            for (var i = 0; i < rootItem.children.numItems; i++) { if (rootItem.children[i].type === 2 && rootItem.children[i].name === binNames[b]) { found = rootItem.children[i]; break; } }
+            if (!found) {
+                rootItem.createBin(binNames[b]);
+                for (var j = rootItem.children.numItems - 1; j >= 0; j--) { if (rootItem.children[j].type === 2 && rootItem.children[j].name === binNames[b]) { found = rootItem.children[j]; break; } }
+            }
+            bins[binNames[b]] = found;
+        }
+        var movedCounts = {Video: 0, Audio: 0, Images: 0, Graphics: 0};
+        var videoExts = /\.(mp4|mov|avi|mkv|wmv|flv|m4v|mpg|mpeg|webm|mxf|r3d)$/i;
+        var audioExts = /\.(wav|mp3|aac|aif|aiff|flac|ogg|wma|m4a)$/i;
+        var imageExts = /\.(jpg|jpeg|png|tiff|tif|bmp|gif|psd|ai|eps|svg|webp|exr|dpx)$/i;
+        var graphicsExts = /\.(mogrt|prproj|aep|psq)$/i;
+        for (var ri = rootItem.children.numItems - 1; ri >= 0; ri--) {
+            var item = rootItem.children[ri];
+            if (item.type === 2) continue;
+            var path = ""; try { path = item.getMediaPath() || item.name || ""; } catch(pe) { path = item.name || ""; }
+            var targetBin = null;
+            if (videoExts.test(path)) targetBin = "Video";
+            else if (audioExts.test(path)) targetBin = "Audio";
+            else if (imageExts.test(path)) targetBin = "Images";
+            else if (graphicsExts.test(path)) targetBin = "Graphics";
+            if (targetBin && bins[targetBin]) { try { item.moveBin(bins[targetBin]); movedCounts[targetBin]++; } catch (me) {} }
+        }
+        return _ok({organized: true, moved: movedCounts});
+    } catch (e) { return _err("autoOrganizeBins failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Markers Batch
+// ---------------------------------------------------------------------------
+
+function exportMarkersAsCSV(outputPath) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence; if (!seq) return _err("No active sequence");
+        if (!outputPath) return _err("outputPath is required");
+        var markers = seq.markers; if (!markers) return _err("Sequence has no markers object");
+        var csv = "Index,Name,Comment,Start,End,Duration,Type,Color\n";
+        var marker = markers.getFirstMarker(); var idx = 0;
+        while (marker) {
+            var startSec = _timeToSeconds(marker.start); var endSec = _timeToSeconds(marker.end); var dur = endSec - startSec;
+            var name = (marker.name || "").replace(/,/g, ";").replace(/\n/g, " ");
+            var comment = (marker.comments || "").replace(/,/g, ";").replace(/\n/g, " ");
+            csv += idx + "," + name + "," + comment + "," + startSec.toFixed(3) + "," + endSec.toFixed(3) + "," + dur.toFixed(3) + "," + (marker.type || "") + "," + (marker.getColorByIndex ? marker.getColorByIndex() : "") + "\n";
+            idx++; marker = markers.getNextMarker(marker);
+        }
+        var file = new File(outputPath); file.encoding = "UTF-8"; file.open("w"); file.write(csv); file.close();
+        return _ok({outputPath: outputPath, markerCount: idx});
+    } catch (e) { return _err("exportMarkersAsCSV failed: " + e.message); }
+}
+
+function exportMarkersAsEDL(outputPath) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence; if (!seq) return _err("No active sequence");
+        if (!outputPath) return _err("outputPath is required");
+        var markers = seq.markers; if (!markers) return _err("Sequence has no markers object");
+        var fps = 24; try { fps = parseFloat(seq.getSettings().videoFrameRate) || 24; } catch(fe) {}
+        var edl = "TITLE: " + seq.name + "\nFCM: NON-DROP FRAME\n\n";
+        var marker = markers.getFirstMarker(); var idx = 1;
+        function _secsToTC(s) {
+            var h = Math.floor(s / 3600); s -= h * 3600; var m = Math.floor(s / 60); s -= m * 60;
+            var sec = Math.floor(s); var fr = Math.floor((s - sec) * fps);
+            function _pad(n) { return (n < 10 ? "0" : "") + n; }
+            return _pad(h) + ":" + _pad(m) + ":" + _pad(sec) + ":" + _pad(fr);
+        }
+        while (marker) {
+            var startSec = _timeToSeconds(marker.start); var endSec = _timeToSeconds(marker.end);
+            var padIdx = ("000" + idx).slice(-3);
+            edl += padIdx + "  AX       V     C        " + _secsToTC(startSec) + " " + _secsToTC(endSec) + " " + _secsToTC(startSec) + " " + _secsToTC(endSec) + "\n";
+            if (marker.name) edl += "* FROM CLIP NAME: " + marker.name + "\n";
+            if (marker.comments) edl += "* COMMENT: " + marker.comments + "\n";
+            edl += "\n"; idx++; marker = markers.getNextMarker(marker);
+        }
+        var file = new File(outputPath); file.encoding = "UTF-8"; file.open("w"); file.write(edl); file.close();
+        return _ok({outputPath: outputPath, markerCount: idx - 1});
+    } catch (e) { return _err("exportMarkersAsEDL failed: " + e.message); }
+}
+
+function importMarkersFromCSV(csvPath) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence; if (!seq) return _err("No active sequence");
+        if (!csvPath) return _err("csvPath is required");
+        var file = new File(csvPath); if (!file.exists) return _err("CSV file not found: " + csvPath);
+        file.encoding = "UTF-8"; file.open("r"); var content = file.read(); file.close();
+        var lines = content.split(/\r?\n/); var imported = 0; var markers = seq.markers;
+        for (var i = 1; i < lines.length; i++) {
+            var line = lines[i].replace(/^\s+|\s+$/g, ""); if (!line) continue;
+            var parts = line.split(","); if (parts.length < 3) continue;
+            var name = parts[0] || ""; var comment = parts[1] || "";
+            var startSec = parseFloat(parts[2]) || 0; var endSec = parseFloat(parts[3]) || startSec;
+            var colorIdx = parseInt(parts[4], 10) || 0;
+            try {
+                var newMarker = markers.createMarker(startSec);
+                if (newMarker) { newMarker.name = name; newMarker.comments = comment; if (endSec > startSec) newMarker.end = _secondsToTime(endSec); if (colorIdx > 0 && newMarker.setColorByIndex) newMarker.setColorByIndex(colorIdx); imported++; }
+            } catch (me) {}
+        }
+        return _ok({csvPath: csvPath, markersImported: imported});
+    } catch (e) { return _err("importMarkersFromCSV failed: " + e.message); }
+}
+
+function deleteAllMarkers() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence; if (!seq) return _err("No active sequence");
+        var markers = seq.markers; if (!markers) return _err("Sequence has no markers object");
+        var toDelete = []; var marker = markers.getFirstMarker();
+        while (marker) { toDelete.push(marker); marker = markers.getNextMarker(marker); }
+        var count = 0;
+        for (var i = 0; i < toDelete.length; i++) { try { markers.deleteMarker(toDelete[i]); count++; } catch (de) {} }
+        return _ok({markersDeleted: count});
+    } catch (e) { return _err("deleteAllMarkers failed: " + e.message); }
+}
+
+function convertMarkersToClips(markerColor) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence; if (!seq) return _err("No active sequence");
+        var markers = seq.markers; if (!markers) return _err("Sequence has no markers object");
+        var marker = markers.getFirstMarker(); var created = 0;
+        while (marker) {
+            var include = true;
+            if (markerColor && markerColor !== "") {
+                var mc = ""; try { mc = marker.getColorByIndex ? String(marker.getColorByIndex()) : ""; } catch(ce) {}
+                if (mc !== String(markerColor)) include = false;
+            }
+            if (include) {
+                var startSec = _timeToSeconds(marker.start); var endSec = _timeToSeconds(marker.end);
+                if (endSec <= startSec) endSec = startSec + 1;
+                try { seq.setInPoint(_secondsToTime(startSec)); seq.setOutPoint(_secondsToTime(endSec)); created++; } catch (se) {}
+            }
+            marker = markers.getNextMarker(marker);
+        }
+        return _ok({markersProcessed: created, color: markerColor || "all"});
+    } catch (e) { return _err("convertMarkersToClips failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Automation
+// ---------------------------------------------------------------------------
+
+function runExtendScript(script) {
+    try {
+        if (!script) return _err("script is required");
+        var result = eval(script);
+        if (result === undefined || result === null) return _ok({executed: true, result: null});
+        return _ok({executed: true, result: String(result)});
+    } catch (e) { return _err("runExtendScript failed: " + e.message); }
+}
+
+function getSystemInfo() {
+    try {
+        var info = {
+            os: $.os || "unknown",
+            premiereVersion: app.version || "unknown",
+            premiereBuild: app.build || "unknown",
+            engineName: $.engineName || "unknown",
+            memoryAvailable: $.memCache || 0,
+            locale: $.locale || "unknown",
+            appName: app.name || "Adobe Premiere Pro",
+            appPath: app.path || "unknown"
+        };
+        try { if (app.properties) info.gpuRenderer = app.properties.getProperty("GPU.Renderer") || "unknown"; } catch (ge) {}
+        return _ok(info);
+    } catch (e) { return _err("getSystemInfo failed: " + e.message); }
+}
+
+function getRecentProjects() {
+    try {
+        var recentProjects = [];
+        var currentProject = null;
+        if (app.project) { currentProject = {name: app.project.name || "unknown", path: app.project.path || "unknown"}; }
+        var recentDir = "";
+        if ($.os.indexOf("Win") >= 0) { recentDir = Folder.appData.fsName + "\\Adobe\\Premiere Pro\\" + app.version + "\\Recent"; }
+        else { recentDir = Folder.userData.fsName + "/Adobe/Premiere Pro/" + app.version + "/Recent"; }
+        var recentFolder = new Folder(recentDir);
+        if (recentFolder.exists) {
+            var files = recentFolder.getFiles("*.prproj");
+            for (var i = 0; i < files.length && i < 20; i++) { recentProjects.push({name: files[i].name, path: files[i].fsName, modified: files[i].modified ? files[i].modified.toISOString() : ""}); }
+        }
+        return _ok({currentProject: currentProject, recentProjects: recentProjects});
+    } catch (e) { return _err("getRecentProjects failed: " + e.message); }
+}
