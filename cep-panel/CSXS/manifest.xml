@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExtensionManifest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   Version="11.0"
+                   ExtensionBundleId="com.premierpro.mcp.bridge.bundle"
+                   ExtensionBundleVersion="1.0.0"
+                   ExtensionBundleName="PremierPro MCP Bridge">
+
+    <ExtensionList>
+        <Extension Id="com.premierpro.mcp.bridge" Version="1.0.0" />
+    </ExtensionList>
+
+    <ExecutionEnvironment>
+        <HostList>
+            <!-- Premiere Pro 2023 (v23.0) through 2026 (v26.99) -->
+            <Host Name="PPRO" Version="[23.0,26.99]" />
+        </HostList>
+        <LocaleList>
+            <Locale Code="All" />
+        </LocaleList>
+        <RequiredRuntimeList>
+            <RequiredRuntime Name="CSXS" Version="11.0" />
+        </RequiredRuntimeList>
+    </ExecutionEnvironment>
+
+    <DispatchInfoList>
+        <Extension Id="com.premierpro.mcp.bridge">
+            <DispatchInfo>
+                <Resources>
+                    <MainPath>./src/index.html</MainPath>
+                    <ScriptPath>./src/host/premiere.jsx</ScriptPath>
+                    <CEFCommandLine>
+                        <Parameter>--enable-nodejs</Parameter>
+                        <Parameter>--mixed-context</Parameter>
+                        <Parameter>--allow-file-access-from-files</Parameter>
+                    </CEFCommandLine>
+                </Resources>
+                <Lifecycle>
+                    <AutoVisible>true</AutoVisible>
+                    <StartOn>
+                        <Event>com.adobe.csxs.events.ApplicationActivate</Event>
+                    </StartOn>
+                </Lifecycle>
+                <UI>
+                    <Type>Custom</Type>
+                    <Menu>PremierPro MCP Bridge</Menu>
+                    <Geometry>
+                        <Size>
+                            <Height>200</Height>
+                            <Width>300</Width>
+                        </Size>
+                        <MinSize>
+                            <Height>100</Height>
+                            <Width>200</Width>
+                        </MinSize>
+                    </Geometry>
+                </UI>
+            </DispatchInfo>
+        </Extension>
+    </DispatchInfoList>
+
+</ExtensionManifest>

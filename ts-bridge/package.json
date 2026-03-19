@@ -1,0 +1,33 @@
+{
+  "name": "@premierpro-mcp/ts-bridge",
+  "version": "0.1.0",
+  "description": "TypeScript gRPC bridge between the Go orchestrator and Adobe Premiere Pro (CEP/ExtendScript)",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "lint": "tsc --noEmit",
+    "test": "node --test dist/**/*.test.js"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.10.0",
+    "@grpc/proto-loader": "^0.7.12",
+    "nice-grpc": "^2.1.9",
+    "nice-grpc-common": "^2.0.2",
+    "winston": "^3.13.0",
+    "ws": "^8.17.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.15",
+    "@types/ws": "^8.18.1",
+    "ts-proto": "^1.181.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

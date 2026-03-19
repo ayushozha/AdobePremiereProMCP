@@ -1,0 +1,60 @@
+# ─── Go ───
+go-orchestrator/bin/
+go-orchestrator/vendor/
+
+# ─── Rust ───
+rust-engine/target/
+rust-engine/Cargo.lock
+
+# ─── Python ───
+python-intelligence/__pycache__/
+python-intelligence/**/__pycache__/
+python-intelligence/*.pyc
+python-intelligence/.venv/
+python-intelligence/venv/
+python-intelligence/*.egg-info/
+python-intelligence/dist/
+python-intelligence/build/
+python-intelligence/.mypy_cache/
+python-intelligence/.pytest_cache/
+
+# ─── TypeScript ───
+ts-bridge/node_modules/
+ts-bridge/dist/
+ts-bridge/*.tsbuildinfo
+
+# ─── CEP Panel ───
+cep-panel/node_modules/
+cep-panel/dist/
+cep-panel/build/
+
+# ─── Proto generated ───
+**/generated/
+**/*_pb2.py
+**/*_pb2_grpc.py
+**/*.pb.go
+**/*_pb.d.ts
+**/*_pb.js
+
+# ─── IDE ───
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ─── OS ───
+.DS_Store
+Thumbs.db
+
+# ─── Env & secrets ───
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ─── Logs & temp ───
+*.log
+tmp/
+.cache/

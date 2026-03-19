@@ -1,0 +1,37 @@
+version: v2
+clean: true
+
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/anthropics/premierpro-mcp/gen/go
+
+plugins:
+  # ──── Go ────
+  - remote: buf.build/protocolbuffers/go
+    out: gen/go
+    opt: paths=source_relative
+  - remote: buf.build/grpc/go
+    out: gen/go
+    opt: paths=source_relative
+
+  # ──── Python ────
+  - remote: buf.build/protocolbuffers/python
+    out: gen/python
+  - remote: buf.build/grpc/python
+    out: gen/python
+  - remote: buf.build/protocolbuffers/pyi
+    out: gen/python
+
+  # ──── TypeScript (ts-proto for nice-grpc) ────
+  - remote: buf.build/community/stephenh-ts-proto
+    out: gen/ts
+    opt:
+      - outputServices=nice-grpc
+      - outputServices=generic-definitions
+      - useExactTypes=false
+      - esModuleInterop=true
+
+inputs:
+  - directory: proto/definitions

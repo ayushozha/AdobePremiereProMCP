@@ -1,0 +1,108 @@
+syntax = "proto3";
+
+package premierpro.media.v1;
+
+import "premierpro/common/v1/common.proto";
+
+// MediaEngine handles media file scanning, probing, and analysis.
+// Implemented by the Rust engine.
+service MediaEngineService {
+  // Scan a directory and index all media assets.
+  rpc ScanAssets(ScanAssetsRequest) returns (ScanAssetsResponse);
+
+  // Probe a single media file for detailed metadata.
+  rpc ProbeMedia(ProbeMediaRequest) returns (ProbeMediaResponse);
+
+  // Generate a thumbnail at a specific timestamp.
+  rpc GenerateThumbnail(GenerateThumbnailRequest) returns (GenerateThumbnailResponse);
+
+  // Analyze audio waveform and detect silence regions.
+  rpc AnalyzeWaveform(AnalyzeWaveformRequest) returns (AnalyzeWaveformResponse);
+
+  // Detect scene changes in a video file.
+  rpc DetectScenes(DetectScenesRequest) returns (DetectScenesResponse);
+}
+
+// ─── ScanAssets ───
+
+message ScanAssetsRequest {
+  // Root directory to scan.
+  string directory = 1;
+
+  // Scan subdirectories recursively.
+  bool recursive = 2;
+
+  // File extension filters (e.g., [".mp4", ".mov"]). Empty = all media.
+  repeated string extensions = 3;
+}
+
+message ScanAssetsResponse {
+  repeated premierpro.common.v1.Asset assets = 1;
+  uint32 total_files_scanned = 2;
+  uint32 media_files_found = 3;
+  double scan_duration_seconds = 4;
+}
+
+// ─── ProbeMedia ───
+
+message ProbeMediaRequest {
+  string file_path = 1;
+}
+
+message ProbeMediaResponse {
+  premierpro.common.v1.Asset asset = 1;
+}
+
+// ─── GenerateThumbnail ───
+
+message GenerateThumbnailRequest {
+  string file_path = 1;
+  premierpro.common.v1.Timecode timestamp = 2;
+  premierpro.common.v1.Resolution output_size = 3;
+  string output_format = 4; // "png", "jpg"
+}
+
+message GenerateThumbnailResponse {
+  bytes thumbnail_data = 1;
+  string output_path = 2;
+  premierpro.common.v1.Resolution actual_size = 3;
+}
+
+// ─── AnalyzeWaveform ───
+
+message AnalyzeWaveformRequest {
+  string file_path = 1;
+  uint32 audio_track = 2;
+  double silence_threshold_db = 3; // e.g., -40.0
+  double min_silence_duration_seconds = 4; // e.g., 0.5
+}
+
+message AnalyzeWaveformResponse {
+  repeated SilenceRegion silence_regions = 1;
+  double peak_db = 2;
+  double rms_db = 3;
+  double duration_seconds = 4;
+  repeated float waveform_samples = 5; // downsampled waveform
+}
+
+message SilenceRegion {
+  double start_seconds = 1;
+  double end_seconds = 2;
+  double avg_db = 3;
+}
+
+// ─── DetectScenes ───
+
+message DetectScenesRequest {
+  string file_path = 1;
+  double threshold = 2; // 0.0-1.0, sensitivity of scene detection.
+}
+
+message DetectScenesResponse {
+  repeated SceneChange scenes = 1;
+}
+
+message SceneChange {
+  premierpro.common.v1.Timecode timecode = 1;
+  double confidence = 2;
+}

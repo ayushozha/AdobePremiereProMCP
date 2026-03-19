@@ -1,0 +1,23 @@
+# Default configuration for the PremierPro MCP Go orchestrator.
+# Environment variables override these values (see internal/config/config.go).
+
+# MCP transport: "stdio" (default) or "sse"
+transport: stdio
+
+# Port for SSE transport (ignored when transport is stdio)
+sse_port: 8080
+
+# Log level: debug, info, warn, error
+log_level: info
+
+# gRPC service addresses
+services:
+  rust_engine:
+    address: "localhost:50051"
+    timeout_seconds: 30
+  python_intelligence:
+    address: "localhost:50052"
+    timeout_seconds: 60
+  typescript_bridge:
+    address: "localhost:50053"
+    timeout_seconds: 30

@@ -1,0 +1,139 @@
+syntax = "proto3";
+
+package premierpro.common.v1;
+
+// Timecode in HH:MM:SS:FF format or as total frames.
+message Timecode {
+  uint32 hours = 1;
+  uint32 minutes = 2;
+  uint32 seconds = 3;
+  uint32 frames = 4;
+  double frame_rate = 5;
+}
+
+// A time range defined by in and out points.
+message TimeRange {
+  Timecode in_point = 1;
+  Timecode out_point = 2;
+}
+
+// Video resolution.
+message Resolution {
+  uint32 width = 1;
+  uint32 height = 2;
+}
+
+// Video stream metadata.
+message VideoInfo {
+  string codec = 1;
+  Resolution resolution = 2;
+  double frame_rate = 3;
+  uint64 bitrate_bps = 4;
+  string pixel_format = 5;
+  double duration_seconds = 6;
+}
+
+// Audio stream metadata.
+message AudioInfo {
+  string codec = 1;
+  uint32 sample_rate = 2;
+  uint32 channels = 3;
+  uint64 bitrate_bps = 4;
+  double duration_seconds = 5;
+}
+
+// A media asset with full metadata.
+message Asset {
+  string id = 1;
+  string file_path = 2;
+  string file_name = 3;
+  uint64 file_size_bytes = 4;
+  string mime_type = 5;
+  AssetType asset_type = 6;
+  VideoInfo video = 7;
+  AudioInfo audio = 8;
+  map<string, string> metadata = 9;
+  string fingerprint = 10;
+}
+
+// Type of media asset.
+enum AssetType {
+  ASSET_TYPE_UNSPECIFIED = 0;
+  ASSET_TYPE_VIDEO = 1;
+  ASSET_TYPE_AUDIO = 2;
+  ASSET_TYPE_IMAGE = 3;
+  ASSET_TYPE_GRAPHICS = 4;
+}
+
+// A single entry in an Edit Decision List.
+message EDLEntry {
+  uint32 index = 1;
+  string source_asset_id = 2;
+  TimeRange source_range = 3;
+  TimeRange timeline_range = 4;
+  TrackTarget track = 5;
+  TransitionInfo transition = 6;
+  repeated EffectInfo effects = 7;
+  string notes = 8;
+}
+
+// Target track for clip placement.
+message TrackTarget {
+  TrackType type = 1;
+  uint32 track_index = 2;
+}
+
+// Track type.
+enum TrackType {
+  TRACK_TYPE_UNSPECIFIED = 0;
+  TRACK_TYPE_VIDEO = 1;
+  TRACK_TYPE_AUDIO = 2;
+}
+
+// Transition between clips.
+message TransitionInfo {
+  string type = 1;
+  double duration_seconds = 2;
+  string alignment = 3;
+}
+
+// Effect applied to a clip.
+message EffectInfo {
+  string name = 1;
+  map<string, string> parameters = 2;
+}
+
+// A full Edit Decision List.
+message EditDecisionList {
+  string id = 1;
+  string name = 2;
+  Resolution sequence_resolution = 3;
+  double sequence_frame_rate = 4;
+  repeated EDLEntry entries = 5;
+}
+
+// Status for async operations.
+enum OperationStatus {
+  OPERATION_STATUS_UNSPECIFIED = 0;
+  OPERATION_STATUS_PENDING = 1;
+  OPERATION_STATUS_RUNNING = 2;
+  OPERATION_STATUS_COMPLETED = 3;
+  OPERATION_STATUS_FAILED = 4;
+}
+
+// Text overlay style.
+message TextStyle {
+  string font_family = 1;
+  double font_size = 2;
+  string color_hex = 3;
+  string alignment = 4;
+  string background_color_hex = 5;
+  double background_opacity = 6;
+  Position position = 7;
+}
+
+// Position on screen (normalized 0.0-1.0).
+message Position {
+  double x = 1;
+  double y = 2;
+}

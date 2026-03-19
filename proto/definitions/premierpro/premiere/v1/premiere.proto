@@ -1,0 +1,262 @@
+syntax = "proto3";
+
+package premierpro.premiere.v1;
+
+import "premierpro/common/v1/common.proto";
+
+// PremiereBridge controls Adobe Premiere Pro via the TypeScript bridge.
+// Implemented by the TypeScript service (CEP panel or standalone Node.js).
+service PremiereBridgeService {
+  // ─── Project ───
+
+  // Get the current Premiere Pro project state.
+  rpc GetProjectState(GetProjectStateRequest) returns (GetProjectStateResponse);
+
+  // ─── Sequence ───
+
+  // Create a new sequence in the project.
+  rpc CreateSequence(CreateSequenceRequest) returns (CreateSequenceResponse);
+
+  // Get the current timeline state of a sequence.
+  rpc GetTimelineState(GetTimelineStateRequest) returns (GetTimelineStateResponse);
+
+  // ─── Clip Operations ───
+
+  // Import a media file into the project.
+  rpc ImportMedia(ImportMediaRequest) returns (ImportMediaResponse);
+
+  // Place a clip on the timeline.
+  rpc PlaceClip(PlaceClipRequest) returns (PlaceClipResponse);
+
+  // Remove a clip from the timeline.
+  rpc RemoveClip(RemoveClipRequest) returns (RemoveClipResponse);
+
+  // ─── Effects & Transitions ───
+
+  // Add a transition between clips.
+  rpc AddTransition(AddTransitionRequest) returns (AddTransitionResponse);
+
+  // Add a text overlay to the timeline.
+  rpc AddText(AddTextRequest) returns (AddTextResponse);
+
+  // Apply an effect to a clip.
+  rpc ApplyEffect(ApplyEffectRequest) returns (ApplyEffectResponse);
+
+  // ─── Audio ───
+
+  // Set audio levels for a clip.
+  rpc SetAudioLevel(SetAudioLevelRequest) returns (SetAudioLevelResponse);
+
+  // ─── Export ───
+
+  // Export the sequence.
+  rpc ExportSequence(ExportSequenceRequest) returns (ExportSequenceResponse);
+
+  // ─── Batch ───
+
+  // Execute a full EDL — creates sequence, imports, places all clips, transitions.
+  rpc ExecuteEDL(ExecuteEDLRequest) returns (ExecuteEDLResponse);
+
+  // ─── Health ───
+
+  // Check if Premiere Pro is running and responsive.
+  rpc Ping(PingRequest) returns (PingResponse);
+}
+
+// ─── Project ───
+
+message GetProjectStateRequest {}
+
+message GetProjectStateResponse {
+  string project_name = 1;
+  string project_path = 2;
+  repeated SequenceInfo sequences = 3;
+  uint32 bin_count = 4;
+  bool is_saved = 5;
+}
+
+message SequenceInfo {
+  string id = 1;
+  string name = 2;
+  premierpro.common.v1.Resolution resolution = 3;
+  double frame_rate = 4;
+  double duration_seconds = 5;
+  uint32 video_track_count = 6;
+  uint32 audio_track_count = 7;
+}
+
+// ─── Sequence ───
+
+message CreateSequenceRequest {
+  string name = 1;
+  premierpro.common.v1.Resolution resolution = 2;
+  double frame_rate = 3;
+  uint32 video_tracks = 4;
+  uint32 audio_tracks = 5;
+}
+
+message CreateSequenceResponse {
+  string sequence_id = 1;
+  string name = 2;
+}
+
+message GetTimelineStateRequest {
+  string sequence_id = 1;
+}
+
+message GetTimelineStateResponse {
+  string sequence_id = 1;
+  repeated TimelineTrack video_tracks = 2;
+  repeated TimelineTrack audio_tracks = 3;
+  double total_duration_seconds = 4;
+}
+
+message TimelineTrack {
+  uint32 index = 1;
+  premierpro.common.v1.TrackType type = 2;
+  repeated TimelineClip clips = 3;
+  bool is_muted = 4;
+  bool is_locked = 5;
+}
+
+message TimelineClip {
+  string clip_id = 1;
+  string source_path = 2;
+  premierpro.common.v1.TimeRange source_range = 3;
+  premierpro.common.v1.TimeRange timeline_range = 4;
+  double speed = 5;
+}
+
+// ─── Import ───
+
+message ImportMediaRequest {
+  string file_path = 1;
+  string target_bin = 2; // bin/folder path in project, empty = root
+}
+
+message ImportMediaResponse {
+  string project_item_id = 1;
+  string name = 2;
+}
+
+// ─── Clip Placement ───
+
+message PlaceClipRequest {
+  string source_path = 1;
+  premierpro.common.v1.TrackTarget track = 2;
+  premierpro.common.v1.Timecode position = 3;
+  premierpro.common.v1.TimeRange source_range = 4;
+  double speed = 5; // 1.0 = normal, 0.5 = half speed, 2.0 = double
+}
+
+message PlaceClipResponse {
+  string clip_id = 1;
+}
+
+message RemoveClipRequest {
+  string clip_id = 1;
+  string sequence_id = 2;
+}
+
+message RemoveClipResponse {}
+
+// ─── Transitions ───
+
+message AddTransitionRequest {
+  string sequence_id = 1;
+  premierpro.common.v1.TrackTarget track = 2;
+  premierpro.common.v1.Timecode position = 3;
+  string transition_type = 4; // "cross_dissolve", "dip_to_black", "wipe", etc.
+  double duration_seconds = 5;
+}
+
+message AddTransitionResponse {
+  string transition_id = 1;
+}
+
+// ─── Text ───
+
+message AddTextRequest {
+  string sequence_id = 1;
+  string text = 2;
+  premierpro.common.v1.TextStyle style = 3;
+  premierpro.common.v1.TrackTarget track = 4;
+  premierpro.common.v1.Timecode position = 5;
+  double duration_seconds = 6;
+}
+
+message AddTextResponse {
+  string clip_id = 1;
+}
+
+// ─── Effects ───
+
+message ApplyEffectRequest {
+  string clip_id = 1;
+  string sequence_id = 2;
+  premierpro.common.v1.EffectInfo effect = 3;
+}
+
+message ApplyEffectResponse {}
+
+// ─── Audio ───
+
+message SetAudioLevelRequest {
+  string clip_id = 1;
+  string sequence_id = 2;
+  double level_db = 3; // e.g., 0.0 = unity, -6.0 = -6dB
+}
+
+message SetAudioLevelResponse {}
+
+// ─── Export ───
+
+message ExportSequenceRequest {
+  string sequence_id = 1;
+  string output_path = 2;
+  ExportPreset preset = 3;
+}
+
+enum ExportPreset {
+  EXPORT_PRESET_UNSPECIFIED = 0;
+  EXPORT_PRESET_H264_1080P = 1;
+  EXPORT_PRESET_H264_4K = 2;
+  EXPORT_PRESET_PRORES_422 = 3;
+  EXPORT_PRESET_PRORES_4444 = 4;
+  EXPORT_PRESET_DNX_HR = 5;
+  EXPORT_PRESET_CUSTOM = 6;
+}
+
+message ExportSequenceResponse {
+  string job_id = 1;
+  premierpro.common.v1.OperationStatus status = 2;
+  string output_path = 3;
+}
+
+// ─── Batch EDL Execution ───
+
+message ExecuteEDLRequest {
+  premierpro.common.v1.EditDecisionList edl = 1;
+  bool auto_import = 2; // import media files if not already in project
+  bool auto_create_sequence = 3;
+}
+
+message ExecuteEDLResponse {
+  string sequence_id = 1;
+  premierpro.common.v1.OperationStatus status = 2;
+  uint32 clips_placed = 3;
+  uint32 transitions_added = 4;
+  repeated string errors = 5;
+  repeated string warnings = 6;
+}
+
+// ─── Health ───
+
+message PingRequest {}
+
+message PingResponse {
+  bool premiere_running = 1;
+  string premiere_version = 2;
+  bool project_open = 3;
+  string bridge_mode = 4; // "cep" or "standalone"
+}

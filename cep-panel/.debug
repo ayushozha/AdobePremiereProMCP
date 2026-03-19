@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Adobe CEP Debug Configuration
+
+  This file enables debugging of the CEP panel during development.
+  Chrome DevTools can be accessed at the specified port.
+
+  IMPORTANT: Also set PlayerDebugMode to 1 in the OS:
+    macOS:   defaults write com.adobe.CSXS.11 PlayerDebugMode 1
+    Windows: Registry HKCU\Software\Adobe\CSXS.11 -> PlayerDebugMode (DWORD) = 1
+-->
+<ExtensionList>
+    <Extension Id="com.premierpro.mcp.bridge">
+        <HostList>
+            <!-- Debug port for Chrome DevTools (connect via http://localhost:9241) -->
+            <Host Name="PPRO" Port="9241" />
+        </HostList>
+    </Extension>
+</ExtensionList>

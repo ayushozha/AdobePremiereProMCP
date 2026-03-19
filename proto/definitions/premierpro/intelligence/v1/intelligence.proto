@@ -1,0 +1,152 @@
+syntax = "proto3";
+
+package premierpro.intelligence.v1;
+
+import "premierpro/common/v1/common.proto";
+
+// Intelligence handles script parsing, EDL generation, and AI-powered asset matching.
+// Implemented by the Python service.
+service IntelligenceService {
+  // Parse a script (text or file) into structured segments.
+  rpc ParseScript(ParseScriptRequest) returns (ParseScriptResponse);
+
+  // Generate an Edit Decision List from a parsed script and available assets.
+  rpc GenerateEDL(GenerateEDLRequest) returns (GenerateEDLResponse);
+
+  // Match script segments to the best available assets.
+  rpc MatchAssets(MatchAssetsRequest) returns (MatchAssetsResponse);
+
+  // Analyze pacing and suggest timing adjustments.
+  rpc AnalyzePacing(AnalyzePacingRequest) returns (AnalyzePacingResponse);
+}
+
+// ─── ParseScript ───
+
+message ParseScriptRequest {
+  oneof source {
+    string text = 1;
+    string file_path = 2;
+  }
+  string format_hint = 3; // "screenplay", "youtube", "podcast", "narration"
+}
+
+message ParseScriptResponse {
+  repeated ScriptSegment segments = 1;
+  ScriptMetadata metadata = 2;
+}
+
+message ScriptSegment {
+  uint32 index = 1;
+  SegmentType type = 2;
+  string content = 3;
+  string speaker = 4;
+  string scene_description = 5;
+  string visual_direction = 6;
+  string audio_direction = 7;
+  double estimated_duration_seconds = 8;
+  repeated string asset_hints = 9; // keywords for asset matching
+}
+
+enum SegmentType {
+  SEGMENT_TYPE_UNSPECIFIED = 0;
+  SEGMENT_TYPE_DIALOGUE = 1;
+  SEGMENT_TYPE_ACTION = 2;
+  SEGMENT_TYPE_BROLL = 3;
+  SEGMENT_TYPE_TRANSITION = 4;
+  SEGMENT_TYPE_TITLE = 5;
+  SEGMENT_TYPE_LOWER_THIRD = 6;
+  SEGMENT_TYPE_VOICEOVER = 7;
+  SEGMENT_TYPE_MUSIC = 8;
+  SEGMENT_TYPE_SFX = 9;
+}
+
+message ScriptMetadata {
+  string title = 1;
+  string format = 2;
+  double estimated_total_duration_seconds = 3;
+  uint32 segment_count = 4;
+}
+
+// ─── GenerateEDL ───
+
+message GenerateEDLRequest {
+  repeated ScriptSegment segments = 1;
+  repeated premierpro.common.v1.Asset available_assets = 2;
+  repeated AssetMatch matches = 3;
+  EDLSettings settings = 4;
+}
+
+message EDLSettings {
+  premierpro.common.v1.Resolution resolution = 1;
+  double frame_rate = 2;
+  string default_transition = 3; // e.g., "cross_dissolve"
+  double default_transition_duration = 4;
+  PacingPreset pacing = 5;
+}
+
+enum PacingPreset {
+  PACING_PRESET_UNSPECIFIED = 0;
+  PACING_PRESET_SLOW = 1;
+  PACING_PRESET_MODERATE = 2;
+  PACING_PRESET_FAST = 3;
+  PACING_PRESET_DYNAMIC = 4;
+}
+
+message GenerateEDLResponse {
+  premierpro.common.v1.EditDecisionList edl = 1;
+  repeated string warnings = 2;
+}
+
+// ─── MatchAssets ───
+
+message MatchAssetsRequest {
+  repeated ScriptSegment segments = 1;
+  repeated premierpro.common.v1.Asset available_assets = 2;
+  MatchStrategy strategy = 3;
+}
+
+enum MatchStrategy {
+  MATCH_STRATEGY_UNSPECIFIED = 0;
+  MATCH_STRATEGY_KEYWORD = 1;
+  MATCH_STRATEGY_EMBEDDING = 2;
+  MATCH_STRATEGY_HYBRID = 3;
+}
+
+message MatchAssetsResponse {
+  repeated AssetMatch matches = 1;
+  repeated UnmatchedSegment unmatched = 2;
+}
+
+message AssetMatch {
+  uint32 segment_index = 1;
+  string asset_id = 2;
+  double confidence = 3;
+  string reasoning = 4;
+  premierpro.common.v1.TimeRange suggested_range = 5;
+}
+
+message UnmatchedSegment {
+  uint32 segment_index = 1;
+  string reason = 2;
+  repeated string suggestions = 3;
+}
+
+// ─── AnalyzePacing ───
+
+message AnalyzePacingRequest {
+  premierpro.common.v1.EditDecisionList edl = 1;
+  string target_mood = 2; // "energetic", "calm", "dramatic"
+}
+
+message AnalyzePacingResponse {
+  repeated PacingAdjustment adjustments = 1;
+  double current_avg_clip_duration = 2;
+  double suggested_avg_clip_duration = 3;
+}
+
+message PacingAdjustment {
+  uint32 edl_entry_index = 1;
+  double current_duration = 2;
+  double suggested_duration = 3;
+  string reason = 4;
+}

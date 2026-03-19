@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>PremierPro MCP Bridge</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: "Segoe UI", "San Francisco", "Helvetica Neue", Arial, sans-serif;
+            font-size: 11px;
+            background-color: #232323;
+            color: #d0d0d0;
+            padding: 8px;
+            overflow: hidden;
+        }
+        #status-bar {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 8px;
+            margin-bottom: 6px;
+            background-color: #1a1a1a;
+            border-radius: 3px;
+            border: 1px solid #333;
+        }
+        #status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #ff4444;
+            transition: background-color 0.3s;
+        }
+        #status-indicator.connected {
+            background-color: #44cc44;
+        }
+        #status-text {
+            flex: 1;
+            font-weight: 600;
+        }
+        #port-display {
+            color: #888;
+            font-size: 10px;
+        }
+        #log-area {
+            width: 100%;
+            height: calc(100vh - 60px);
+            background-color: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 3px;
+            padding: 6px;
+            overflow-y: auto;
+            font-family: "Menlo", "Consolas", "Courier New", monospace;
+            font-size: 10px;
+            line-height: 1.4;
+            color: #999;
+        }
+        .log-entry {
+            margin-bottom: 2px;
+            word-wrap: break-word;
+        }
+        .log-entry.error {
+            color: #ff6b6b;
+        }
+        .log-entry.success {
+            color: #69db7c;
+        }
+        .log-entry.info {
+            color: #74c0fc;
+        }
+    </style>
+</head>
+<body>
+    <div id="status-bar">
+        <div id="status-indicator"></div>
+        <span id="status-text">Disconnected</span>
+        <span id="port-display">Port: --</span>
+    </div>
+    <div id="log-area"></div>
+
+    <script src="CSInterface.js"></script>
+    <script src="panel.js"></script>
+</body>
+</html>
