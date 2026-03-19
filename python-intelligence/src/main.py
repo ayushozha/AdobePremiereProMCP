@@ -40,7 +40,7 @@ def _configure_logging(level: str) -> None:
             structlog.dev.ConsoleRenderer(),
         ],
         wrapper_class=structlog.make_filtering_bound_logger(
-            getattr(structlog, level.upper(), structlog.INFO),  # noqa: B009
+            {"debug": 10, "info": 20, "warn": 30, "warning": 30, "error": 40}.get(level.lower(), 20),
         ),
         context_class=dict,
         logger_factory=structlog.PrintLoggerFactory(),
