@@ -16,6 +16,7 @@ import (
 // with its JSON-Schema parameters and bound to a handler that delegates to the
 // Orchestrator interface.
 func registerTools(s *server.MCPServer, orch Orchestrator, logger *zap.Logger) {
+	registerAppTools(s, logger)
 	registerProjectTools(s, orch, logger)
 	registerEditingTools(s, orch, logger)
 	registerExportTools(s, orch, logger)
