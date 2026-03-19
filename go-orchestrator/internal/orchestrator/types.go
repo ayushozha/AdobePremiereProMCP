@@ -738,6 +738,378 @@ type ProjectSettingsResult struct {
 // AutoEdit types
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// AI-powered editing types
+// ---------------------------------------------------------------------------
+
+// SmartCutParams configures automatic silence-based cutting.
+type SmartCutParams struct {
+	SequenceID         string  `json:"sequence_id"`
+	TrackIndex         int     `json:"track_index"`
+	SilenceThresholdDB float64 `json:"silence_threshold_db"`
+	MinSilenceDuration float64 `json:"min_silence_duration"`
+	PaddingSeconds     float64 `json:"padding_seconds"`
+}
+
+// SmartCutResult is returned by SmartCut.
+type SmartCutResult struct {
+	RegionsDetected int      `json:"regions_detected"`
+	CutsMade        int      `json:"cuts_made"`
+	DurationRemoved float64  `json:"duration_removed_seconds"`
+	Details         []string `json:"details,omitempty"`
+}
+
+// SmartTrimParams configures automatic head/tail silence trimming.
+type SmartTrimParams struct {
+	SequenceID         string  `json:"sequence_id"`
+	TrackIndex         int     `json:"track_index"`
+	ClipIndex          int     `json:"clip_index"`
+	SilenceThresholdDB float64 `json:"silence_threshold_db"`
+	PaddingSeconds     float64 `json:"padding_seconds"`
+}
+
+// SmartTrimResult is returned by SmartTrim.
+type SmartTrimResult struct {
+	HeadTrimmed float64 `json:"head_trimmed_seconds"`
+	TailTrimmed float64 `json:"tail_trimmed_seconds"`
+	NewDuration float64 `json:"new_duration_seconds"`
+}
+
+// AutoColorMatchParams configures automatic color matching between clips.
+type AutoColorMatchParams struct {
+	SequenceID     string `json:"sequence_id"`
+	SrcTrackIndex  int    `json:"src_track_index"`
+	SrcClipIndex   int    `json:"src_clip_index"`
+	DestTrackIndex int    `json:"dest_track_index"`
+	DestClipIndex  int    `json:"dest_clip_index"`
+}
+
+// AutoColorMatchResult is returned by AutoColorMatch.
+type AutoColorMatchResult struct {
+	Status         string  `json:"status"`
+	BrightnessAdj  float64 `json:"brightness_adjustment"`
+	ContrastAdj    float64 `json:"contrast_adjustment"`
+	SaturationAdj  float64 `json:"saturation_adjustment"`
+	TemperatureAdj float64 `json:"temperature_adjustment"`
+}
+
+// AutoAudioLevelsParams configures automatic audio normalisation.
+type AutoAudioLevelsParams struct {
+	SequenceID string  `json:"sequence_id"`
+	TargetLUFS float64 `json:"target_lufs"`
+	MaxPeakDB  float64 `json:"max_peak_db"`
+}
+
+// AutoAudioLevelsResult is returned by AutoAudioLevels.
+type AutoAudioLevelsResult struct {
+	ClipsAdjusted int      `json:"clips_adjusted"`
+	AvgAdjustment float64  `json:"avg_adjustment_db"`
+	Details       []string `json:"details,omitempty"`
+}
+
+// TransitionSuggestion represents a single AI-suggested transition.
+type TransitionSuggestion struct {
+	Position       float64 `json:"position_seconds"`
+	Type           string  `json:"type"`
+	Duration       float64 `json:"duration_seconds"`
+	Confidence     float64 `json:"confidence"`
+	Reason         string  `json:"reason"`
+}
+
+// SuggestTransitionsResult is returned by SuggestTransitions.
+type SuggestTransitionsResult struct {
+	Suggestions []*TransitionSuggestion `json:"suggestions"`
+}
+
+// MusicSuggestion represents a single AI-suggested music cut point.
+type MusicSuggestion struct {
+	TimeSeconds float64 `json:"time_seconds"`
+	Type        string  `json:"type"`
+	Reason      string  `json:"reason"`
+	Intensity   float64 `json:"intensity"`
+}
+
+// SuggestMusicResult is returned by SuggestMusic.
+type SuggestMusicResult struct {
+	Suggestions  []*MusicSuggestion `json:"suggestions"`
+	AvgPacing    float64            `json:"avg_pacing_seconds"`
+	OverallMood  string             `json:"overall_mood"`
+}
+
+// ClipAnalysis contains the analysis of a single clip.
+type ClipAnalysis struct {
+	FilePath        string          `json:"file_path"`
+	Duration        float64         `json:"duration_seconds"`
+	PeakAudioDB     float64         `json:"peak_audio_db"`
+	RmsAudioDB      float64         `json:"rms_audio_db"`
+	SceneChanges    []*SceneChange  `json:"scene_changes,omitempty"`
+	SilenceRegions  []*SilenceRegion `json:"silence_regions,omitempty"`
+	HasMotion       bool            `json:"has_motion"`
+	AvgBrightness   float64         `json:"avg_brightness"`
+}
+
+// SequenceAnalysis contains the analysis of a full sequence.
+type SequenceAnalysis struct {
+	SequenceID       string   `json:"sequence_id"`
+	TotalDuration    float64  `json:"total_duration_seconds"`
+	ClipCount        int      `json:"clip_count"`
+	AvgClipDuration  float64  `json:"avg_clip_duration_seconds"`
+	PacingScore      float64  `json:"pacing_score"`
+	AudioBalance     float64  `json:"audio_balance_score"`
+	GapCount         int      `json:"gap_count"`
+	TransitionCount  int      `json:"transition_count"`
+	Issues           []string `json:"issues,omitempty"`
+	Suggestions      []string `json:"suggestions,omitempty"`
+}
+
+// SequenceStatistics contains summary statistics for a sequence.
+type SequenceStatistics struct {
+	SequenceID        string  `json:"sequence_id"`
+	TotalDuration     float64 `json:"total_duration_seconds"`
+	VideoClipCount    int     `json:"video_clip_count"`
+	AudioClipCount    int     `json:"audio_clip_count"`
+	AvgClipDuration   float64 `json:"avg_clip_duration_seconds"`
+	VideoTrackUsage   int     `json:"video_tracks_used"`
+	AudioTrackUsage   int     `json:"audio_tracks_used"`
+	TransitionCount   int     `json:"transition_count"`
+	EffectsCount      int     `json:"effects_count"`
+	TotalGapDuration  float64 `json:"total_gap_duration_seconds"`
+}
+
+// JumpCutInfo describes a detected potential jump cut.
+type JumpCutInfo struct {
+	PositionSeconds float64 `json:"position_seconds"`
+	Confidence      float64 `json:"confidence"`
+	ClipBefore      string  `json:"clip_before"`
+	ClipAfter       string  `json:"clip_after"`
+}
+
+// JumpCutResult is returned by DetectJumpCuts.
+type JumpCutResult struct {
+	JumpCuts []*JumpCutInfo `json:"jump_cuts"`
+	Count    int            `json:"count"`
+}
+
+// AudioIssue describes a detected audio problem.
+type AudioIssue struct {
+	Type            string  `json:"type"`
+	PositionSeconds float64 `json:"position_seconds"`
+	DurationSeconds float64 `json:"duration_seconds"`
+	Severity        string  `json:"severity"`
+	Description     string  `json:"description"`
+}
+
+// AudioIssuesResult is returned by DetectAudioIssues.
+type AudioIssuesResult struct {
+	Issues []AudioIssue `json:"issues"`
+	Count  int          `json:"count"`
+}
+
+// RoughCutParams configures rough cut generation from script and assets.
+type RoughCutParams struct {
+	ScriptPath      string `json:"script_path,omitempty"`
+	ScriptText      string `json:"script_text,omitempty"`
+	AssetsDirectory string `json:"assets_directory"`
+	OutputName      string `json:"output_name,omitempty"`
+	Pacing          string `json:"pacing,omitempty"`
+}
+
+// RoughCutResult is returned by GenerateRoughCut.
+type RoughCutResult struct {
+	SequenceID     string        `json:"sequence_id"`
+	ClipsPlaced    int           `json:"clips_placed"`
+	TotalDuration  float64       `json:"total_duration_seconds"`
+	UnmatchedCount int           `json:"unmatched_count"`
+	Steps          []*StepStatus `json:"steps"`
+}
+
+// RefineEditParams configures AI refinement of an existing edit.
+type RefineEditParams struct {
+	SequenceID     string `json:"sequence_id"`
+	TargetPacing   string `json:"target_pacing,omitempty"`
+	AddTransitions bool   `json:"add_transitions"`
+	AdjustAudio    bool   `json:"adjust_audio"`
+	TargetMood     string `json:"target_mood,omitempty"`
+}
+
+// RefineEditResult is returned by RefineEdit.
+type RefineEditResult struct {
+	SequenceID      string   `json:"sequence_id"`
+	PacingChanges   int      `json:"pacing_changes"`
+	TransitionsAdded int     `json:"transitions_added"`
+	AudioAdjustments int    `json:"audio_adjustments"`
+	Summary         string   `json:"summary"`
+	Suggestions     []string `json:"suggestions,omitempty"`
+}
+
+// BRollSuggestion represents an AI-suggested B-roll placement.
+type BRollSuggestion struct {
+	PositionSeconds float64  `json:"position_seconds"`
+	DurationSeconds float64  `json:"duration_seconds"`
+	ContentType     string   `json:"content_type"`
+	Reason          string   `json:"reason"`
+	Keywords        []string `json:"keywords,omitempty"`
+}
+
+// BRollSuggestionsResult is returned by AddBRollSuggestions.
+type BRollSuggestionsResult struct {
+	Suggestions []*BRollSuggestion `json:"suggestions"`
+	Count       int                `json:"count"`
+}
+
+// GenerateTrailerParams configures trailer generation.
+type GenerateTrailerParams struct {
+	SequenceID      string  `json:"sequence_id"`
+	MaxDuration     float64 `json:"max_duration_seconds"`
+	Style           string  `json:"style,omitempty"`
+	IncludeAudio    bool    `json:"include_audio"`
+}
+
+// GenerateTrailerResult is returned by GenerateTrailer.
+type GenerateTrailerResult struct {
+	SequenceID    string  `json:"sequence_id"`
+	Duration      float64 `json:"duration_seconds"`
+	HighlightCount int    `json:"highlight_count"`
+	Summary       string  `json:"summary"`
+}
+
+// SocialCutParams configures social media cut creation.
+type SocialCutParams struct {
+	SequenceID    string  `json:"sequence_id"`
+	AspectRatio   string  `json:"aspect_ratio"`
+	MaxDuration   float64 `json:"max_duration_seconds"`
+	Platform      string  `json:"platform,omitempty"`
+}
+
+// SocialCutResult is returned by CreateSocialCuts.
+type SocialCutResult struct {
+	SequenceID  string  `json:"sequence_id"`
+	AspectRatio string  `json:"aspect_ratio"`
+	Duration    float64 `json:"duration_seconds"`
+	Width       int     `json:"width"`
+	Height      int     `json:"height"`
+}
+
+// AutoOrganizeParams configures AI-powered project organisation.
+type AutoOrganizeParams struct {
+	Strategy string `json:"strategy,omitempty"`
+}
+
+// AutoOrganizeResult is returned by AutoOrganizeProject.
+type AutoOrganizeResult struct {
+	BinsCreated   int      `json:"bins_created"`
+	ItemsMoved    int      `json:"items_moved"`
+	Categories    []string `json:"categories,omitempty"`
+	Summary       string   `json:"summary"`
+}
+
+// ClipTag represents an AI-generated tag for a clip.
+type ClipTag struct {
+	Tag        string  `json:"tag"`
+	Confidence float64 `json:"confidence"`
+	Category   string  `json:"category"`
+}
+
+// TagClipsResult is returned by TagClips.
+type TagClipsResult struct {
+	ClipPath string     `json:"clip_path"`
+	Tags     []*ClipTag `json:"tags"`
+	Count    int        `json:"count"`
+}
+
+// SimilarClipInfo describes a clip similar to a reference clip.
+type SimilarClipInfo struct {
+	FilePath   string  `json:"file_path"`
+	Similarity float64 `json:"similarity"`
+	MatchType  string  `json:"match_type"`
+}
+
+// FindSimilarResult is returned by FindSimilarClips.
+type FindSimilarResult struct {
+	ReferenceClip string             `json:"reference_clip"`
+	SimilarClips  []*SimilarClipInfo `json:"similar_clips"`
+	Count         int                `json:"count"`
+}
+
+// ReplacementSuggestion describes a suggested clip replacement.
+type ReplacementSuggestion struct {
+	CurrentClipID    string  `json:"current_clip_id"`
+	ReplacementPath  string  `json:"replacement_path"`
+	Confidence       float64 `json:"confidence"`
+	Reason           string  `json:"reason"`
+	PositionSeconds  float64 `json:"position_seconds"`
+}
+
+// SuggestReplacementsResult is returned by SuggestReplacements.
+type SuggestReplacementsResult struct {
+	Suggestions []*ReplacementSuggestion `json:"suggestions"`
+	Count       int                      `json:"count"`
+}
+
+// ReviewMarkerInfo describes a review marker added by the AI.
+type ReviewMarkerInfo struct {
+	TimeSeconds float64 `json:"time_seconds"`
+	Name        string  `json:"name"`
+	Comment     string  `json:"comment"`
+	Priority    string  `json:"priority"`
+}
+
+// ReviewMarkersResult is returned by CreateReviewMarkers.
+type ReviewMarkersResult struct {
+	MarkersAdded int                 `json:"markers_added"`
+	Markers      []*ReviewMarkerInfo `json:"markers"`
+}
+
+// EditSummaryResult is returned by GenerateEditSummary.
+type EditSummaryResult struct {
+	SequenceID      string   `json:"sequence_id"`
+	Summary         string   `json:"summary"`
+	Duration        float64  `json:"duration_seconds"`
+	ClipCount       int      `json:"clip_count"`
+	KeyMoments      []string `json:"key_moments,omitempty"`
+	EditingStyle    string   `json:"editing_style"`
+}
+
+// RenderTimeEstimate is returned by EstimateRenderTime.
+type RenderTimeEstimate struct {
+	SequenceID        string  `json:"sequence_id"`
+	EstimatedSeconds  float64 `json:"estimated_seconds"`
+	Complexity        string  `json:"complexity"`
+	EffectsHeavy      bool    `json:"effects_heavy"`
+	ResolutionFactor  float64 `json:"resolution_factor"`
+	Notes             string  `json:"notes,omitempty"`
+}
+
+// DeliverySpec describes a single delivery specification check.
+type DeliverySpecCheck struct {
+	Spec    string `json:"spec"`
+	Status  string `json:"status"`
+	Current string `json:"current_value"`
+	Target  string `json:"target_value"`
+	Pass    bool   `json:"pass"`
+}
+
+// DeliverySpecResult is returned by CheckDeliverySpecs.
+type DeliverySpecResult struct {
+	SequenceID string               `json:"sequence_id"`
+	Standard   string               `json:"standard"`
+	AllPass    bool                  `json:"all_pass"`
+	Checks     []*DeliverySpecCheck `json:"checks"`
+}
+
+// ProjectReportResult is returned by CreateProjectReport.
+type ProjectReportResult struct {
+	ProjectName    string            `json:"project_name"`
+	TotalDuration  float64           `json:"total_duration_seconds"`
+	SequenceCount  int               `json:"sequence_count"`
+	TotalClips     int               `json:"total_clips"`
+	UsedClips      int               `json:"used_clips"`
+	UnusedClips    int               `json:"unused_clips"`
+	EffectsUsed    map[string]int    `json:"effects_used,omitempty"`
+	ExportHistory  []string          `json:"export_history,omitempty"`
+	Summary        string            `json:"summary"`
+}
+
 // AutoEditParams is the input to the fully-automated edit workflow.
 type AutoEditParams struct {
 	// ScriptText is the raw script content (mutually exclusive with ScriptPath).

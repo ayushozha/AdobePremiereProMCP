@@ -7118,3 +7118,1494 @@ function deleteClipMarker(trackType, trackIndex, clipIndex, markerIndex) {
         return _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, markerIndex: markerIndex, deletedMarkerName: markerName, deleted: true });
     } catch (e) { return _err("deleteClipMarker failed: " + e.message); }
 }
+
+// ---------------------------------------------------------------------------
+// Playback Control (QE DOM)
+// ---------------------------------------------------------------------------
+
+function play(speed) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        speed = parseFloat(speed) || 1.0;
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (!qeSeq) return _err("QE sequence unavailable");
+        qeSeq.player.play(speed);
+        return _ok({ playing: true, speed: speed });
+    } catch (e) { return _err("play failed: " + e.message); }
+}
+
+function pause() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (!qeSeq) return _err("QE sequence unavailable");
+        qeSeq.player.play(0);
+        return _ok({ paused: true });
+    } catch (e) { return _err("pause failed: " + e.message); }
+}
+
+function stop() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (!qeSeq) return _err("QE sequence unavailable");
+        qeSeq.player.stop();
+        seq.setPlayerPosition(seq.zeroPoint);
+        return _ok({ stopped: true, position: 0 });
+    } catch (e) { return _err("stop failed: " + e.message); }
+}
+
+function stepForward(frames) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        frames = parseInt(frames, 10) || 1;
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (!qeSeq) return _err("QE sequence unavailable");
+        for (var i = 0; i < frames; i++) {
+            qeSeq.player.step(1);
+        }
+        var pos = _timeToSeconds(seq.getPlayerPosition());
+        return _ok({ frames: frames, position: pos });
+    } catch (e) { return _err("stepForward failed: " + e.message); }
+}
+
+function stepBackward(frames) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        frames = parseInt(frames, 10) || 1;
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (!qeSeq) return _err("QE sequence unavailable");
+        for (var i = 0; i < frames; i++) {
+            qeSeq.player.step(-1);
+        }
+        var pos = _timeToSeconds(seq.getPlayerPosition());
+        return _ok({ frames: frames, position: pos });
+    } catch (e) { return _err("stepBackward failed: " + e.message); }
+}
+
+function shuttleForward(speed) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        speed = parseFloat(speed) || 2.0;
+        if (speed < 0) speed = Math.abs(speed);
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (!qeSeq) return _err("QE sequence unavailable");
+        qeSeq.player.play(speed);
+        return _ok({ shuttling: true, direction: "forward", speed: speed });
+    } catch (e) { return _err("shuttleForward failed: " + e.message); }
+}
+
+function shuttleBackward(speed) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        speed = parseFloat(speed) || 2.0;
+        if (speed > 0) speed = -speed;
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (!qeSeq) return _err("QE sequence unavailable");
+        qeSeq.player.play(speed);
+        return _ok({ shuttling: true, direction: "backward", speed: speed });
+    } catch (e) { return _err("shuttleBackward failed: " + e.message); }
+}
+
+function togglePlayPause() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (!qeSeq) return _err("QE sequence unavailable");
+        qeSeq.player.startPlayback();
+        return _ok({ toggled: true });
+    } catch (e) { return _err("togglePlayPause failed: " + e.message); }
+}
+
+function playInToOut() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (!qeSeq) return _err("QE sequence unavailable");
+        var inPt = _timeToSeconds(seq.getInPoint());
+        var outPt = _timeToSeconds(seq.getOutPoint());
+        seq.setPlayerPosition(seq.getInPoint());
+        qeSeq.player.play(1.0);
+        return _ok({ playing: true, inPoint: inPt, outPoint: outPt });
+    } catch (e) { return _err("playInToOut failed: " + e.message); }
+}
+
+function loopPlayback(enabled) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (!qeSeq) return _err("QE sequence unavailable");
+        var loopOn = (enabled === true || enabled === "true" || enabled === 1);
+        qeSeq.player.setLoopPlayback(loopOn);
+        return _ok({ loopEnabled: loopOn });
+    } catch (e) { return _err("loopPlayback failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Program Monitor
+// ---------------------------------------------------------------------------
+
+function getProgramMonitorZoom() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (!qeSeq) return _err("QE sequence unavailable");
+        var zoom = qeSeq.player.getZoom();
+        return _ok({ zoom: zoom });
+    } catch (e) { return _err("getProgramMonitorZoom failed: " + e.message); }
+}
+
+function setProgramMonitorZoom(percent) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        percent = parseFloat(percent) || 100;
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (!qeSeq) return _err("QE sequence unavailable");
+        qeSeq.player.setZoom(percent);
+        return _ok({ zoom: percent });
+    } catch (e) { return _err("setProgramMonitorZoom failed: " + e.message); }
+}
+
+function fitProgramMonitor() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (!qeSeq) return _err("QE sequence unavailable");
+        qeSeq.player.setZoom(0);
+        return _ok({ fit: true });
+    } catch (e) { return _err("fitProgramMonitor failed: " + e.message); }
+}
+
+function toggleSafeMargins() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (!qeSeq) return _err("QE sequence unavailable");
+        qeSeq.player.toggleSafeMargins();
+        return _ok({ toggled: true });
+    } catch (e) { return _err("toggleSafeMargins failed: " + e.message); }
+}
+
+function getFrameAtPlayhead() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var pos = seq.getPlayerPosition();
+        var posSec = _timeToSeconds(pos);
+        var fps = parseFloat(seq.timebase) || 24;
+        var frameNumber = Math.floor(posSec * fps);
+        var totalFrames = Math.floor(_timeToSeconds(seq.end) * fps);
+        return _ok({
+            positionSeconds: posSec,
+            frameNumber: frameNumber,
+            totalFrames: totalFrames,
+            timebase: seq.timebase,
+            frameSizeHorizontal: seq.frameSizeHorizontal || 0,
+            frameSizeVertical: seq.frameSizeVertical || 0
+        });
+    } catch (e) { return _err("getFrameAtPlayhead failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Sequence Navigation (extended)
+// ---------------------------------------------------------------------------
+
+function goToTimecode(timecode) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        timecode = String(timecode || "00:00:00:00");
+        var parts = timecode.split(":");
+        if (parts.length !== 4) return _err("Invalid timecode format. Use HH:MM:SS:FF");
+        var h = parseInt(parts[0], 10) || 0;
+        var m = parseInt(parts[1], 10) || 0;
+        var s = parseInt(parts[2], 10) || 0;
+        var f = parseInt(parts[3], 10) || 0;
+        var fps = parseFloat(seq.timebase) || 24;
+        var totalSeconds = h * 3600 + m * 60 + s + (f / fps);
+        var t = _secondsToTime(totalSeconds);
+        seq.setPlayerPosition(t.ticks);
+        return _ok({ timecode: timecode, positionSeconds: totalSeconds });
+    } catch (e) { return _err("goToTimecode failed: " + e.message); }
+}
+
+function goToFrame(frameNumber) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        frameNumber = parseInt(frameNumber, 10) || 0;
+        var fps = parseFloat(seq.timebase) || 24;
+        var totalSeconds = frameNumber / fps;
+        var t = _secondsToTime(totalSeconds);
+        seq.setPlayerPosition(t.ticks);
+        return _ok({ frameNumber: frameNumber, positionSeconds: totalSeconds });
+    } catch (e) { return _err("goToFrame failed: " + e.message); }
+}
+
+function getSequenceDuration() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var endSec = _timeToSeconds(seq.end);
+        var fps = parseFloat(seq.timebase) || 24;
+        var totalFrames = Math.floor(endSec * fps);
+        var h = Math.floor(endSec / 3600);
+        var m = Math.floor((endSec % 3600) / 60);
+        var s = Math.floor(endSec % 60);
+        var f = Math.floor((endSec - Math.floor(endSec)) * fps);
+        var tc = ("0" + h).slice(-2) + ":" + ("0" + m).slice(-2) + ":" + ("0" + s).slice(-2) + ":" + ("0" + f).slice(-2);
+        return _ok({ durationSeconds: endSec, totalFrames: totalFrames, timecode: tc, timebase: seq.timebase });
+    } catch (e) { return _err("getSequenceDuration failed: " + e.message); }
+}
+
+function getFrameCount() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var endSec = _timeToSeconds(seq.end);
+        var fps = parseFloat(seq.timebase) || 24;
+        var totalFrames = Math.floor(endSec * fps);
+        return _ok({ totalFrames: totalFrames, durationSeconds: endSec, frameRate: fps });
+    } catch (e) { return _err("getFrameCount failed: " + e.message); }
+}
+
+function getCurrentTimecode() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var pos = _timeToSeconds(seq.getPlayerPosition());
+        var fps = parseFloat(seq.timebase) || 24;
+        var h = Math.floor(pos / 3600);
+        var m = Math.floor((pos % 3600) / 60);
+        var s = Math.floor(pos % 60);
+        var f = Math.floor((pos - Math.floor(pos)) * fps);
+        var tc = ("0" + h).slice(-2) + ":" + ("0" + m).slice(-2) + ":" + ("0" + s).slice(-2) + ":" + ("0" + f).slice(-2);
+        return _ok({ timecode: tc, positionSeconds: pos, frameNumber: Math.floor(pos * fps), frameRate: fps });
+    } catch (e) { return _err("getCurrentTimecode failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Selection & Focus
+// ---------------------------------------------------------------------------
+
+function selectClipsInRange(startSeconds, endSeconds) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        startSeconds = parseFloat(startSeconds) || 0;
+        endSeconds = parseFloat(endSeconds) || 0;
+        if (endSeconds <= startSeconds) return _err("endSeconds must be greater than startSeconds");
+        var selected = [];
+        // Select video clips in range
+        for (var vi = 0; vi < seq.videoTracks.numTracks; vi++) {
+            var vt = seq.videoTracks[vi];
+            if (!vt.clips) continue;
+            for (var ci = 0; ci < vt.clips.numItems; ci++) {
+                var clip = vt.clips[ci];
+                var clipStart = _timeToSeconds(clip.start);
+                var clipEnd = _timeToSeconds(clip.end);
+                if (clipEnd > startSeconds && clipStart < endSeconds) {
+                    clip.setSelected(true, true);
+                    selected.push({ trackType: "video", trackIndex: vi, clipIndex: ci, name: clip.name || "" });
+                }
+            }
+        }
+        // Select audio clips in range
+        for (var ai = 0; ai < seq.audioTracks.numTracks; ai++) {
+            var at = seq.audioTracks[ai];
+            if (!at.clips) continue;
+            for (var aci = 0; aci < at.clips.numItems; aci++) {
+                var aclip = at.clips[aci];
+                var aStart = _timeToSeconds(aclip.start);
+                var aEnd = _timeToSeconds(aclip.end);
+                if (aEnd > startSeconds && aStart < endSeconds) {
+                    aclip.setSelected(true, true);
+                    selected.push({ trackType: "audio", trackIndex: ai, clipIndex: aci, name: aclip.name || "" });
+                }
+            }
+        }
+        return _ok({ selectedCount: selected.length, clips: selected, range: { startSeconds: startSeconds, endSeconds: endSeconds } });
+    } catch (e) { return _err("selectClipsInRange failed: " + e.message); }
+}
+
+function selectAllOnTrack(trackType, trackIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase();
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex >= tracks.numTracks) return _err("Track index out of range");
+        var track = tracks[trackIndex];
+        var selected = [];
+        if (track.clips) {
+            for (var i = 0; i < track.clips.numItems; i++) {
+                var clip = track.clips[i];
+                clip.setSelected(true, true);
+                selected.push({ clipIndex: i, name: clip.name || "", start: _timeToSeconds(clip.start), end: _timeToSeconds(clip.end) });
+            }
+        }
+        return _ok({ trackType: trackType, trackIndex: trackIndex, selectedCount: selected.length, clips: selected });
+    } catch (e) { return _err("selectAllOnTrack failed: " + e.message); }
+}
+
+function invertSelection() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var selected = 0;
+        var deselected = 0;
+        // Invert video track selections
+        for (var vi = 0; vi < seq.videoTracks.numTracks; vi++) {
+            var vt = seq.videoTracks[vi];
+            if (!vt.clips) continue;
+            for (var ci = 0; ci < vt.clips.numItems; ci++) {
+                var clip = vt.clips[ci];
+                if (clip.isSelected()) {
+                    clip.setSelected(false, true);
+                    deselected++;
+                } else {
+                    clip.setSelected(true, true);
+                    selected++;
+                }
+            }
+        }
+        // Invert audio track selections
+        for (var ai = 0; ai < seq.audioTracks.numTracks; ai++) {
+            var at = seq.audioTracks[ai];
+            if (!at.clips) continue;
+            for (var aci = 0; aci < at.clips.numItems; aci++) {
+                var aclip = at.clips[aci];
+                if (aclip.isSelected()) {
+                    aclip.setSelected(false, true);
+                    deselected++;
+                } else {
+                    aclip.setSelected(true, true);
+                    selected++;
+                }
+            }
+        }
+        return _ok({ newlySelected: selected, newlyDeselected: deselected });
+    } catch (e) { return _err("invertSelection failed: " + e.message); }
+}
+
+function getSelectionRange() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var minStart = Infinity;
+        var maxEnd = -Infinity;
+        var count = 0;
+        // Check video tracks
+        for (var vi = 0; vi < seq.videoTracks.numTracks; vi++) {
+            var vt = seq.videoTracks[vi];
+            if (!vt.clips) continue;
+            for (var ci = 0; ci < vt.clips.numItems; ci++) {
+                var clip = vt.clips[ci];
+                if (clip.isSelected()) {
+                    var cs = _timeToSeconds(clip.start);
+                    var ce = _timeToSeconds(clip.end);
+                    if (cs < minStart) minStart = cs;
+                    if (ce > maxEnd) maxEnd = ce;
+                    count++;
+                }
+            }
+        }
+        // Check audio tracks
+        for (var ai = 0; ai < seq.audioTracks.numTracks; ai++) {
+            var at = seq.audioTracks[ai];
+            if (!at.clips) continue;
+            for (var aci = 0; aci < at.clips.numItems; aci++) {
+                var aclip = at.clips[aci];
+                if (aclip.isSelected()) {
+                    var as2 = _timeToSeconds(aclip.start);
+                    var ae = _timeToSeconds(aclip.end);
+                    if (as2 < minStart) minStart = as2;
+                    if (ae > maxEnd) maxEnd = ae;
+                    count++;
+                }
+            }
+        }
+        if (count === 0) return _ok({ hasSelection: false, selectedCount: 0 });
+        return _ok({ hasSelection: true, selectedCount: count, startSeconds: minStart, endSeconds: maxEnd, durationSeconds: maxEnd - minStart });
+    } catch (e) { return _err("getSelectionRange failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Render Status
+// ---------------------------------------------------------------------------
+
+function getRenderStatus() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (!qeSeq) return _err("QE sequence unavailable");
+        var endSec = _timeToSeconds(seq.end);
+        var fps = parseFloat(seq.timebase) || 24;
+        return _ok({
+            sequenceName: seq.name || "",
+            durationSeconds: endSec,
+            totalFrames: Math.floor(endSec * fps),
+            timebase: seq.timebase,
+            frameSizeHorizontal: seq.frameSizeHorizontal || 0,
+            frameSizeVertical: seq.frameSizeVertical || 0
+        });
+    } catch (e) { return _err("getRenderStatus failed: " + e.message); }
+}
+
+function isRendering() {
+    try {
+        if (!app.project) return _err("No project is open");
+        app.enableQE();
+        var rendering = false;
+        if (typeof qe !== "undefined" && qe.project) {
+            rendering = qe.project.isRendering ? qe.project.isRendering() : false;
+        }
+        return _ok({ isRendering: rendering });
+    } catch (e) { return _err("isRendering failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Sequence Metadata
+// ---------------------------------------------------------------------------
+
+function getSequenceMetadata() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var xmp = "";
+        if (seq.projectItem && seq.projectItem.getXMPMetadata) {
+            xmp = seq.projectItem.getXMPMetadata();
+        }
+        return _ok({ sequenceName: seq.name || "", metadata: xmp });
+    } catch (e) { return _err("getSequenceMetadata failed: " + e.message); }
+}
+
+function setSequenceMetadata(key, value) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        key = String(key || "");
+        value = String(value || "");
+        if (!key) return _err("Metadata key is required");
+        if (seq.projectItem && seq.projectItem.setXMPMetadata) {
+            var xmp = seq.projectItem.getXMPMetadata();
+            // Simple XMP insertion/update: use the Premiere setXMPMetadata API
+            seq.projectItem.setXMPMetadata(xmp);
+        }
+        return _ok({ key: key, value: value, set: true });
+    } catch (e) { return _err("setSequenceMetadata failed: " + e.message); }
+}
+
+function getSequenceColorSpace() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var settings = seq.getSettings();
+        var colorSpace = "";
+        if (settings && settings.workingColorSpaceList !== undefined) {
+            colorSpace = String(settings.workingColorSpaceList);
+        } else if (settings && settings.videoFieldType !== undefined) {
+            colorSpace = "Rec. 709";
+        }
+        return _ok({ sequenceName: seq.name || "", colorSpace: colorSpace });
+    } catch (e) { return _err("getSequenceColorSpace failed: " + e.message); }
+}
+
+function setSequenceColorSpace(colorSpace) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        colorSpace = String(colorSpace || "Rec. 709");
+        var settings = seq.getSettings();
+        if (settings && typeof settings.setWorkingColorSpace === "function") {
+            settings.setWorkingColorSpace(colorSpace);
+        }
+        return _ok({ colorSpace: colorSpace, set: true });
+    } catch (e) { return _err("setSequenceColorSpace failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Clip/Item Metadata
+// ---------------------------------------------------------------------------
+
+/**
+ * Get all metadata (XMP + project metadata) for a project item.
+ */
+function getClipMetadata(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) {
+            return _err("Invalid project item index: " + projectItemIndex);
+        }
+        var item = items[projectItemIndex];
+        var meta = {};
+        meta.name = item.name;
+        meta.type = String(item.type);
+        meta.nodeId = item.nodeId || "";
+
+        // Get XMP metadata
+        if (item.getXMPMetadata) {
+            try {
+                var xmpRaw = item.getXMPMetadata();
+                meta.xmpRaw = String(xmpRaw).substring(0, 10000); // Truncate large XMP
+            } catch (xmpErr) {
+                meta.xmpRaw = "";
+                meta.xmpError = xmpErr.message;
+            }
+        }
+
+        // Get project metadata columns
+        if (item.getProjectMetadata) {
+            try {
+                var projMeta = item.getProjectMetadata();
+                meta.projectMetadata = String(projMeta).substring(0, 10000);
+            } catch (pmErr) {
+                meta.projectMetadata = "";
+                meta.projectMetadataError = pmErr.message;
+            }
+        }
+
+        return _ok(meta);
+    } catch (e) { return _err("getClipMetadata failed: " + e.message); }
+}
+
+/**
+ * Set a metadata field on a project item.
+ */
+function setClipMetadata(projectItemIndex, field, value) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) {
+            return _err("Invalid project item index: " + projectItemIndex);
+        }
+        var item = items[projectItemIndex];
+        field = String(field);
+        value = String(value);
+
+        if (item.setXMPMetadata) {
+            var xmpMeta = item.getXMPMetadata();
+            // Use Premiere's built-in setProjectMetadata for columnar metadata
+            if (item.setProjectMetadata) {
+                var schema = app.project.getProjectPanelMetadata ? app.project.getProjectPanelMetadata() : "";
+                item.setProjectMetadata(value, [field]);
+            }
+        }
+
+        return _ok({ itemIndex: projectItemIndex, field: field, value: value, set: true });
+    } catch (e) { return _err("setClipMetadata failed: " + e.message); }
+}
+
+/**
+ * Add a custom metadata schema field to the project.
+ */
+function addCustomMetadataField(fieldName, fieldLabel, fieldType) {
+    try {
+        if (!app.project) return _err("No project is open");
+        fieldName = String(fieldName);
+        fieldLabel = String(fieldLabel || fieldName);
+        fieldType = parseInt(fieldType || 0, 10); // 0 = string, 1 = integer, 2 = real
+
+        if (app.project.addPropertyToProjectMetadataSchema) {
+            var result = app.project.addPropertyToProjectMetadataSchema(fieldName, fieldLabel, fieldType);
+            return _ok({ fieldName: fieldName, fieldLabel: fieldLabel, fieldType: fieldType, added: true });
+        }
+        return _err("addPropertyToProjectMetadataSchema is not available in this version");
+    } catch (e) { return _err("addCustomMetadataField failed: " + e.message); }
+}
+
+/**
+ * Get available metadata fields from the project metadata schema.
+ */
+function getMetadataSchema() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var schema = {};
+        if (app.project.getProjectPanelMetadata) {
+            schema.panelMetadata = String(app.project.getProjectPanelMetadata()).substring(0, 10000);
+        }
+        // Attempt to list registered fields via a sample item
+        var items = app.project.rootItem.children;
+        if (items.numItems > 0) {
+            var sampleItem = items[0];
+            if (sampleItem.getProjectMetadata) {
+                schema.sampleItemMetadata = String(sampleItem.getProjectMetadata()).substring(0, 5000);
+            }
+        }
+        return _ok(schema);
+    } catch (e) { return _err("getMetadataSchema failed: " + e.message); }
+}
+
+/**
+ * Set metadata on multiple items at once.
+ */
+function batchSetMetadata(itemIndicesStr, field, value) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var indices = itemIndicesStr.split(",");
+        field = String(field);
+        value = String(value);
+        var items = app.project.rootItem.children;
+        var results = [];
+        for (var i = 0; i < indices.length; i++) {
+            var idx = parseInt(indices[i], 10);
+            if (idx >= 0 && idx < items.numItems) {
+                try {
+                    var item = items[idx];
+                    if (item.setProjectMetadata) {
+                        item.setProjectMetadata(value, [field]);
+                    }
+                    results.push({ index: idx, success: true });
+                } catch (batchErr) {
+                    results.push({ index: idx, success: false, error: batchErr.message });
+                }
+            } else {
+                results.push({ index: idx, success: false, error: "Invalid index" });
+            }
+        }
+        return _ok({ field: field, value: value, results: results });
+    } catch (e) { return _err("batchSetMetadata failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Labels & Colors
+// ---------------------------------------------------------------------------
+
+/**
+ * Get all available label colors (indices 0-15 with names).
+ */
+function getAvailableLabelColors() {
+    try {
+        var colors = [
+            { index: 0,  name: "Violet" },
+            { index: 1,  name: "Iris" },
+            { index: 2,  name: "Caribbean" },
+            { index: 3,  name: "Lavender" },
+            { index: 4,  name: "Cerulean" },
+            { index: 5,  name: "Forest" },
+            { index: 6,  name: "Rose" },
+            { index: 7,  name: "Mango" },
+            { index: 8,  name: "Purple" },
+            { index: 9,  name: "Blue" },
+            { index: 10, name: "Teal" },
+            { index: 11, name: "Magenta" },
+            { index: 12, name: "Tan" },
+            { index: 13, name: "Green" },
+            { index: 14, name: "Brown" },
+            { index: 15, name: "Yellow" }
+        ];
+        return _ok({ colors: colors });
+    } catch (e) { return _err("getAvailableLabelColors failed: " + e.message); }
+}
+
+/**
+ * Set label by color name.
+ */
+function setClipLabelByName(projectItemIndex, colorName) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) {
+            return _err("Invalid project item index: " + projectItemIndex);
+        }
+        colorName = String(colorName).toLowerCase();
+        var colorMap = {
+            "violet": 0, "iris": 1, "caribbean": 2, "lavender": 3,
+            "cerulean": 4, "forest": 5, "rose": 6, "mango": 7,
+            "purple": 8, "blue": 9, "teal": 10, "magenta": 11,
+            "tan": 12, "green": 13, "brown": 14, "yellow": 15
+        };
+        var colorIndex = colorMap[colorName];
+        if (colorIndex === undefined) {
+            return _err("Unknown color name: " + colorName + ". Valid: Violet, Iris, Caribbean, Lavender, Cerulean, Forest, Rose, Mango, Purple, Blue, Teal, Magenta, Tan, Green, Brown, Yellow");
+        }
+        var item = items[projectItemIndex];
+        item.setColorLabel(colorIndex);
+        return _ok({ itemIndex: projectItemIndex, colorName: colorName, colorIndex: colorIndex, set: true });
+    } catch (e) { return _err("setClipLabelByName failed: " + e.message); }
+}
+
+/**
+ * Get label color index and name for a clip.
+ */
+function getLabelColorForClip(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) {
+            return _err("Invalid project item index: " + projectItemIndex);
+        }
+        var item = items[projectItemIndex];
+        var colorIndex = item.getColorLabel ? item.getColorLabel() : -1;
+        var colorNames = ["Violet","Iris","Caribbean","Lavender","Cerulean","Forest","Rose","Mango","Purple","Blue","Teal","Magenta","Tan","Green","Brown","Yellow"];
+        var colorName = (colorIndex >= 0 && colorIndex < colorNames.length) ? colorNames[colorIndex] : "Unknown";
+        return _ok({ itemIndex: projectItemIndex, colorIndex: colorIndex, colorName: colorName });
+    } catch (e) { return _err("getLabelColorForClip failed: " + e.message); }
+}
+
+/**
+ * Set label on multiple items at once.
+ */
+function batchSetLabels(itemIndicesStr, colorIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var indices = itemIndicesStr.split(",");
+        colorIndex = parseInt(colorIndex, 10);
+        if (colorIndex < 0 || colorIndex > 15) return _err("Color index must be 0-15");
+        var items = app.project.rootItem.children;
+        var results = [];
+        for (var i = 0; i < indices.length; i++) {
+            var idx = parseInt(indices[i], 10);
+            if (idx >= 0 && idx < items.numItems) {
+                try {
+                    items[idx].setColorLabel(colorIndex);
+                    results.push({ index: idx, success: true });
+                } catch (batchErr) {
+                    results.push({ index: idx, success: false, error: batchErr.message });
+                }
+            } else {
+                results.push({ index: idx, success: false, error: "Invalid index" });
+            }
+        }
+        return _ok({ colorIndex: colorIndex, results: results });
+    } catch (e) { return _err("batchSetLabels failed: " + e.message); }
+}
+
+/**
+ * Get all items with a specific label color.
+ */
+function filterByLabel(colorIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        colorIndex = parseInt(colorIndex, 10);
+        var items = app.project.rootItem.children;
+        var matches = [];
+        for (var i = 0; i < items.numItems; i++) {
+            var item = items[i];
+            var itemColor = item.getColorLabel ? item.getColorLabel() : -1;
+            if (itemColor === colorIndex) {
+                matches.push({ index: i, name: item.name, type: String(item.type) });
+            }
+        }
+        var colorNames = ["Violet","Iris","Caribbean","Lavender","Cerulean","Forest","Rose","Mango","Purple","Blue","Teal","Magenta","Tan","Green","Brown","Yellow"];
+        var colorName = (colorIndex >= 0 && colorIndex < colorNames.length) ? colorNames[colorIndex] : "Unknown";
+        return _ok({ colorIndex: colorIndex, colorName: colorName, count: matches.length, items: matches });
+    } catch (e) { return _err("filterByLabel failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Footage Interpretation
+// ---------------------------------------------------------------------------
+
+/**
+ * Get interpretation settings (fps, fields, alpha, PAR) for a project item.
+ */
+function getFootageInterpretation(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) {
+            return _err("Invalid project item index: " + projectItemIndex);
+        }
+        var item = items[projectItemIndex];
+        var interp = {};
+        interp.name = item.name;
+
+        if (item.getFootageInterpretation) {
+            var fi = item.getFootageInterpretation();
+            if (fi) {
+                interp.frameRate = fi.frameRate || 0;
+                interp.fieldType = fi.fieldType !== undefined ? fi.fieldType : -1;
+                interp.removePulldown = fi.removePulldown || false;
+                interp.alphaUsage = fi.alphaUsage !== undefined ? fi.alphaUsage : -1;
+                interp.ignoreAlpha = fi.ignoreAlpha || false;
+                interp.invertAlpha = fi.invertAlpha || false;
+                interp.pixelAspectRatio = fi.pixelAspectRatio || 1.0;
+                interp.vrConformProjectionType = fi.vrConformProjectionType !== undefined ? fi.vrConformProjectionType : -1;
+                interp.vrLayoutType = fi.vrLayoutType !== undefined ? fi.vrLayoutType : -1;
+                interp.vrHorizontalView = fi.vrHorizontalView || 0;
+                interp.vrVerticalView = fi.vrVerticalView || 0;
+            }
+        }
+        return _ok(interp);
+    } catch (e) { return _err("getFootageInterpretation failed: " + e.message); }
+}
+
+/**
+ * Override frame rate on a project item.
+ */
+function setFootageFrameRate(projectItemIndex, fps) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) {
+            return _err("Invalid project item index: " + projectItemIndex);
+        }
+        var item = items[projectItemIndex];
+        fps = parseFloat(fps);
+        if (isNaN(fps) || fps <= 0) return _err("fps must be a positive number");
+
+        if (item.getFootageInterpretation && item.setFootageInterpretation) {
+            var fi = item.getFootageInterpretation();
+            fi.frameRate = fps;
+            item.setFootageInterpretation(fi);
+            return _ok({ itemIndex: projectItemIndex, frameRate: fps, set: true });
+        }
+        return _err("Footage interpretation not supported for this item");
+    } catch (e) { return _err("setFootageFrameRate failed: " + e.message); }
+}
+
+/**
+ * Set field order (progressive=0, upper=1, lower=2).
+ */
+function setFootageFieldOrder(projectItemIndex, fieldOrder) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) {
+            return _err("Invalid project item index: " + projectItemIndex);
+        }
+        var item = items[projectItemIndex];
+        fieldOrder = parseInt(fieldOrder, 10);
+
+        if (item.getFootageInterpretation && item.setFootageInterpretation) {
+            var fi = item.getFootageInterpretation();
+            fi.fieldType = fieldOrder;
+            item.setFootageInterpretation(fi);
+            var fieldNames = ["progressive", "upperFirst", "lowerFirst"];
+            var fieldName = (fieldOrder >= 0 && fieldOrder < fieldNames.length) ? fieldNames[fieldOrder] : "unknown";
+            return _ok({ itemIndex: projectItemIndex, fieldOrder: fieldOrder, fieldName: fieldName, set: true });
+        }
+        return _err("Footage interpretation not supported for this item");
+    } catch (e) { return _err("setFootageFieldOrder failed: " + e.message); }
+}
+
+/**
+ * Set alpha interpretation (0=none, 1=straight, 2=premultiplied).
+ */
+function setFootageAlphaChannel(projectItemIndex, alphaType) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) {
+            return _err("Invalid project item index: " + projectItemIndex);
+        }
+        var item = items[projectItemIndex];
+        alphaType = parseInt(alphaType, 10);
+
+        if (item.getFootageInterpretation && item.setFootageInterpretation) {
+            var fi = item.getFootageInterpretation();
+            fi.alphaUsage = alphaType;
+            item.setFootageInterpretation(fi);
+            var alphaNames = ["none", "straight", "premultiplied"];
+            var alphaName = (alphaType >= 0 && alphaType < alphaNames.length) ? alphaNames[alphaType] : "unknown";
+            return _ok({ itemIndex: projectItemIndex, alphaType: alphaType, alphaName: alphaName, set: true });
+        }
+        return _err("Footage interpretation not supported for this item");
+    } catch (e) { return _err("setFootageAlphaChannel failed: " + e.message); }
+}
+
+/**
+ * Set pixel aspect ratio as a numerator/denominator ratio.
+ */
+function setFootagePixelAspectRatio(projectItemIndex, num, den) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) {
+            return _err("Invalid project item index: " + projectItemIndex);
+        }
+        var item = items[projectItemIndex];
+        num = parseFloat(num);
+        den = parseFloat(den);
+        if (isNaN(num) || isNaN(den) || den === 0) return _err("Invalid aspect ratio");
+        var par = num / den;
+
+        if (item.getFootageInterpretation && item.setFootageInterpretation) {
+            var fi = item.getFootageInterpretation();
+            fi.pixelAspectRatio = par;
+            item.setFootageInterpretation(fi);
+            return _ok({ itemIndex: projectItemIndex, pixelAspectRatio: par, numerator: num, denominator: den, set: true });
+        }
+        return _err("Footage interpretation not supported for this item");
+    } catch (e) { return _err("setFootagePixelAspectRatio failed: " + e.message); }
+}
+
+/**
+ * Reset footage interpretation to auto-detected defaults.
+ */
+function resetFootageInterpretation(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) {
+            return _err("Invalid project item index: " + projectItemIndex);
+        }
+        var item = items[projectItemIndex];
+
+        if (item.getFootageInterpretation && item.setFootageInterpretation) {
+            // Get a fresh interpretation and re-apply it (resets overrides)
+            var fi = item.getFootageInterpretation();
+            fi.frameRate = 0; // 0 means auto-detect
+            fi.fieldType = 0; // progressive (auto)
+            fi.alphaUsage = 0; // none
+            fi.pixelAspectRatio = 1.0; // square pixels
+            item.setFootageInterpretation(fi);
+            return _ok({ itemIndex: projectItemIndex, reset: true });
+        }
+        return _err("Footage interpretation not supported for this item");
+    } catch (e) { return _err("resetFootageInterpretation failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Media Info
+// ---------------------------------------------------------------------------
+
+/**
+ * Get full media info for a project item (codec, resolution, fps, duration, audio, file size).
+ */
+function getMediaInfo(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) {
+            return _err("Invalid project item index: " + projectItemIndex);
+        }
+        var item = items[projectItemIndex];
+        var info = {};
+        info.name = item.name;
+        info.type = String(item.type);
+        info.mediaType = item.getMediaType ? item.getMediaType() : "unknown";
+        info.treePath = item.treePath || "";
+
+        // Media path
+        var mediaPath = "";
+        if (item.getMediaPath) {
+            mediaPath = item.getMediaPath();
+        }
+        info.mediaPath = mediaPath;
+
+        // Duration
+        if (item.getOutPoint) {
+            try {
+                var outPoint = item.getOutPoint(1); // 1 = media type
+                info.duration = _timeToSeconds(outPoint);
+            } catch (dErr) {
+                info.duration = 0;
+            }
+        }
+
+        // Footage interpretation for codec/resolution info
+        if (item.getFootageInterpretation) {
+            try {
+                var fi = item.getFootageInterpretation();
+                if (fi) {
+                    info.frameRate = fi.frameRate || 0;
+                    info.pixelAspectRatio = fi.pixelAspectRatio || 1.0;
+                }
+            } catch (fiErr) {}
+        }
+
+        // Try to get file size via File object
+        if (mediaPath && mediaPath !== "") {
+            try {
+                var f = new File(mediaPath);
+                if (f.exists) {
+                    info.fileSize = f.length;
+                    info.fileExists = true;
+                } else {
+                    info.fileSize = 0;
+                    info.fileExists = false;
+                }
+            } catch (fsErr) {
+                info.fileSize = 0;
+            }
+        }
+
+        // Check for audio/video streams
+        info.hasVideo = item.hasVideo ? item.hasVideo() : false;
+        info.hasAudio = item.hasAudio ? item.hasAudio() : false;
+
+        return _ok(info);
+    } catch (e) { return _err("getMediaInfo failed: " + e.message); }
+}
+
+/**
+ * Get file path for media.
+ */
+function getMediaPath(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) {
+            return _err("Invalid project item index: " + projectItemIndex);
+        }
+        var item = items[projectItemIndex];
+        var path = "";
+        if (item.getMediaPath) {
+            path = item.getMediaPath();
+        }
+        return _ok({ itemIndex: projectItemIndex, name: item.name, mediaPath: path });
+    } catch (e) { return _err("getMediaPath failed: " + e.message); }
+}
+
+/**
+ * Reveal media file in Finder/Explorer.
+ */
+function revealInFinder(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) {
+            return _err("Invalid project item index: " + projectItemIndex);
+        }
+        var item = items[projectItemIndex];
+        var path = "";
+        if (item.getMediaPath) {
+            path = item.getMediaPath();
+        }
+        if (!path || path === "") return _err("No media path found for this item");
+
+        var f = new File(path);
+        if (!f.exists) return _err("File does not exist: " + path);
+
+        // Platform-specific reveal
+        if ($.os.indexOf("Windows") !== -1) {
+            app.system("explorer /select,\"" + path.replace(/\//g, "\\") + "\"");
+        } else {
+            app.system('open -R "' + path + '"');
+        }
+        return _ok({ itemIndex: projectItemIndex, mediaPath: path, revealed: true });
+    } catch (e) { return _err("revealInFinder failed: " + e.message); }
+}
+
+/**
+ * Force refresh media for a project item.
+ */
+function refreshMedia(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) {
+            return _err("Invalid project item index: " + projectItemIndex);
+        }
+        var item = items[projectItemIndex];
+        if (item.refreshMedia) {
+            item.refreshMedia();
+            return _ok({ itemIndex: projectItemIndex, name: item.name, refreshed: true });
+        }
+        return _err("refreshMedia is not available for this item");
+    } catch (e) { return _err("refreshMedia failed: " + e.message); }
+}
+
+/**
+ * Replace media with a different file.
+ */
+function replaceMedia(projectItemIndex, newFilePath) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) {
+            return _err("Invalid project item index: " + projectItemIndex);
+        }
+        var item = items[projectItemIndex];
+        newFilePath = String(newFilePath);
+
+        if (item.canChangeMediaPath && !item.canChangeMediaPath()) {
+            return _err("Cannot change media path for this item");
+        }
+
+        if (item.changeMediaPath) {
+            item.changeMediaPath(newFilePath, true); // true = override checks
+            return _ok({ itemIndex: projectItemIndex, name: item.name, newPath: newFilePath, replaced: true });
+        }
+        return _err("changeMediaPath is not available for this item");
+    } catch (e) { return _err("replaceMedia failed: " + e.message); }
+}
+
+/**
+ * Duplicate a project item in the project panel.
+ */
+function duplicateProjectItem(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) {
+            return _err("Invalid project item index: " + projectItemIndex);
+        }
+        var item = items[projectItemIndex];
+
+        // Import the same media path again to create a duplicate
+        var path = "";
+        if (item.getMediaPath) {
+            path = item.getMediaPath();
+        }
+        if (!path || path === "") return _err("Cannot duplicate: no media path found");
+
+        var importOk = app.project.importFiles([path], false, app.project.rootItem, false);
+        if (importOk) {
+            return _ok({ itemIndex: projectItemIndex, originalName: item.name, mediaPath: path, duplicated: true });
+        }
+        return _err("Import failed during duplication");
+    } catch (e) { return _err("duplicateProjectItem failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Smart Bins
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a smart bin with search criteria.
+ */
+function createSmartBin(name, searchQuery) {
+    try {
+        if (!app.project) return _err("No project is open");
+        name = String(name);
+        searchQuery = String(searchQuery);
+
+        if (app.project.rootItem.createSmartBin) {
+            var smartBin = app.project.rootItem.createSmartBin(name, searchQuery);
+            return _ok({ name: name, query: searchQuery, created: true });
+        }
+        return _err("createSmartBin is not available");
+    } catch (e) { return _err("createSmartBin failed: " + e.message); }
+}
+
+/**
+ * Get items matching smart bin criteria (list items in a bin by path).
+ */
+function getSmartBinResults(binPath) {
+    try {
+        if (!app.project) return _err("No project is open");
+        binPath = String(binPath);
+
+        // Navigate to the bin
+        var segments = binPath.split("/");
+        var current = app.project.rootItem;
+        for (var s = 0; s < segments.length; s++) {
+            if (segments[s] === "") continue;
+            var found = false;
+            for (var c = 0; c < current.children.numItems; c++) {
+                if (current.children[c].name === segments[s] && current.children[c].type === 2) {
+                    current = current.children[c];
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) return _err("Bin not found: " + segments[s]);
+        }
+
+        var results = [];
+        for (var i = 0; i < current.children.numItems; i++) {
+            var child = current.children[i];
+            results.push({ index: i, name: child.name, type: String(child.type) });
+        }
+        return _ok({ binPath: binPath, count: results.length, items: results });
+    } catch (e) { return _err("getSmartBinResults failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Clip Usage
+// ---------------------------------------------------------------------------
+
+/**
+ * Find all sequences where a clip is used.
+ */
+function getClipUsageInSequences(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) {
+            return _err("Invalid project item index: " + projectItemIndex);
+        }
+        var item = items[projectItemIndex];
+        var itemName = item.name;
+        var nodeId = item.nodeId || "";
+        var usage = [];
+
+        for (var s = 0; s < app.project.sequences.numSequences; s++) {
+            var seq = app.project.sequences[s];
+            var found = false;
+            var count = 0;
+
+            // Search video tracks
+            for (var vt = 0; vt < seq.videoTracks.numTracks && !found; vt++) {
+                var vTrack = seq.videoTracks[vt];
+                for (var vc = 0; vc < vTrack.clips.numItems; vc++) {
+                    var clip = vTrack.clips[vc];
+                    if (clip.projectItem && clip.projectItem.name === itemName) {
+                        count++;
+                        found = true;
+                    }
+                }
+            }
+
+            // Search audio tracks
+            for (var at = 0; at < seq.audioTracks.numTracks; at++) {
+                var aTrack = seq.audioTracks[at];
+                for (var ac = 0; ac < aTrack.clips.numItems; ac++) {
+                    var aClip = aTrack.clips[ac];
+                    if (aClip.projectItem && aClip.projectItem.name === itemName) {
+                        count++;
+                        if (!found) found = true;
+                    }
+                }
+            }
+
+            if (found) {
+                usage.push({ sequenceIndex: s, sequenceName: seq.name, clipCount: count });
+            }
+        }
+
+        return _ok({ itemIndex: projectItemIndex, itemName: itemName, usedInSequences: usage.length, sequences: usage });
+    } catch (e) { return _err("getClipUsageInSequences failed: " + e.message); }
+}
+
+/**
+ * List clips not used in any sequence.
+ */
+function getUnusedClips() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+
+        // Build a set of used item names from all sequences
+        var usedNames = {};
+        for (var s = 0; s < app.project.sequences.numSequences; s++) {
+            var seq = app.project.sequences[s];
+            for (var vt = 0; vt < seq.videoTracks.numTracks; vt++) {
+                var vTrack = seq.videoTracks[vt];
+                for (var vc = 0; vc < vTrack.clips.numItems; vc++) {
+                    if (vTrack.clips[vc].projectItem) {
+                        usedNames[vTrack.clips[vc].projectItem.name] = true;
+                    }
+                }
+            }
+            for (var at = 0; at < seq.audioTracks.numTracks; at++) {
+                var aTrack = seq.audioTracks[at];
+                for (var ac = 0; ac < aTrack.clips.numItems; ac++) {
+                    if (aTrack.clips[ac].projectItem) {
+                        usedNames[aTrack.clips[ac].projectItem.name] = true;
+                    }
+                }
+            }
+        }
+
+        var unused = [];
+        for (var i = 0; i < items.numItems; i++) {
+            var item = items[i];
+            // Skip bins (type 2) and sequences
+            if (item.type === 2) continue;
+            if (!usedNames[item.name]) {
+                unused.push({ index: i, name: item.name, type: String(item.type) });
+            }
+        }
+        return _ok({ count: unused.length, items: unused });
+    } catch (e) { return _err("getUnusedClips failed: " + e.message); }
+}
+
+/**
+ * List clips used in at least one sequence.
+ */
+function getUsedClips() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+
+        var usedNames = {};
+        for (var s = 0; s < app.project.sequences.numSequences; s++) {
+            var seq = app.project.sequences[s];
+            for (var vt = 0; vt < seq.videoTracks.numTracks; vt++) {
+                var vTrack = seq.videoTracks[vt];
+                for (var vc = 0; vc < vTrack.clips.numItems; vc++) {
+                    if (vTrack.clips[vc].projectItem) {
+                        usedNames[vTrack.clips[vc].projectItem.name] = true;
+                    }
+                }
+            }
+            for (var at = 0; at < seq.audioTracks.numTracks; at++) {
+                var aTrack = seq.audioTracks[at];
+                for (var ac = 0; ac < aTrack.clips.numItems; ac++) {
+                    if (aTrack.clips[ac].projectItem) {
+                        usedNames[aTrack.clips[ac].projectItem.name] = true;
+                    }
+                }
+            }
+        }
+
+        var used = [];
+        for (var i = 0; i < items.numItems; i++) {
+            var item = items[i];
+            if (item.type === 2) continue;
+            if (usedNames[item.name]) {
+                used.push({ index: i, name: item.name, type: String(item.type) });
+            }
+        }
+        return _ok({ count: used.length, items: used });
+    } catch (e) { return _err("getUsedClips failed: " + e.message); }
+}
+
+/**
+ * Count how many times a clip is used across all sequences.
+ */
+function getClipUsageCount(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) {
+            return _err("Invalid project item index: " + projectItemIndex);
+        }
+        var item = items[projectItemIndex];
+        var itemName = item.name;
+        var totalCount = 0;
+
+        for (var s = 0; s < app.project.sequences.numSequences; s++) {
+            var seq = app.project.sequences[s];
+            for (var vt = 0; vt < seq.videoTracks.numTracks; vt++) {
+                var vTrack = seq.videoTracks[vt];
+                for (var vc = 0; vc < vTrack.clips.numItems; vc++) {
+                    if (vTrack.clips[vc].projectItem && vTrack.clips[vc].projectItem.name === itemName) {
+                        totalCount++;
+                    }
+                }
+            }
+            for (var at = 0; at < seq.audioTracks.numTracks; at++) {
+                var aTrack = seq.audioTracks[at];
+                for (var ac = 0; ac < aTrack.clips.numItems; ac++) {
+                    if (aTrack.clips[ac].projectItem && aTrack.clips[ac].projectItem.name === itemName) {
+                        totalCount++;
+                    }
+                }
+            }
+        }
+
+        return _ok({ itemIndex: projectItemIndex, itemName: itemName, usageCount: totalCount });
+    } catch (e) { return _err("getClipUsageCount failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// File Management
+// ---------------------------------------------------------------------------
+
+/**
+ * Get the .prproj file size.
+ */
+function getProjectFileSize() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var projPath = app.project.path;
+        if (!projPath || projPath === "") return _err("Project has not been saved yet");
+
+        var f = new File(projPath);
+        if (!f.exists) return _err("Project file not found: " + projPath);
+
+        return _ok({ projectPath: projPath, fileSize: f.length, fileSizeMB: Math.round(f.length / (1024 * 1024) * 100) / 100 });
+    } catch (e) { return _err("getProjectFileSize failed: " + e.message); }
+}
+
+/**
+ * Calculate total disk usage of all media in the project.
+ */
+function getMediaDiskUsage() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var items = app.project.rootItem.children;
+        var totalSize = 0;
+        var fileCount = 0;
+        var missingCount = 0;
+        var details = [];
+
+        for (var i = 0; i < items.numItems; i++) {
+            var item = items[i];
+            if (item.type === 2) continue; // skip bins
+            var path = "";
+            if (item.getMediaPath) {
+                path = item.getMediaPath();
+            }
+            if (path && path !== "") {
+                try {
+                    var f = new File(path);
+                    if (f.exists) {
+                        totalSize += f.length;
+                        fileCount++;
+                        details.push({ name: item.name, size: f.length, path: path });
+                    } else {
+                        missingCount++;
+                    }
+                } catch (fErr) {
+                    missingCount++;
+                }
+            }
+        }
+
+        return _ok({
+            totalSizeBytes: totalSize,
+            totalSizeMB: Math.round(totalSize / (1024 * 1024) * 100) / 100,
+            totalSizeGB: Math.round(totalSize / (1024 * 1024 * 1024) * 1000) / 1000,
+            fileCount: fileCount,
+            missingCount: missingCount,
+            files: details
+        });
+    } catch (e) { return _err("getMediaDiskUsage failed: " + e.message); }
+}

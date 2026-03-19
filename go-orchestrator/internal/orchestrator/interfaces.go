@@ -397,6 +397,115 @@ type Orchestrator interface {
 	GetClipMarkers(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error)
 	DeleteClipMarker(ctx context.Context, trackType string, trackIndex, clipIndex, markerIndex int) (*GenericResult, error)
 
+	// --- Playback Control ---
+	Play(ctx context.Context, speed float64) (*GenericResult, error)
+	Pause(ctx context.Context) (*GenericResult, error)
+	Stop(ctx context.Context) (*GenericResult, error)
+	StepForward(ctx context.Context, frames int) (*GenericResult, error)
+	StepBackward(ctx context.Context, frames int) (*GenericResult, error)
+	ShuttleForward(ctx context.Context, speed float64) (*GenericResult, error)
+	ShuttleBackward(ctx context.Context, speed float64) (*GenericResult, error)
+	TogglePlayPause(ctx context.Context) (*GenericResult, error)
+	PlayInToOut(ctx context.Context) (*GenericResult, error)
+	LoopPlayback(ctx context.Context, enabled bool) (*GenericResult, error)
+
+	// --- Program Monitor ---
+	GetProgramMonitorZoom(ctx context.Context) (*GenericResult, error)
+	SetProgramMonitorZoom(ctx context.Context, percent float64) (*GenericResult, error)
+	FitProgramMonitor(ctx context.Context) (*GenericResult, error)
+	ToggleSafeMargins(ctx context.Context) (*GenericResult, error)
+	GetFrameAtPlayhead(ctx context.Context) (*GenericResult, error)
+
+	// --- Sequence Navigation (extended) ---
+	GoToTimecode(ctx context.Context, timecode string) (*GenericResult, error)
+	GoToFrame(ctx context.Context, frameNumber int) (*GenericResult, error)
+	GetSequenceDuration(ctx context.Context) (*GenericResult, error)
+	GetFrameCount(ctx context.Context) (*GenericResult, error)
+	GetCurrentTimecode(ctx context.Context) (*GenericResult, error)
+
+	// --- Selection & Focus ---
+	SelectClipsInRange(ctx context.Context, startSeconds, endSeconds float64) (*GenericResult, error)
+	SelectAllOnTrack(ctx context.Context, trackType string, trackIndex int) (*GenericResult, error)
+	InvertSelection(ctx context.Context) (*GenericResult, error)
+	GetSelectionRange(ctx context.Context) (*GenericResult, error)
+
+	// --- Render Status ---
+	GetRenderStatus(ctx context.Context) (*GenericResult, error)
+	IsRendering(ctx context.Context) (*GenericResult, error)
+
+	// --- Sequence Metadata ---
+	GetSequenceMetadata(ctx context.Context) (*GenericResult, error)
+	SetSequenceMetadata(ctx context.Context, key, value string) (*GenericResult, error)
+	GetSequenceColorSpace(ctx context.Context) (*GenericResult, error)
+	SetSequenceColorSpace(ctx context.Context, colorSpace string) (*GenericResult, error)
+
 	// --- Composite Workflows ---
 	AutoEdit(ctx context.Context, params *AutoEditParams) (*AutoEditResult, error)
+
+	// --- AI-Powered Smart Editing ---
+	SmartCut(ctx context.Context, params *SmartCutParams) (*SmartCutResult, error)
+	SmartTrim(ctx context.Context, params *SmartTrimParams) (*SmartTrimResult, error)
+	AutoColorMatch(ctx context.Context, params *AutoColorMatchParams) (*AutoColorMatchResult, error)
+	AutoAudioLevels(ctx context.Context, params *AutoAudioLevelsParams) (*AutoAudioLevelsResult, error)
+	SuggestTransitions(ctx context.Context, sequenceID string) (*SuggestTransitionsResult, error)
+	SuggestMusic(ctx context.Context, sequenceID string) (*SuggestMusicResult, error)
+
+	// --- AI-Powered Content Analysis ---
+	AnalyzeClip(ctx context.Context, filePath string) (*ClipAnalysis, error)
+	AnalyzeSequence(ctx context.Context, sequenceID string) (*SequenceAnalysis, error)
+	GetSequenceStatistics(ctx context.Context, sequenceID string) (*SequenceStatistics, error)
+	DetectJumpCuts(ctx context.Context, sequenceID string, threshold float64) (*JumpCutResult, error)
+	DetectAudioIssues(ctx context.Context, sequenceID string) (*AudioIssuesResult, error)
+
+	// --- AI Script-to-Edit Pipeline (enhanced) ---
+	GenerateRoughCut(ctx context.Context, params *RoughCutParams) (*RoughCutResult, error)
+	RefineEdit(ctx context.Context, params *RefineEditParams) (*RefineEditResult, error)
+	AddBRollSuggestions(ctx context.Context, sequenceID string) (*BRollSuggestionsResult, error)
+	GenerateTrailer(ctx context.Context, params *GenerateTrailerParams) (*GenerateTrailerResult, error)
+	CreateSocialCuts(ctx context.Context, params *SocialCutParams) (*SocialCutResult, error)
+
+	// --- AI-Powered Smart Organisation ---
+	AutoOrganizeProject(ctx context.Context, params *AutoOrganizeParams) (*AutoOrganizeResult, error)
+	AITagClips(ctx context.Context, filePath string) (*TagClipsResult, error)
+	FindSimilarClips(ctx context.Context, filePath string, maxResults int) (*FindSimilarResult, error)
+	SuggestReplacements(ctx context.Context, sequenceID string) (*SuggestReplacementsResult, error)
+
+	// --- AI-Powered Workflow Automation ---
+	CreateReviewMarkers(ctx context.Context, sequenceID string) (*ReviewMarkersResult, error)
+	GenerateEditSummary(ctx context.Context, sequenceID string) (*EditSummaryResult, error)
+	EstimateRenderTime(ctx context.Context, sequenceID string) (*RenderTimeEstimate, error)
+	CheckDeliverySpecs(ctx context.Context, sequenceID string, standard string) (*DeliverySpecResult, error)
+	CreateProjectReport(ctx context.Context) (*ProjectReportResult, error)
+
+	// --- Transform, Crop, Masking, Stabilization, Blur & Distortion ---
+	SetCrop(ctx context.Context, trackIndex, clipIndex int, left, right, top, bottom float64) (*GenericResult, error)
+	GetCrop(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error)
+	ResetCrop(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error)
+	SetUniformScale(ctx context.Context, trackIndex, clipIndex int, enabled bool) (*GenericResult, error)
+	GetTransformProperties(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error)
+	SetAntiFlicker(ctx context.Context, trackIndex, clipIndex int, value float64) (*GenericResult, error)
+	ResetTransform(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error)
+	CenterClip(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error)
+	FitClipToFrame(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error)
+	FillFrame(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error)
+	CreatePIP(ctx context.Context, mainTrackIndex, mainClipIndex, pipTrackIndex, pipClipIndex int, position string, scale float64) (*GenericResult, error)
+	RemovePIP(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error)
+	SetOpacityKeyframes(ctx context.Context, trackIndex, clipIndex int, keyframesJSON string) (*GenericResult, error)
+	FadeIn(ctx context.Context, trackIndex, clipIndex int, durationSeconds float64) (*GenericResult, error)
+	FadeOut(ctx context.Context, trackIndex, clipIndex int, durationSeconds float64) (*GenericResult, error)
+	CrossFadeClips(ctx context.Context, trackIndex, clipIndexA, clipIndexB int, durationSeconds float64) (*GenericResult, error)
+	ApplyWarpStabilizer(ctx context.Context, trackIndex, clipIndex int, smoothness float64) (*GenericResult, error)
+	GetStabilizationStatus(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error)
+	ApplyLensDistortionRemoval(ctx context.Context, trackIndex, clipIndex int, curvature float64) (*GenericResult, error)
+	ApplyVideoNoiseReduction(ctx context.Context, trackIndex, clipIndex int, amount float64) (*GenericResult, error)
+	ApplyAudioNoiseReduction(ctx context.Context, trackIndex, clipIndex int, amount float64) (*GenericResult, error)
+	ApplyDeReverb(ctx context.Context, trackIndex, clipIndex int, amount float64) (*GenericResult, error)
+	ApplyDeHum(ctx context.Context, trackIndex, clipIndex int, frequency float64) (*GenericResult, error)
+	ApplyGaussianBlur(ctx context.Context, trackIndex, clipIndex int, blurriness float64) (*GenericResult, error)
+	ApplyDirectionalBlur(ctx context.Context, trackIndex, clipIndex int, direction, length float64) (*GenericResult, error)
+	ApplySharpen(ctx context.Context, trackIndex, clipIndex int, amount float64) (*GenericResult, error)
+	ApplyUnsharpMask(ctx context.Context, trackIndex, clipIndex int, amount, radius, threshold float64) (*GenericResult, error)
+	ApplyMirror(ctx context.Context, trackIndex, clipIndex int, angle float64, centerX, centerY float64) (*GenericResult, error)
+	ApplyCornerPin(ctx context.Context, trackIndex, clipIndex int, cornersJSON string) (*GenericResult, error)
+	ApplySpherize(ctx context.Context, trackIndex, clipIndex int, radius, centerX, centerY float64) (*GenericResult, error)
 }
