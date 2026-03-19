@@ -2412,3 +2412,677 @@ function navigateToMarker(markerIndex) {
         return _err("navigateToMarker failed: " + e.message);
     }
 }
+
+// ===========================================================================
+// Clip Operations
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Helper: resolve a track from the active sequence by type and index.
+// trackType: "video" or "audio"
+// ---------------------------------------------------------------------------
+function _getTrack(seq, trackType, trackIndex) {
+    trackIndex = parseInt(trackIndex, 10) || 0;
+    if (trackType === "audio") {
+        if (!seq.audioTracks || trackIndex >= seq.audioTracks.numTracks) return null;
+        return seq.audioTracks[trackIndex];
+    }
+    if (!seq.videoTracks || trackIndex >= seq.videoTracks.numTracks) return null;
+    return seq.videoTracks[trackIndex];
+}
+
+function _getClip(track, clipIndex) {
+    clipIndex = parseInt(clipIndex, 10) || 0;
+    if (!track.clips || clipIndex >= track.clips.numItems) return null;
+    return track.clips[clipIndex];
+}
+
+function _buildClipInfo(clip, clipIndex, trackType, trackIndex) {
+    var info = {
+        index: clipIndex,
+        name: clip.name || "",
+        start: _timeToSeconds(clip.start),
+        end: _timeToSeconds(clip.end),
+        duration: _timeToSeconds(clip.duration),
+        inPoint: _timeToSeconds(clip.inPoint),
+        outPoint: _timeToSeconds(clip.outPoint),
+        type: clip.type || "",
+        trackType: trackType,
+        trackIndex: trackIndex,
+        mediaPath: ""
+    };
+    try { if (clip.projectItem && clip.projectItem.getMediaPath) info.mediaPath = clip.projectItem.getMediaPath() || ""; } catch (e) {}
+    try { info.enabled = (typeof clip.disabled !== "undefined") ? !clip.disabled : true; } catch (e) { info.enabled = true; }
+    return info;
+}
+
+// ---------------------------------------------------------------------------
+// 1. insertClip
+// ---------------------------------------------------------------------------
+function insertClip(projectItemIndex, time, vTrackIndex, aTrackIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        projectItemIndex = parseInt(projectItemIndex, 10) || 0;
+        time = parseFloat(time) || 0;
+        vTrackIndex = parseInt(vTrackIndex, 10) || 0;
+        aTrackIndex = parseInt(aTrackIndex, 10) || 0;
+        if (!app.project.rootItem.children || projectItemIndex >= app.project.rootItem.children.numItems)
+            return _err("Project item index " + projectItemIndex + " out of range");
+        var pi = app.project.rootItem.children[projectItemIndex];
+        if (!pi) return _err("No project item at index " + projectItemIndex);
+        seq.insertClip(pi, _secondsToTime(time), vTrackIndex, aTrackIndex);
+        return _ok({ action: "insert", projectItemName: pi.name || "", time: time, vTrackIndex: vTrackIndex, aTrackIndex: aTrackIndex });
+    } catch (e) { return _err("insertClip failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 2. overwriteClip
+// ---------------------------------------------------------------------------
+function overwriteClip(projectItemIndex, time, vTrackIndex, aTrackIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        projectItemIndex = parseInt(projectItemIndex, 10) || 0;
+        time = parseFloat(time) || 0;
+        vTrackIndex = parseInt(vTrackIndex, 10) || 0;
+        aTrackIndex = parseInt(aTrackIndex, 10) || 0;
+        if (!app.project.rootItem.children || projectItemIndex >= app.project.rootItem.children.numItems)
+            return _err("Project item index " + projectItemIndex + " out of range");
+        var pi = app.project.rootItem.children[projectItemIndex];
+        if (!pi) return _err("No project item at index " + projectItemIndex);
+        seq.overwriteClip(pi, _secondsToTime(time), vTrackIndex, aTrackIndex);
+        return _ok({ action: "overwrite", projectItemName: pi.name || "", time: time, vTrackIndex: vTrackIndex, aTrackIndex: aTrackIndex });
+    } catch (e) { return _err("overwriteClip failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 4. removeClipFromTrack
+// ---------------------------------------------------------------------------
+function removeClipFromTrack(trackType, trackIndex, clipIndex, ripple) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var track = _getTrack(seq, trackType, trackIndex);
+        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
+        var clip = _getClip(track, clipIndex);
+        if (!clip) return _err("Clip not found at index " + clipIndex);
+        var clipName = clip.name || "";
+        var doRipple = (ripple === true || ripple === "true" || ripple === 1);
+        clip.remove(doRipple, true);
+        return _ok({ action: "remove", clipName: clipName, trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, ripple: doRipple });
+    } catch (e) { return _err("removeClipFromTrack failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 5. moveClip
+// ---------------------------------------------------------------------------
+function moveClip(trackType, trackIndex, clipIndex, newStartTime) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var track = _getTrack(seq, trackType, trackIndex);
+        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
+        var clip = _getClip(track, clipIndex);
+        if (!clip) return _err("Clip not found at index " + clipIndex);
+        newStartTime = parseFloat(newStartTime) || 0;
+        var oldStart = _timeToSeconds(clip.start);
+        clip.start = _secondsToTime(newStartTime);
+        return _ok({ action: "move", clipName: clip.name || "", trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, oldStartTime: oldStart, newStartTime: newStartTime });
+    } catch (e) { return _err("moveClip failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 6. copyClip
+// ---------------------------------------------------------------------------
+var _clipboardClip = null;
+var _clipboardTrackType = null;
+
+function copyClip(trackType, trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var track = _getTrack(seq, trackType, trackIndex);
+        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
+        var clip = _getClip(track, clipIndex);
+        if (!clip) return _err("Clip not found at index " + clipIndex);
+        _clipboardClip = clip;
+        _clipboardTrackType = trackType;
+        return _ok({ action: "copy", clipName: clip.name || "", trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0 });
+    } catch (e) { return _err("copyClip failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 7. pasteClip
+// ---------------------------------------------------------------------------
+function pasteClip(trackType, trackIndex, time) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        if (!_clipboardClip) return _err("No clip in clipboard. Use copyClip first.");
+        if (!_clipboardClip.projectItem) return _err("Copied clip has no project item reference");
+        var track = _getTrack(seq, trackType, trackIndex);
+        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
+        time = parseFloat(time) || 0;
+        track.insertClip(_clipboardClip.projectItem, _secondsToTime(time));
+        return _ok({ action: "paste", clipName: _clipboardClip.name || "", trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, time: time });
+    } catch (e) { return _err("pasteClip failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 8. duplicateClip
+// ---------------------------------------------------------------------------
+function duplicateClip(trackType, trackIndex, clipIndex, destTrackIndex, destTime) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var srcTrack = _getTrack(seq, trackType, trackIndex);
+        if (!srcTrack) return _err("Source track not found: " + trackType + "[" + trackIndex + "]");
+        var clip = _getClip(srcTrack, clipIndex);
+        if (!clip) return _err("Clip not found at index " + clipIndex);
+        if (!clip.projectItem) return _err("Clip has no project item reference for duplication");
+        destTrackIndex = parseInt(destTrackIndex, 10) || 0;
+        destTime = parseFloat(destTime) || 0;
+        var destTrack = _getTrack(seq, trackType, destTrackIndex);
+        if (!destTrack) return _err("Destination track not found: " + trackType + "[" + destTrackIndex + "]");
+        destTrack.insertClip(clip.projectItem, _secondsToTime(destTime));
+        return _ok({ action: "duplicate", clipName: clip.name || "", srcTrackType: trackType, srcTrackIndex: parseInt(trackIndex, 10) || 0, srcClipIndex: parseInt(clipIndex, 10) || 0, destTrackIndex: destTrackIndex, destTime: destTime });
+    } catch (e) { return _err("duplicateClip failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 9. razorClip
+// ---------------------------------------------------------------------------
+function razorClip(trackType, trackIndex, time) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var track = _getTrack(seq, trackType, trackIndex);
+        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
+        time = parseFloat(time) || 0;
+        var razorTime = _secondsToTime(time);
+        var found = false;
+        if (track.clips) {
+            for (var i = 0; i < track.clips.numItems; i++) {
+                var c = track.clips[i];
+                if (time > _timeToSeconds(c.start) && time < _timeToSeconds(c.end)) {
+                    if (typeof qe !== "undefined" && qe.project) {
+                        var qeSeq = qe.project.getActiveSequence();
+                        if (qeSeq) {
+                            var qeTrack = (trackType === "audio") ? qeSeq.getAudioTrackAt(parseInt(trackIndex, 10) || 0) : qeSeq.getVideoTrackAt(parseInt(trackIndex, 10) || 0);
+                            if (qeTrack) { qeTrack.razor(razorTime.ticks); found = true; }
+                        }
+                    }
+                    if (!found) { c.end = razorTime; found = true; }
+                    break;
+                }
+            }
+        }
+        if (!found) return _err("No clip found at time " + time + " on " + trackType + " track " + trackIndex);
+        return _ok({ action: "razor", trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, time: time });
+    } catch (e) { return _err("razorClip failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 10. razorAllTracks
+// ---------------------------------------------------------------------------
+function razorAllTracks(time) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        time = parseFloat(time) || 0;
+        var razorTime = _secondsToTime(time);
+        var tracksRazored = 0;
+        if (typeof qe !== "undefined" && qe.project) {
+            var qeSeq = qe.project.getActiveSequence();
+            if (qeSeq) {
+                for (var vi = 0; vi < seq.videoTracks.numTracks; vi++) { try { var qvt = qeSeq.getVideoTrackAt(vi); if (qvt) { qvt.razor(razorTime.ticks); tracksRazored++; } } catch (e2) {} }
+                for (var ai = 0; ai < seq.audioTracks.numTracks; ai++) { try { var qat = qeSeq.getAudioTrackAt(ai); if (qat) { qat.razor(razorTime.ticks); tracksRazored++; } } catch (e3) {} }
+            }
+        }
+        return _ok({ action: "razorAll", time: time, tracksRazored: tracksRazored, videoTrackCount: seq.videoTracks ? seq.videoTracks.numTracks : 0, audioTrackCount: seq.audioTracks ? seq.audioTracks.numTracks : 0 });
+    } catch (e) { return _err("razorAllTracks failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 11. getClipInfo
+// ---------------------------------------------------------------------------
+function getClipInfo(trackType, trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var track = _getTrack(seq, trackType, trackIndex);
+        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
+        var clip = _getClip(track, clipIndex);
+        if (!clip) return _err("Clip not found at index " + clipIndex);
+        var info = _buildClipInfo(clip, parseInt(clipIndex, 10) || 0, trackType, parseInt(trackIndex, 10) || 0);
+        info.effects = [];
+        if (clip.components) {
+            for (var ci = 0; ci < clip.components.numItems; ci++) {
+                var comp = clip.components[ci];
+                var compInfo = { index: ci, displayName: comp.displayName || "", matchName: comp.matchName || "", properties: [] };
+                if (comp.properties) {
+                    for (var pi = 0; pi < comp.properties.numItems; pi++) {
+                        var prop = comp.properties[pi];
+                        compInfo.properties.push({ displayName: prop.displayName || "", value: (typeof prop.getValue === "function") ? prop.getValue() : "" });
+                    }
+                }
+                info.effects.push(compInfo);
+            }
+        }
+        return _ok(info);
+    } catch (e) { return _err("getClipInfo failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 12. getClipsOnTrack
+// ---------------------------------------------------------------------------
+function getClipsOnTrack(trackType, trackIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var track = _getTrack(seq, trackType, trackIndex);
+        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
+        var clips = [];
+        if (track.clips) { for (var i = 0; i < track.clips.numItems; i++) clips.push(_buildClipInfo(track.clips[i], i, trackType, parseInt(trackIndex, 10) || 0)); }
+        return _ok({ trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, trackName: track.name || "", clipCount: clips.length, clips: clips });
+    } catch (e) { return _err("getClipsOnTrack failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 13. getAllClips
+// ---------------------------------------------------------------------------
+function getAllClips() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var all = [];
+        if (seq.videoTracks) { for (var vi = 0; vi < seq.videoTracks.numTracks; vi++) { var vt = seq.videoTracks[vi]; if (vt.clips) { for (var vc = 0; vc < vt.clips.numItems; vc++) all.push(_buildClipInfo(vt.clips[vc], vc, "video", vi)); } } }
+        if (seq.audioTracks) { for (var ai = 0; ai < seq.audioTracks.numTracks; ai++) { var at2 = seq.audioTracks[ai]; if (at2.clips) { for (var ac = 0; ac < at2.clips.numItems; ac++) all.push(_buildClipInfo(at2.clips[ac], ac, "audio", ai)); } } }
+        return _ok({ sequenceName: seq.name || "", totalClips: all.length, clips: all });
+    } catch (e) { return _err("getAllClips failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 14. setClipName
+// ---------------------------------------------------------------------------
+function setClipName(trackType, trackIndex, clipIndex, name) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var track = _getTrack(seq, trackType, trackIndex);
+        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
+        var clip = _getClip(track, clipIndex);
+        if (!clip) return _err("Clip not found at index " + clipIndex);
+        var oldName = clip.name || "";
+        clip.name = name || "";
+        return _ok({ action: "rename", oldName: oldName, newName: name || "", trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0 });
+    } catch (e) { return _err("setClipName failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 15. setClipEnabled
+// ---------------------------------------------------------------------------
+function setClipEnabled(trackType, trackIndex, clipIndex, enabled) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var track = _getTrack(seq, trackType, trackIndex);
+        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
+        var clip = _getClip(track, clipIndex);
+        if (!clip) return _err("Clip not found at index " + clipIndex);
+        var isEnabled = (enabled === true || enabled === "true" || enabled === 1);
+        clip.disabled = !isEnabled;
+        return _ok({ action: "setEnabled", clipName: clip.name || "", enabled: isEnabled, trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0 });
+    } catch (e) { return _err("setClipEnabled failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 16. setClipSpeed
+// ---------------------------------------------------------------------------
+function setClipSpeed(trackType, trackIndex, clipIndex, speed, ripple) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var track = _getTrack(seq, trackType, trackIndex);
+        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
+        var clip = _getClip(track, clipIndex);
+        if (!clip) return _err("Clip not found at index " + clipIndex);
+        speed = parseFloat(speed) || 1.0;
+        if (speed <= 0) return _err("Speed must be positive");
+        var doRipple = (ripple === true || ripple === "true" || ripple === 1);
+        if (typeof qe !== "undefined" && qe.project) {
+            var qeSeq = qe.project.getActiveSequence();
+            if (qeSeq) {
+                var tIdx = parseInt(trackIndex, 10) || 0;
+                var cIdx = parseInt(clipIndex, 10) || 0;
+                var qeTrack = (trackType === "audio") ? qeSeq.getAudioTrackAt(tIdx) : qeSeq.getVideoTrackAt(tIdx);
+                if (qeTrack) { var qeClip = qeTrack.getItemAt(cIdx); if (qeClip && qeClip.setSpeed) qeClip.setSpeed(speed * 100, doRipple, false); }
+            }
+        } else {
+            var curDur = _timeToSeconds(clip.duration);
+            clip.end = _secondsToTime(_timeToSeconds(clip.start) + curDur / speed);
+        }
+        return _ok({ action: "setSpeed", clipName: clip.name || "", speed: speed, ripple: doRipple, trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0 });
+    } catch (e) { return _err("setClipSpeed failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 17. reverseClip
+// ---------------------------------------------------------------------------
+function reverseClip(trackType, trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var track = _getTrack(seq, trackType, trackIndex);
+        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
+        var clip = _getClip(track, clipIndex);
+        if (!clip) return _err("Clip not found at index " + clipIndex);
+        if (typeof qe !== "undefined" && qe.project) {
+            var qeSeq = qe.project.getActiveSequence();
+            if (qeSeq) {
+                var tIdx = parseInt(trackIndex, 10) || 0;
+                var cIdx = parseInt(clipIndex, 10) || 0;
+                var qeTrack = (trackType === "audio") ? qeSeq.getAudioTrackAt(tIdx) : qeSeq.getVideoTrackAt(tIdx);
+                if (qeTrack) { var qeClip = qeTrack.getItemAt(cIdx); if (qeClip && qeClip.setSpeed) qeClip.setSpeed(-100, false, true); }
+            }
+        }
+        return _ok({ action: "reverse", clipName: clip.name || "", trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0 });
+    } catch (e) { return _err("reverseClip failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 18. setClipInPoint
+// ---------------------------------------------------------------------------
+function setClipInPoint(trackType, trackIndex, clipIndex, seconds) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var track = _getTrack(seq, trackType, trackIndex);
+        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
+        var clip = _getClip(track, clipIndex);
+        if (!clip) return _err("Clip not found at index " + clipIndex);
+        seconds = parseFloat(seconds) || 0;
+        var oldIP = _timeToSeconds(clip.inPoint);
+        clip.inPoint = _secondsToTime(seconds);
+        return _ok({ action: "setInPoint", clipName: clip.name || "", oldInPoint: oldIP, newInPoint: seconds, trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0 });
+    } catch (e) { return _err("setClipInPoint failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 19. setClipOutPoint
+// ---------------------------------------------------------------------------
+function setClipOutPoint(trackType, trackIndex, clipIndex, seconds) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var track = _getTrack(seq, trackType, trackIndex);
+        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
+        var clip = _getClip(track, clipIndex);
+        if (!clip) return _err("Clip not found at index " + clipIndex);
+        seconds = parseFloat(seconds) || 0;
+        var oldOP = _timeToSeconds(clip.outPoint);
+        clip.outPoint = _secondsToTime(seconds);
+        return _ok({ action: "setOutPoint", clipName: clip.name || "", oldOutPoint: oldOP, newOutPoint: seconds, trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0 });
+    } catch (e) { return _err("setClipOutPoint failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 20. getClipSpeed
+// ---------------------------------------------------------------------------
+function getClipSpeed(trackType, trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var track = _getTrack(seq, trackType, trackIndex);
+        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
+        var clip = _getClip(track, clipIndex);
+        if (!clip) return _err("Clip not found at index " + clipIndex);
+        var speed = 1.0, reversed = false;
+        if (typeof qe !== "undefined" && qe.project) {
+            var qeSeq = qe.project.getActiveSequence();
+            if (qeSeq) {
+                var tIdx = parseInt(trackIndex, 10) || 0;
+                var cIdx = parseInt(clipIndex, 10) || 0;
+                var qeTrack = (trackType === "audio") ? qeSeq.getAudioTrackAt(tIdx) : qeSeq.getVideoTrackAt(tIdx);
+                if (qeTrack) { var qeClip = qeTrack.getItemAt(cIdx); if (qeClip && qeClip.getSpeed) { var rs = qeClip.getSpeed(); speed = Math.abs(parseFloat(rs)) / 100; reversed = parseFloat(rs) < 0; } }
+            }
+        }
+        return _ok({ clipName: clip.name || "", speed: speed, reversed: reversed, trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0 });
+    } catch (e) { return _err("getClipSpeed failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 21. trimClipStart
+// ---------------------------------------------------------------------------
+function trimClipStart(trackType, trackIndex, clipIndex, newStartTime) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var track = _getTrack(seq, trackType, trackIndex);
+        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
+        var clip = _getClip(track, clipIndex);
+        if (!clip) return _err("Clip not found at index " + clipIndex);
+        newStartTime = parseFloat(newStartTime) || 0;
+        var oldStart = _timeToSeconds(clip.start);
+        var oldIP = _timeToSeconds(clip.inPoint);
+        var delta = newStartTime - oldStart;
+        clip.inPoint = _secondsToTime(oldIP + delta);
+        clip.start = _secondsToTime(newStartTime);
+        return _ok({ action: "trimStart", clipName: clip.name || "", oldStart: oldStart, newStart: newStartTime, oldInPoint: oldIP, newInPoint: oldIP + delta, trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0 });
+    } catch (e) { return _err("trimClipStart failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 22. trimClipEnd
+// ---------------------------------------------------------------------------
+function trimClipEnd(trackType, trackIndex, clipIndex, newEndTime) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var track = _getTrack(seq, trackType, trackIndex);
+        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
+        var clip = _getClip(track, clipIndex);
+        if (!clip) return _err("Clip not found at index " + clipIndex);
+        newEndTime = parseFloat(newEndTime) || 0;
+        var oldEnd = _timeToSeconds(clip.end);
+        var oldOP = _timeToSeconds(clip.outPoint);
+        var delta = newEndTime - oldEnd;
+        clip.outPoint = _secondsToTime(oldOP + delta);
+        clip.end = _secondsToTime(newEndTime);
+        return _ok({ action: "trimEnd", clipName: clip.name || "", oldEnd: oldEnd, newEnd: newEndTime, oldOutPoint: oldOP, newOutPoint: oldOP + delta, trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0 });
+    } catch (e) { return _err("trimClipEnd failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 23. extendClipToPlayhead
+// ---------------------------------------------------------------------------
+function extendClipToPlayhead(trackType, trackIndex, clipIndex, trimEnd) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var track = _getTrack(seq, trackType, trackIndex);
+        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
+        var clip = _getClip(track, clipIndex);
+        if (!clip) return _err("Clip not found at index " + clipIndex);
+        var playheadPos = _timeToSeconds(seq.getPlayerPosition());
+        var doTrimEnd = (trimEnd === true || trimEnd === "true" || trimEnd === 1);
+        if (doTrimEnd) {
+            var oldEnd = _timeToSeconds(clip.end);
+            var oldOP = _timeToSeconds(clip.outPoint);
+            clip.outPoint = _secondsToTime(oldOP + (playheadPos - oldEnd));
+            clip.end = _secondsToTime(playheadPos);
+            return _ok({ action: "extendEnd", clipName: clip.name || "", playheadPos: playheadPos, oldEnd: oldEnd, newEnd: playheadPos });
+        } else {
+            var oldStart = _timeToSeconds(clip.start);
+            var oldIP = _timeToSeconds(clip.inPoint);
+            clip.inPoint = _secondsToTime(oldIP + (playheadPos - oldStart));
+            clip.start = _secondsToTime(playheadPos);
+            return _ok({ action: "extendStart", clipName: clip.name || "", playheadPos: playheadPos, oldStart: oldStart, newStart: playheadPos });
+        }
+    } catch (e) { return _err("extendClipToPlayhead failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 24. createSubclip
+// ---------------------------------------------------------------------------
+function createSubclip(projectItemIndex, name, inPoint, outPoint) {
+    try {
+        if (!app.project) return _err("No project is open");
+        projectItemIndex = parseInt(projectItemIndex, 10) || 0;
+        inPoint = parseFloat(inPoint) || 0;
+        outPoint = parseFloat(outPoint) || 0;
+        if (!app.project.rootItem.children || projectItemIndex >= app.project.rootItem.children.numItems)
+            return _err("Project item index " + projectItemIndex + " out of range");
+        var pi = app.project.rootItem.children[projectItemIndex];
+        if (!pi) return _err("No project item at index " + projectItemIndex);
+        name = name || (pi.name + "_subclip");
+        var startT = _secondsToTime(inPoint);
+        var endT = _secondsToTime(outPoint);
+        var sub = pi.createSubClip(name, startT.ticks, endT.ticks, 0, 1, 1);
+        return _ok({ action: "createSubclip", name: name, sourceName: pi.name || "", sourceIndex: projectItemIndex, inPoint: inPoint, outPoint: outPoint, created: sub ? true : false });
+    } catch (e) { return _err("createSubclip failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 25. selectClip
+// ---------------------------------------------------------------------------
+function selectClip(trackType, trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var track = _getTrack(seq, trackType, trackIndex);
+        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
+        var clip = _getClip(track, clipIndex);
+        if (!clip) return _err("Clip not found at index " + clipIndex);
+        clip.setSelected(true, true);
+        return _ok({ action: "select", clipName: clip.name || "", trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0 });
+    } catch (e) { return _err("selectClip failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 26. deselectAll
+// ---------------------------------------------------------------------------
+function deselectAll() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var count = 0;
+        if (seq.videoTracks) { for (var vi = 0; vi < seq.videoTracks.numTracks; vi++) { var vt = seq.videoTracks[vi]; if (vt.clips) { for (var vc = 0; vc < vt.clips.numItems; vc++) { try { vt.clips[vc].setSelected(false, true); count++; } catch (e2) {} } } } }
+        if (seq.audioTracks) { for (var ai = 0; ai < seq.audioTracks.numTracks; ai++) { var at2 = seq.audioTracks[ai]; if (at2.clips) { for (var ac = 0; ac < at2.clips.numItems; ac++) { try { at2.clips[ac].setSelected(false, true); count++; } catch (e3) {} } } } }
+        return _ok({ action: "deselectAll", clipsDeselected: count });
+    } catch (e) { return _err("deselectAll failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 27. getSelectedClips
+// ---------------------------------------------------------------------------
+function getSelectedClips() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var selected = [];
+        if (seq.videoTracks) { for (var vi = 0; vi < seq.videoTracks.numTracks; vi++) { var vt = seq.videoTracks[vi]; if (vt.clips) { for (var vc = 0; vc < vt.clips.numItems; vc++) { try { if (vt.clips[vc].isSelected()) selected.push(_buildClipInfo(vt.clips[vc], vc, "video", vi)); } catch (e2) {} } } } }
+        if (seq.audioTracks) { for (var ai = 0; ai < seq.audioTracks.numTracks; ai++) { var at2 = seq.audioTracks[ai]; if (at2.clips) { for (var ac = 0; ac < at2.clips.numItems; ac++) { try { if (at2.clips[ac].isSelected()) selected.push(_buildClipInfo(at2.clips[ac], ac, "audio", ai)); } catch (e3) {} } } } }
+        return _ok({ selectedCount: selected.length, clips: selected });
+    } catch (e) { return _err("getSelectedClips failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 28. linkClips
+// ---------------------------------------------------------------------------
+function linkClips(clipPairsJson) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var clipPairs = JSON.parse(clipPairsJson);
+        if (!clipPairs || !clipPairs.length) return _err("No clip pairs provided");
+        var linked = 0;
+        for (var i = 0; i < clipPairs.length; i++) {
+            var p = clipPairs[i];
+            var vTrack = _getTrack(seq, "video", p.vTrack);
+            var aTrack = _getTrack(seq, "audio", p.aTrack);
+            if (!vTrack || !aTrack) continue;
+            var vClip = _getClip(vTrack, p.vClip);
+            var aClip = _getClip(aTrack, p.aClip);
+            if (!vClip || !aClip) continue;
+            try { vClip.link(aClip); linked++; } catch (lErr) {}
+        }
+        return _ok({ action: "link", pairsRequested: clipPairs.length, pairsLinked: linked });
+    } catch (e) { return _err("linkClips failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 29. unlinkClips
+// ---------------------------------------------------------------------------
+function unlinkClips(trackType, trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var track = _getTrack(seq, trackType, trackIndex);
+        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
+        var clip = _getClip(track, clipIndex);
+        if (!clip) return _err("Clip not found at index " + clipIndex);
+        clip.unlink();
+        return _ok({ action: "unlink", clipName: clip.name || "", trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0 });
+    } catch (e) { return _err("unlinkClips failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// 30. getLinkedClips
+// ---------------------------------------------------------------------------
+function getLinkedClips(trackType, trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var track = _getTrack(seq, trackType, trackIndex);
+        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
+        var clip = _getClip(track, clipIndex);
+        if (!clip) return _err("Clip not found at index " + clipIndex);
+        var linkedClips = [];
+        var srcStart = _timeToSeconds(clip.start);
+        var srcEnd = _timeToSeconds(clip.end);
+        var tI = parseInt(trackIndex, 10) || 0;
+        var cI = parseInt(clipIndex, 10) || 0;
+        var search = function(tracks, tt, n) {
+            for (var ti = 0; ti < n; ti++) {
+                var t = tracks[ti]; if (!t.clips) continue;
+                for (var ci = 0; ci < t.clips.numItems; ci++) {
+                    if (tt === trackType && ti === tI && ci === cI) continue;
+                    try { var c = t.clips[ci]; if (Math.abs(_timeToSeconds(c.start) - srcStart) < 0.01 && Math.abs(_timeToSeconds(c.end) - srcEnd) < 0.01) linkedClips.push(_buildClipInfo(c, ci, tt, ti)); } catch (e2) {}
+                }
+            }
+        };
+        if (seq.videoTracks) search(seq.videoTracks, "video", seq.videoTracks.numTracks);
+        if (seq.audioTracks) search(seq.audioTracks, "audio", seq.audioTracks.numTracks);
+        return _ok({ clipName: clip.name || "", trackType: trackType, trackIndex: tI, clipIndex: cI, linkedCount: linkedClips.length, linkedClips: linkedClips });
+    } catch (e) { return _err("getLinkedClips failed: " + e.message); }
+}
