@@ -104,13 +104,13 @@ PremierProMCP/
 - [just](https://github.com/casey/just) (command runner)
 - [buf](https://buf.build/) (protobuf toolchain)
 - [FFmpeg](https://ffmpeg.org/) (media processing)
-- Adobe Premiere Pro 2025
+- Adobe Premiere Pro (2020 or later)
 
 ## Quick Start
 
 ```bash
 # Clone
-git clone https://github.com/your-org/PremierProMCP.git
+git clone https://github.com/ayushozha/AdobePremiereProMCP.git
 cd PremierProMCP
 
 # Copy env template
