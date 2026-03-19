@@ -285,4 +285,82 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ---
 
-*Phases 2+ will be added as they are completed.*
+## Phase 1j: Effects, Transitions, Motion & Keyframing (36 tools added)
+**Commit:** `ef02c03` (batched)
+**Features:**
+1. `premiere_add_video_transition` — Add video transition (QE DOM)
+2. `premiere_add_audio_transition` — Add audio transition
+3. `premiere_remove_transition` — Remove transition
+4. `premiere_get_transitions` — List transitions on track
+5. `premiere_set_default_video_transition` — Set default video transition
+6. `premiere_set_default_audio_transition` — Set default audio transition
+7. `premiere_apply_default_transition` — Apply default transition
+8. `premiere_get_available_transitions` — List all available transitions
+9. `premiere_apply_video_effect` — Apply video effect (QE DOM)
+10. `premiere_remove_video_effect` — Remove effect from clip
+11. `premiere_get_clip_effects` — List all effects with parameters
+12. `premiere_set_effect_parameter` — Set effect parameter value
+13. `premiere_get_effect_parameter` — Get effect parameter value
+14. `premiere_enable_effect` — Enable/disable effect
+15. `premiere_copy_effects` — Copy effects from clip
+16. `premiere_paste_effects` — Paste effects to clip
+17. `premiere_set_position` — Set clip position (x, y)
+18. `premiere_set_scale` — Set clip scale
+19. `premiere_set_rotation` — Set clip rotation
+20. `premiere_set_anchor_point` — Set anchor point
+21. `premiere_set_opacity` — Set clip opacity
+22. `premiere_get_motion_properties` — Get all motion values
+23. `premiere_set_blend_mode` — Set blend mode
+24. `premiere_create_adjustment_layer` — Create adjustment layer
+25. `premiere_place_adjustment_layer` — Place on timeline
+26. `premiere_add_keyframe` — Add keyframe at time
+27. `premiere_delete_keyframe` — Delete keyframe
+28. `premiere_set_keyframe_interpolation` — Set interpolation type
+29. `premiere_get_keyframes` — Get all keyframes for parameter
+30. `premiere_set_time_varying` — Enable/disable keyframing
+31. `premiere_set_lumetri_brightness` — Lumetri brightness
+32. `premiere_set_lumetri_contrast` — Lumetri contrast
+33. `premiere_set_lumetri_saturation` — Lumetri saturation
+34. `premiere_set_lumetri_temperature` — Lumetri temperature
+35. `premiere_set_lumetri_tint` — Lumetri tint
+36. `premiere_set_lumetri_exposure` — Lumetri exposure
+
+---
+
+## Phase 2a: Multicam, Proxy, Workspace, Source Monitor (25 tools added)
+**Commit:** `5e16fc0`
+**Features:**
+1. `premiere_create_multicam_sequence` — Create multicam from clips
+2. `premiere_switch_multicam_angle` — Switch camera angle at time
+3. `premiere_flatten_multicam` — Flatten multicam to regular sequence
+4. `premiere_get_multicam_angles` — List available angles
+5. `premiere_create_proxy` — Create proxy for project item
+6. `premiere_attach_proxy` — Attach existing proxy file
+7. `premiere_has_proxy` — Check if item has proxy
+8. `premiere_get_proxy_path` — Get proxy file path
+9. `premiere_toggle_proxies` — Toggle proxy mode globally
+10. `premiere_detach_proxy` — Detach proxy from item
+11. `premiere_get_workspaces` — List available workspaces
+12. `premiere_set_workspace` — Switch workspace
+13. `premiere_save_workspace` — Save current workspace
+14. `premiere_undo` — Undo last action
+15. `premiere_redo` — Redo last undone action
+16. `premiere_sort_project_panel` — Sort project panel
+17. `premiere_search_project_panel` — Search in project panel
+18. `premiere_open_in_source_monitor` — Open clip in source monitor
+19. `premiere_get_source_monitor_position` — Get source monitor playhead
+20. `premiere_set_source_monitor_position` — Set source monitor playhead
+21. `premiere_get_auto_save_settings` — Get auto-save settings
+22. `premiere_set_auto_save_interval` — Set auto-save interval
+23. `premiere_get_memory_settings` — Get memory settings
+24. `premiere_clear_media_cache` — Clear media cache
+25. `premiere_get_media_cache_path` — Get media cache location
+
+---
+
+## Phase 2b: Advanced Editing (31 tools) — *In Progress*
+## Phase 2c: Color Correction / Lumetri (30 tools) — *In Progress*
+
+---
+
+*More phases will be added as they are completed.*
