@@ -291,6 +291,47 @@ type Orchestrator interface {
 	// --- Intelligence (Python service) ---
 	ParseScript(ctx context.Context, text string, filePath string, format string) (*ParsedScript, error)
 
+	// --- Multicam ---
+	CreateMulticamSequence(ctx context.Context, name string, clipIndices []int, syncPoint string) (*GenericResult, error)
+	SwitchMulticamAngle(ctx context.Context, trackIndex int, time float64, angleIndex int) (*GenericResult, error)
+	FlattenMulticam(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	GetMulticamAngles(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error)
+
+	// --- Proxy Workflow ---
+	CreateProxy(ctx context.Context, projectItemIndex int, presetPath string) (*GenericResult, error)
+	AttachProxy(ctx context.Context, projectItemIndex int, proxyPath string) (*GenericResult, error)
+	HasProxy(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	GetProxyPath(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	ToggleProxies(ctx context.Context, enabled bool) (*GenericResult, error)
+	DetachProxy(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+
+	// --- Workspace ---
+	GetWorkspaces(ctx context.Context) (*GenericResult, error)
+	SetWorkspace(ctx context.Context, name string) (*GenericResult, error)
+	SaveWorkspace(ctx context.Context, name string) (*GenericResult, error)
+
+	// --- Undo/Redo ---
+	Undo(ctx context.Context) (*GenericResult, error)
+	Redo(ctx context.Context) (*GenericResult, error)
+
+	// --- Project Panel ---
+	SortProjectPanel(ctx context.Context, field string, ascending bool) (*GenericResult, error)
+	SearchProjectPanel(ctx context.Context, query string) (*GenericResult, error)
+
+	// --- Source Monitor ---
+	OpenInSourceMonitor(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	GetSourceMonitorPosition(ctx context.Context) (*GenericResult, error)
+	SetSourceMonitorPosition(ctx context.Context, seconds float64) (*GenericResult, error)
+
+	// --- Preferences ---
+	GetAutoSaveSettings(ctx context.Context) (*GenericResult, error)
+	SetAutoSaveInterval(ctx context.Context, minutes int) (*GenericResult, error)
+	GetMemorySettings(ctx context.Context) (*GenericResult, error)
+
+	// --- Media Cache ---
+	ClearMediaCache(ctx context.Context) (*GenericResult, error)
+	GetMediaCachePath(ctx context.Context) (*GenericResult, error)
+
 	// --- Composite Workflows ---
 	AutoEdit(ctx context.Context, params *AutoEditParams) (*AutoEditResult, error)
 }

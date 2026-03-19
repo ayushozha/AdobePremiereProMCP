@@ -4741,6 +4741,382 @@ function setLumetriTemperature(trackIndex, clipIndex, value) { try { return _set
 function setLumetriTint(trackIndex, clipIndex, value) { try { return _setLumetriProperty(trackIndex, clipIndex, "Tint", value); } catch (e) { return _err("setLumetriTint failed: " + e.message); } }
 function setLumetriExposure(trackIndex, clipIndex, value) { try { return _setLumetriProperty(trackIndex, clipIndex, "Exposure", value); } catch (e) { return _err("setLumetriExposure failed: " + e.message); } }
 
+// ---------------------------------------------------------------------------
+// Lumetri Color — Extended (Comprehensive Color Correction)
+// ---------------------------------------------------------------------------
+
+/**
+ * Helper: Get or apply the Lumetri Color component on a clip.
+ * Returns the Lumetri component or null.
+ */
+function _getLumetriComponent(trackIndex, clipIndex) {
+    if (!app.project) return null;
+    var seq = app.project.activeSequence;
+    if (!seq) return null;
+    trackIndex = parseInt(trackIndex, 10) || 0;
+    clipIndex = parseInt(clipIndex, 10) || 0;
+    if (trackIndex >= seq.videoTracks.numTracks) return null;
+    var track = seq.videoTracks[trackIndex];
+    if (!track.clips || clipIndex >= track.clips.numItems) return null;
+    var clip = track.clips[clipIndex];
+    var lumetri = null;
+    if (clip.components) {
+        for (var ci = 0; ci < clip.components.numItems; ci++) {
+            var comp = clip.components[ci];
+            if (comp.displayName === "Lumetri Color" || comp.matchName === "AE.ADBE Lumetri") {
+                lumetri = comp;
+                break;
+            }
+        }
+    }
+    if (!lumetri) {
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (qeSeq) {
+            var qeTrack = qeSeq.getVideoTrackAt(trackIndex);
+            if (qeTrack) {
+                var qeClip = qeTrack.getItemAt(clipIndex);
+                if (qeClip) {
+                    var fx = qe.project.getVideoEffectByName("Lumetri Color");
+                    if (fx) qeClip.addVideoEffect(fx);
+                }
+            }
+        }
+        if (clip.components) {
+            for (var ci2 = 0; ci2 < clip.components.numItems; ci2++) {
+                var comp2 = clip.components[ci2];
+                if (comp2.displayName === "Lumetri Color" || comp2.matchName === "AE.ADBE Lumetri") {
+                    lumetri = comp2;
+                    break;
+                }
+            }
+        }
+    }
+    return lumetri;
+}
+
+/** 1. lumetriGetAll — Get all Lumetri Color parameter values */
+function lumetriGetAll(trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        clipIndex = parseInt(clipIndex, 10) || 0;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
+        var track = seq.videoTracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+        var lumetri = _getLumetriComponent(trackIndex, clipIndex);
+        if (!lumetri) return _err("Could not find or apply Lumetri Color effect");
+        var result = { trackIndex: trackIndex, clipIndex: clipIndex, properties: {} };
+        var propNames = ["Exposure", "Contrast", "Highlights", "Shadows", "Whites", "Blacks",
+                         "Temperature", "Tint", "Saturation", "Vibrance",
+                         "Faded Film", "Sharpen",
+                         "Vignette Amount", "Vignette Midpoint", "Vignette Roundness", "Vignette Feather"];
+        for (var i = 0; i < propNames.length; i++) {
+            var p = _findProperty(lumetri, propNames[i]);
+            if (p) { try { result.properties[propNames[i]] = p.getValue(); } catch (ve) { result.properties[propNames[i]] = "N/A"; } }
+        }
+        result.allParams = [];
+        if (lumetri.properties) {
+            for (var j = 0; j < lumetri.properties.numItems; j++) {
+                var pp = lumetri.properties[j];
+                var pInfo = { index: j, displayName: pp.displayName || "" };
+                try { pInfo.value = pp.getValue(); } catch (ve2) { pInfo.value = "N/A"; }
+                result.allParams.push(pInfo);
+            }
+        }
+        return _ok(result);
+    } catch (e) { return _err("lumetriGetAll failed: " + e.message); }
+}
+
+/** 2. lumetriSetExposure — Set exposure (-4.0 to 4.0) */
+function lumetriSetExposure(trackIndex, clipIndex, value) {
+    try { value = Math.max(-4.0, Math.min(4.0, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Exposure", value); } catch (e) { return _err("lumetriSetExposure failed: " + e.message); }
+}
+
+/** 3. lumetriSetContrast — Set contrast (-100 to 100) */
+function lumetriSetContrast(trackIndex, clipIndex, value) {
+    try { value = Math.max(-100, Math.min(100, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Contrast", value); } catch (e) { return _err("lumetriSetContrast failed: " + e.message); }
+}
+
+/** 4. lumetriSetHighlights — Set highlights (-100 to 100) */
+function lumetriSetHighlights(trackIndex, clipIndex, value) {
+    try { value = Math.max(-100, Math.min(100, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Highlights", value); } catch (e) { return _err("lumetriSetHighlights failed: " + e.message); }
+}
+
+/** 5. lumetriSetShadows — Set shadows (-100 to 100) */
+function lumetriSetShadows(trackIndex, clipIndex, value) {
+    try { value = Math.max(-100, Math.min(100, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Shadows", value); } catch (e) { return _err("lumetriSetShadows failed: " + e.message); }
+}
+
+/** 6. lumetriSetWhites — Set whites (-100 to 100) */
+function lumetriSetWhites(trackIndex, clipIndex, value) {
+    try { value = Math.max(-100, Math.min(100, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Whites", value); } catch (e) { return _err("lumetriSetWhites failed: " + e.message); }
+}
+
+/** 7. lumetriSetBlacks — Set blacks (-100 to 100) */
+function lumetriSetBlacks(trackIndex, clipIndex, value) {
+    try { value = Math.max(-100, Math.min(100, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Blacks", value); } catch (e) { return _err("lumetriSetBlacks failed: " + e.message); }
+}
+
+/** 8. lumetriSetTemperature — Set white balance temperature */
+function lumetriSetTemperature(trackIndex, clipIndex, value) {
+    try { value = parseFloat(value) || 0; return _setLumetriProperty(trackIndex, clipIndex, "Temperature", value); } catch (e) { return _err("lumetriSetTemperature failed: " + e.message); }
+}
+
+/** 9. lumetriSetTint — Set white balance tint */
+function lumetriSetTint(trackIndex, clipIndex, value) {
+    try { value = parseFloat(value) || 0; return _setLumetriProperty(trackIndex, clipIndex, "Tint", value); } catch (e) { return _err("lumetriSetTint failed: " + e.message); }
+}
+
+/** 10. lumetriSetSaturation — Set saturation (0 to 200) */
+function lumetriSetSaturation(trackIndex, clipIndex, value) {
+    try { value = Math.max(0, Math.min(200, parseFloat(value) || 100)); return _setLumetriProperty(trackIndex, clipIndex, "Saturation", value); } catch (e) { return _err("lumetriSetSaturation failed: " + e.message); }
+}
+
+/** 11. lumetriSetVibrance — Set vibrance (-100 to 100) */
+function lumetriSetVibrance(trackIndex, clipIndex, value) {
+    try { value = Math.max(-100, Math.min(100, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Vibrance", value); } catch (e) { return _err("lumetriSetVibrance failed: " + e.message); }
+}
+
+/** 12. lumetriSetFadedFilm — Set faded film amount (0 to 100) */
+function lumetriSetFadedFilm(trackIndex, clipIndex, value) {
+    try { value = Math.max(0, Math.min(100, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Faded Film", value); } catch (e) { return _err("lumetriSetFadedFilm failed: " + e.message); }
+}
+
+/** 13. lumetriSetSharpen — Set sharpening (0 to 200) */
+function lumetriSetSharpen(trackIndex, clipIndex, value) {
+    try { value = Math.max(0, Math.min(200, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Sharpen", value); } catch (e) { return _err("lumetriSetSharpen failed: " + e.message); }
+}
+
+/** 14. lumetriSetCurvePoint — Set a point on RGB/Luma curve (channel: luma/red/green/blue) */
+function lumetriSetCurvePoint(trackIndex, clipIndex, channel, inputValue, outputValue) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var lumetri = _getLumetriComponent(trackIndex, clipIndex);
+        if (!lumetri) return _err("Could not find or apply Lumetri Color effect");
+        channel = String(channel || "luma").toLowerCase();
+        inputValue = Math.max(0, Math.min(255, parseFloat(inputValue) || 0));
+        outputValue = Math.max(0, Math.min(255, parseFloat(outputValue) || 0));
+        var curvePropMap = { "luma": "Luma Curve", "red": "Red Curve", "green": "Green Curve", "blue": "Blue Curve" };
+        var propName = curvePropMap[channel];
+        if (!propName) return _err("Invalid curve channel: " + channel + ". Use luma, red, green, or blue.");
+        var prop = _findProperty(lumetri, propName);
+        if (!prop) return _err("Curve property '" + propName + "' not found");
+        var normIn = inputValue / 255.0;
+        var normOut = outputValue / 255.0;
+        try { prop.setValue([0, 0, normIn, normOut, 1, 1], true); } catch (curveErr) { return _err("Curve adjustment not supported via scripting in this version: " + curveErr.message); }
+        return _ok({ trackIndex: parseInt(trackIndex, 10), clipIndex: parseInt(clipIndex, 10), channel: channel, inputValue: inputValue, outputValue: outputValue });
+    } catch (e) { return _err("lumetriSetCurvePoint failed: " + e.message); }
+}
+
+/** 15. lumetriSetShadowColor — Set shadow color wheel */
+function lumetriSetShadowColor(trackIndex, clipIndex, hue, saturation, brightness) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var lumetri = _getLumetriComponent(trackIndex, clipIndex);
+        if (!lumetri) return _err("Could not find or apply Lumetri Color effect");
+        hue = parseFloat(hue) || 0; saturation = parseFloat(saturation) || 0; brightness = parseFloat(brightness) || 0;
+        var hueProp = _findProperty(lumetri, "Shadow Tint Hue"); if (!hueProp) hueProp = _findProperty(lumetri, "Shadows Hue");
+        var satProp = _findProperty(lumetri, "Shadow Tint Saturation"); if (!satProp) satProp = _findProperty(lumetri, "Shadows Saturation");
+        var lumProp = _findProperty(lumetri, "Shadow Tint Luminance"); if (!lumProp) lumProp = _findProperty(lumetri, "Shadows Brightness");
+        if (hueProp) hueProp.setValue(hue, true); if (satProp) satProp.setValue(saturation, true); if (lumProp) lumProp.setValue(brightness, true);
+        return _ok({ trackIndex: parseInt(trackIndex, 10), clipIndex: parseInt(clipIndex, 10), shadowColor: { hue: hue, saturation: saturation, brightness: brightness } });
+    } catch (e) { return _err("lumetriSetShadowColor failed: " + e.message); }
+}
+
+/** 16. lumetriSetMidtoneColor — Set midtone color wheel */
+function lumetriSetMidtoneColor(trackIndex, clipIndex, hue, saturation, brightness) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var lumetri = _getLumetriComponent(trackIndex, clipIndex);
+        if (!lumetri) return _err("Could not find or apply Lumetri Color effect");
+        hue = parseFloat(hue) || 0; saturation = parseFloat(saturation) || 0; brightness = parseFloat(brightness) || 0;
+        var hueProp = _findProperty(lumetri, "Midtone Tint Hue"); if (!hueProp) hueProp = _findProperty(lumetri, "Midtones Hue");
+        var satProp = _findProperty(lumetri, "Midtone Tint Saturation"); if (!satProp) satProp = _findProperty(lumetri, "Midtones Saturation");
+        var lumProp = _findProperty(lumetri, "Midtone Tint Luminance"); if (!lumProp) lumProp = _findProperty(lumetri, "Midtones Brightness");
+        if (hueProp) hueProp.setValue(hue, true); if (satProp) satProp.setValue(saturation, true); if (lumProp) lumProp.setValue(brightness, true);
+        return _ok({ trackIndex: parseInt(trackIndex, 10), clipIndex: parseInt(clipIndex, 10), midtoneColor: { hue: hue, saturation: saturation, brightness: brightness } });
+    } catch (e) { return _err("lumetriSetMidtoneColor failed: " + e.message); }
+}
+
+/** 17. lumetriSetHighlightColor — Set highlight color wheel */
+function lumetriSetHighlightColor(trackIndex, clipIndex, hue, saturation, brightness) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var lumetri = _getLumetriComponent(trackIndex, clipIndex);
+        if (!lumetri) return _err("Could not find or apply Lumetri Color effect");
+        hue = parseFloat(hue) || 0; saturation = parseFloat(saturation) || 0; brightness = parseFloat(brightness) || 0;
+        var hueProp = _findProperty(lumetri, "Highlight Tint Hue"); if (!hueProp) hueProp = _findProperty(lumetri, "Highlights Hue");
+        var satProp = _findProperty(lumetri, "Highlight Tint Saturation"); if (!satProp) satProp = _findProperty(lumetri, "Highlights Saturation");
+        var lumProp = _findProperty(lumetri, "Highlight Tint Luminance"); if (!lumProp) lumProp = _findProperty(lumetri, "Highlights Brightness");
+        if (hueProp) hueProp.setValue(hue, true); if (satProp) satProp.setValue(saturation, true); if (lumProp) lumProp.setValue(brightness, true);
+        return _ok({ trackIndex: parseInt(trackIndex, 10), clipIndex: parseInt(clipIndex, 10), highlightColor: { hue: hue, saturation: saturation, brightness: brightness } });
+    } catch (e) { return _err("lumetriSetHighlightColor failed: " + e.message); }
+}
+
+/** 18. lumetriSetVignetteAmount — Set vignette amount */
+function lumetriSetVignetteAmount(trackIndex, clipIndex, value) {
+    try { value = Math.max(-5, Math.min(5, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Vignette Amount", value); } catch (e) { return _err("lumetriSetVignetteAmount failed: " + e.message); }
+}
+
+/** 19. lumetriSetVignetteMidpoint — Set vignette midpoint */
+function lumetriSetVignetteMidpoint(trackIndex, clipIndex, value) {
+    try { value = Math.max(0, Math.min(100, parseFloat(value) || 50)); return _setLumetriProperty(trackIndex, clipIndex, "Vignette Midpoint", value); } catch (e) { return _err("lumetriSetVignetteMidpoint failed: " + e.message); }
+}
+
+/** 20. lumetriSetVignetteRoundness — Set vignette roundness */
+function lumetriSetVignetteRoundness(trackIndex, clipIndex, value) {
+    try { value = Math.max(-100, Math.min(100, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Vignette Roundness", value); } catch (e) { return _err("lumetriSetVignetteRoundness failed: " + e.message); }
+}
+
+/** 21. lumetriSetVignetteFeather — Set vignette feather */
+function lumetriSetVignetteFeather(trackIndex, clipIndex, value) {
+    try { value = Math.max(0, Math.min(100, parseFloat(value) || 50)); return _setLumetriProperty(trackIndex, clipIndex, "Vignette Feather", value); } catch (e) { return _err("lumetriSetVignetteFeather failed: " + e.message); }
+}
+
+/** 22. lumetriApplyLUT — Apply a LUT file (.cube, .3dl) */
+function lumetriApplyLUT(trackIndex, clipIndex, lutPath) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var lumetri = _getLumetriComponent(trackIndex, clipIndex);
+        if (!lumetri) return _err("Could not find or apply Lumetri Color effect");
+        lutPath = String(lutPath || ""); if (!lutPath) return _err("LUT path is required");
+        var lutProp = _findProperty(lumetri, "Input LUT"); if (!lutProp) lutProp = _findProperty(lumetri, "LUT"); if (!lutProp) lutProp = _findProperty(lumetri, "Custom LUT");
+        if (lutProp) { lutProp.setValue(lutPath, true); }
+        else {
+            var found = false;
+            if (lumetri.properties) { for (var i = 0; i < lumetri.properties.numItems; i++) { var p = lumetri.properties[i]; var dn = (p.displayName || "").toLowerCase(); if (dn.indexOf("lut") !== -1 || dn.indexOf("look") !== -1) { try { p.setValue(lutPath, true); found = true; break; } catch (lpErr) { /* continue */ } } } }
+            if (!found) return _err("Could not find LUT property in Lumetri Color effect");
+        }
+        return _ok({ trackIndex: parseInt(trackIndex, 10), clipIndex: parseInt(clipIndex, 10), lutPath: lutPath });
+    } catch (e) { return _err("lumetriApplyLUT failed: " + e.message); }
+}
+
+/** 23. lumetriRemoveLUT — Remove applied LUT */
+function lumetriRemoveLUT(trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var lumetri = _getLumetriComponent(trackIndex, clipIndex);
+        if (!lumetri) return _err("Could not find Lumetri Color effect");
+        var lutProp = _findProperty(lumetri, "Input LUT"); if (!lutProp) lutProp = _findProperty(lumetri, "LUT"); if (!lutProp) lutProp = _findProperty(lumetri, "Custom LUT");
+        if (lutProp) { lutProp.setValue("", true); }
+        return _ok({ trackIndex: parseInt(trackIndex, 10), clipIndex: parseInt(clipIndex, 10), lutRemoved: true });
+    } catch (e) { return _err("lumetriRemoveLUT failed: " + e.message); }
+}
+
+/** 24. lumetriAutoColor — Auto color correction (applies reasonable defaults) */
+function lumetriAutoColor(trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var lumetri = _getLumetriComponent(trackIndex, clipIndex);
+        if (!lumetri) return _err("Could not find or apply Lumetri Color effect");
+        var autoProps = { "Exposure": 0, "Contrast": 10, "Highlights": -10, "Shadows": 10, "Whites": 5, "Blacks": -5, "Saturation": 110, "Vibrance": 15 };
+        var adjusted = [];
+        for (var propName in autoProps) { if (autoProps.hasOwnProperty(propName)) { var p = _findProperty(lumetri, propName); if (p) { p.setValue(autoProps[propName], true); adjusted.push(propName); } } }
+        return _ok({ trackIndex: parseInt(trackIndex, 10), clipIndex: parseInt(clipIndex, 10), autoColor: true, adjustedProperties: adjusted });
+    } catch (e) { return _err("lumetriAutoColor failed: " + e.message); }
+}
+
+/** 25. lumetriReset — Reset all Lumetri settings to default */
+function lumetriReset(trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var lumetri = _getLumetriComponent(trackIndex, clipIndex);
+        if (!lumetri) return _err("Could not find Lumetri Color effect");
+        var defaults = { "Exposure": 0, "Contrast": 0, "Highlights": 0, "Shadows": 0, "Whites": 0, "Blacks": 0, "Temperature": 0, "Tint": 0, "Saturation": 100, "Vibrance": 0, "Faded Film": 0, "Sharpen": 0, "Vignette Amount": 0, "Vignette Midpoint": 50, "Vignette Roundness": 50, "Vignette Feather": 50 };
+        var resetArr = [];
+        for (var propName in defaults) { if (defaults.hasOwnProperty(propName)) { var p = _findProperty(lumetri, propName); if (p) { p.setValue(defaults[propName], true); resetArr.push(propName); } } }
+        return _ok({ trackIndex: parseInt(trackIndex, 10), clipIndex: parseInt(clipIndex, 10), reset: true, resetProperties: resetArr });
+    } catch (e) { return _err("lumetriReset failed: " + e.message); }
+}
+
+/** 26. getColorInfo — Get basic color statistics for a clip */
+function getColorInfo(trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence; if (!seq) return _err("No active sequence");
+        trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
+        var track = seq.videoTracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+        var clip = track.clips[clipIndex];
+        var info = { trackIndex: trackIndex, clipIndex: clipIndex, clipName: clip.name || "", startSeconds: _timeToSeconds(clip.start), endSeconds: _timeToSeconds(clip.end), durationSeconds: _timeToSeconds(clip.end) - _timeToSeconds(clip.start) };
+        var lumetri = null;
+        if (clip.components) { for (var ci = 0; ci < clip.components.numItems; ci++) { var comp = clip.components[ci]; if (comp.displayName === "Lumetri Color" || comp.matchName === "AE.ADBE Lumetri") { lumetri = comp; break; } } }
+        info.lumetriApplied = (lumetri !== null);
+        if (lumetri) {
+            info.currentSettings = {};
+            var readProps = ["Exposure", "Contrast", "Highlights", "Shadows", "Whites", "Blacks", "Temperature", "Tint", "Saturation", "Vibrance"];
+            for (var i = 0; i < readProps.length; i++) { var p = _findProperty(lumetri, readProps[i]); if (p) { try { info.currentSettings[readProps[i]] = p.getValue(); } catch (gve) { info.currentSettings[readProps[i]] = "N/A"; } } }
+        }
+        info.effectCount = clip.components ? clip.components.numItems : 0;
+        return _ok(info);
+    } catch (e) { return _err("getColorInfo failed: " + e.message); }
+}
+
+/** Internal variable to store copied Lumetri settings for paste operations */
+var _copiedLumetriSettings = null;
+
+/** 27. copyColorGrade — Copy Lumetri settings from a source clip */
+function copyColorGrade(srcTrackIndex, srcClipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var lumetri = _getLumetriComponent(srcTrackIndex, srcClipIndex);
+        if (!lumetri) return _err("Source clip has no Lumetri Color effect");
+        _copiedLumetriSettings = {};
+        if (lumetri.properties) { for (var i = 0; i < lumetri.properties.numItems; i++) { var p = lumetri.properties[i]; var dn = p.displayName || ""; if (dn) { try { _copiedLumetriSettings[dn] = p.getValue(); } catch (gve) { /* skip */ } } } }
+        return _ok({ srcTrackIndex: parseInt(srcTrackIndex, 10), srcClipIndex: parseInt(srcClipIndex, 10), copiedProperties: Object.keys(_copiedLumetriSettings).length, copied: true });
+    } catch (e) { return _err("copyColorGrade failed: " + e.message); }
+}
+
+/** 28. pasteColorGrade — Paste previously copied Lumetri settings */
+function pasteColorGrade(destTrackIndex, destClipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        if (!_copiedLumetriSettings) return _err("No color grade has been copied. Use copyColorGrade first.");
+        var lumetri = _getLumetriComponent(destTrackIndex, destClipIndex);
+        if (!lumetri) return _err("Could not find or apply Lumetri Color effect on destination clip");
+        var applied = [];
+        for (var propName in _copiedLumetriSettings) { if (_copiedLumetriSettings.hasOwnProperty(propName)) { var p = _findProperty(lumetri, propName); if (p) { try { p.setValue(_copiedLumetriSettings[propName], true); applied.push(propName); } catch (spErr) { /* skip */ } } } }
+        return _ok({ destTrackIndex: parseInt(destTrackIndex, 10), destClipIndex: parseInt(destClipIndex, 10), pastedProperties: applied.length, pasted: true });
+    } catch (e) { return _err("pasteColorGrade failed: " + e.message); }
+}
+
+/** 29. applyColorGradeToAll — Apply grade from source clip to all clips on a track */
+function applyColorGradeToAll(srcTrackIndex, srcClipIndex, trackIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence; if (!seq) return _err("No active sequence");
+        srcTrackIndex = parseInt(srcTrackIndex, 10) || 0; srcClipIndex = parseInt(srcClipIndex, 10) || 0; trackIndex = parseInt(trackIndex, 10) || 0;
+        var copyResult = JSON.parse(copyColorGrade(srcTrackIndex, srcClipIndex));
+        if (!copyResult.success) return _err("Failed to copy source grade: " + (copyResult.error || "unknown"));
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Destination track index out of range");
+        var destTrack = seq.videoTracks[trackIndex];
+        if (!destTrack.clips) return _err("Destination track has no clips");
+        var applied = 0; var failed = 0;
+        for (var i = 0; i < destTrack.clips.numItems; i++) {
+            if (trackIndex === srcTrackIndex && i === srcClipIndex) continue;
+            var pasteResult = JSON.parse(pasteColorGrade(trackIndex, i));
+            if (pasteResult.success) { applied++; } else { failed++; }
+        }
+        return _ok({ srcTrackIndex: srcTrackIndex, srcClipIndex: srcClipIndex, destTrackIndex: trackIndex, totalClips: destTrack.clips.numItems, appliedTo: applied, failed: failed });
+    } catch (e) { return _err("applyColorGradeToAll failed: " + e.message); }
+}
+
+/** 30. lumetriAutoWhiteBalance — Auto white balance (resets temperature and tint to neutral) */
+function lumetriAutoWhiteBalance(trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var lumetri = _getLumetriComponent(trackIndex, clipIndex);
+        if (!lumetri) return _err("Could not find or apply Lumetri Color effect");
+        var tempProp = _findProperty(lumetri, "Temperature"); var tintProp = _findProperty(lumetri, "Tint");
+        if (tempProp) tempProp.setValue(0, true); if (tintProp) tintProp.setValue(0, true);
+        return _ok({ trackIndex: parseInt(trackIndex, 10), clipIndex: parseInt(clipIndex, 10), autoWhiteBalance: true, temperature: 0, tint: 0 });
+    } catch (e) { return _err("lumetriAutoWhiteBalance failed: " + e.message); }
+}
+
 // ===========================================================================
 // Motion Graphics Templates (MOGRTs) -- Primary text/title method
 // ===========================================================================
@@ -5172,4 +5548,876 @@ function detectSceneEdits(trackIndex, clipIndex, sensitivity) {
         else { return _err("Scene edit detection not supported in this Premiere Pro version"); }
         return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, clipName: clip.name || "", sensitivity: sensitivity, detected: true });
     } catch (e) { return _err("detectSceneEdits failed: " + e.message); }
+}
+
+// ===========================================================================
+// Multicam Workflow
+// ===========================================================================
+
+/**
+ * createMulticamSequence(paramsJson) - Create multicam source from clips.
+ * syncPoint: "inPoint", "outPoint", "timecode", "marker"
+ */
+function createMulticamSequence(paramsJson) {
+    try {
+        var params = JSON.parse(paramsJson);
+        var name = params.name || "Multicam Sequence";
+        var clipIndices = params.clipIndices || [];
+        var syncPoint = params.syncPoint || "inPoint";
+
+        if (!app.project) return _err("No project is open");
+        if (clipIndices.length < 2) return _err("At least 2 clip indices are required for multicam");
+
+        var root = app.project.rootItem;
+        if (!root || !root.children) return _err("Project has no root item");
+
+        var clips = [];
+        for (var i = 0; i < clipIndices.length; i++) {
+            var idx = parseInt(clipIndices[i], 10);
+            if (idx < 0 || idx >= root.children.numItems) {
+                return _err("Clip index " + idx + " out of range (0-" + (root.children.numItems - 1) + ")");
+            }
+            clips.push(root.children[idx]);
+        }
+
+        // Map syncPoint string to Premiere API constant
+        var syncMode = 0; // default: inPoint
+        if (syncPoint === "outPoint") syncMode = 1;
+        else if (syncPoint === "timecode") syncMode = 2;
+        else if (syncPoint === "marker") syncMode = 3;
+
+        // Use project.createNewSequenceFromClips and configure as multicam
+        // Premiere Pro supports multicam via sequence.isMulticamEnabled
+        if (app.project.createNewSequenceFromClips) {
+            app.project.createNewSequenceFromClips(name, clips, app.project.rootItem);
+        } else {
+            // Fallback: create sequence and add clips
+            app.project.createNewSequence(name);
+        }
+
+        var seq = app.project.activeSequence;
+        if (seq && seq.isMulticamEnabled !== undefined) {
+            // Enable multicam on the newly created sequence
+            try { seq.isMulticamEnabled = true; } catch (mcErr) { /* may not be settable */ }
+        }
+
+        return _ok({
+            name: name,
+            clipCount: clips.length,
+            syncPoint: syncPoint,
+            sequenceName: seq ? (seq.name || "") : "",
+            sequenceID: seq ? (seq.sequenceID || "") : ""
+        });
+    } catch (e) {
+        return _err("createMulticamSequence failed: " + e.message);
+    }
+}
+
+/**
+ * switchMulticamAngle(trackIndex, time, angleIndex) - Switch camera angle at a given time.
+ */
+function switchMulticamAngle(trackIndex, time, angleIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        angleIndex = parseInt(angleIndex, 10) || 0;
+        time = parseFloat(time) || 0;
+
+        if (trackIndex >= seq.videoTracks.numTracks) {
+            return _err("Video track index " + trackIndex + " out of range");
+        }
+
+        // Use QE DOM for multicam angle switching
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (!qeSeq) return _err("QE sequence not available");
+
+        var qeTrack = qeSeq.getVideoTrackAt(trackIndex);
+        if (!qeTrack) return _err("QE track not available at index " + trackIndex);
+
+        // Find clip at time and switch its multicam angle
+        var numItems = qeTrack.numItems;
+        for (var i = 0; i < numItems; i++) {
+            var item = qeTrack.getItemAt(i);
+            if (item) {
+                var itemStart = parseFloat(item.start ? item.start.secs : 0);
+                var itemEnd = parseFloat(item.end ? item.end.secs : 0);
+                if (time >= itemStart && time < itemEnd) {
+                    if (item.setMulticamAngle) {
+                        item.setMulticamAngle(angleIndex);
+                    } else {
+                        return _err("setMulticamAngle not available on this clip");
+                    }
+                    return _ok({
+                        trackIndex: trackIndex,
+                        time: time,
+                        angleIndex: angleIndex,
+                        clipName: item.name || ""
+                    });
+                }
+            }
+        }
+
+        return _err("No clip found at time " + time + " on track " + trackIndex);
+    } catch (e) {
+        return _err("switchMulticamAngle failed: " + e.message);
+    }
+}
+
+/**
+ * flattenMulticam(sequenceIndex) - Flatten multicam to regular sequence.
+ */
+function flattenMulticam(sequenceIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        sequenceIndex = parseInt(sequenceIndex, 10) || 0;
+
+        if (sequenceIndex >= app.project.sequences.numSequences) {
+            return _err("Sequence index " + sequenceIndex + " out of range");
+        }
+
+        var seq = app.project.sequences[sequenceIndex];
+
+        // Set as active first
+        app.project.activeSequence = seq;
+
+        // Use QE DOM to flatten multicam
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (qeSeq && qeSeq.flattenMulticam) {
+            qeSeq.flattenMulticam();
+        } else {
+            return _err("flattenMulticam not supported in this Premiere Pro version");
+        }
+
+        return _ok({
+            sequenceIndex: sequenceIndex,
+            sequenceName: seq.name || "",
+            sequenceID: seq.sequenceID || "",
+            status: "flattened"
+        });
+    } catch (e) {
+        return _err("flattenMulticam failed: " + e.message);
+    }
+}
+
+/**
+ * getMulticamAngles(trackIndex, clipIndex) - List available camera angles.
+ */
+function getMulticamAngles(trackIndex, clipIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        clipIndex = parseInt(clipIndex, 10) || 0;
+
+        if (trackIndex >= seq.videoTracks.numTracks) {
+            return _err("Video track index " + trackIndex + " out of range");
+        }
+        var track = seq.videoTracks[trackIndex];
+        if (!track.clips || clipIndex >= track.clips.numItems) {
+            return _err("Clip index " + clipIndex + " out of range");
+        }
+
+        var clip = track.clips[clipIndex];
+        var angles = [];
+
+        // Try QE DOM for multicam angle enumeration
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (qeSeq) {
+            var qeTrack = qeSeq.getVideoTrackAt(trackIndex);
+            if (qeTrack) {
+                var qeClip = qeTrack.getItemAt(clipIndex);
+                if (qeClip && qeClip.numMulticamAngles !== undefined) {
+                    for (var a = 0; a < qeClip.numMulticamAngles; a++) {
+                        angles.push({
+                            index: a,
+                            name: qeClip.getMulticamAngleName ? qeClip.getMulticamAngleName(a) : ("Angle " + (a + 1)),
+                            active: qeClip.activeMulticamAngle !== undefined ? (qeClip.activeMulticamAngle === a) : false
+                        });
+                    }
+                }
+            }
+        }
+
+        return _ok({
+            trackIndex: trackIndex,
+            clipIndex: clipIndex,
+            clipName: clip.name || "",
+            angleCount: angles.length,
+            angles: angles
+        });
+    } catch (e) {
+        return _err("getMulticamAngles failed: " + e.message);
+    }
+}
+
+// ===========================================================================
+// Proxy Workflow
+// ===========================================================================
+
+/**
+ * createProxy(projectItemIndex, presetPath) - Create proxy for a project item.
+ */
+function createProxy(projectItemIndex, presetPath) {
+    try {
+        if (!app.project) return _err("No project is open");
+        projectItemIndex = parseInt(projectItemIndex, 10) || 0;
+        presetPath = presetPath || "";
+
+        var root = app.project.rootItem;
+        if (!root || !root.children) return _err("Project has no items");
+        if (projectItemIndex >= root.children.numItems) {
+            return _err("Project item index " + projectItemIndex + " out of range");
+        }
+
+        var item = root.children[projectItemIndex];
+        if (!item.createProxy) {
+            return _err("createProxy not supported in this Premiere Pro version");
+        }
+
+        var result = item.createProxy(presetPath);
+
+        return _ok({
+            projectItemIndex: projectItemIndex,
+            itemName: item.name || "",
+            presetPath: presetPath,
+            proxyCreated: result !== false
+        });
+    } catch (e) {
+        return _err("createProxy failed: " + e.message);
+    }
+}
+
+/**
+ * attachProxy(projectItemIndex, proxyPath) - Attach an existing proxy file.
+ */
+function attachProxy(projectItemIndex, proxyPath) {
+    try {
+        if (!app.project) return _err("No project is open");
+        projectItemIndex = parseInt(projectItemIndex, 10) || 0;
+        proxyPath = proxyPath || "";
+
+        if (!proxyPath) return _err("proxyPath is required");
+
+        var root = app.project.rootItem;
+        if (!root || !root.children) return _err("Project has no items");
+        if (projectItemIndex >= root.children.numItems) {
+            return _err("Project item index " + projectItemIndex + " out of range");
+        }
+
+        var item = root.children[projectItemIndex];
+        if (!item.attachProxy) {
+            return _err("attachProxy not supported in this Premiere Pro version");
+        }
+
+        // attachProxy(mediaPath, isHiRes): false = proxy, true = hi-res
+        var result = item.attachProxy(proxyPath, false);
+
+        return _ok({
+            projectItemIndex: projectItemIndex,
+            itemName: item.name || "",
+            proxyPath: proxyPath,
+            attached: result !== false
+        });
+    } catch (e) {
+        return _err("attachProxy failed: " + e.message);
+    }
+}
+
+/**
+ * hasProxy(projectItemIndex) - Check if item has a proxy.
+ */
+function hasProxy(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        projectItemIndex = parseInt(projectItemIndex, 10) || 0;
+
+        var root = app.project.rootItem;
+        if (!root || !root.children) return _err("Project has no items");
+        if (projectItemIndex >= root.children.numItems) {
+            return _err("Project item index " + projectItemIndex + " out of range");
+        }
+
+        var item = root.children[projectItemIndex];
+        var proxyExists = false;
+
+        if (item.hasProxy !== undefined) {
+            proxyExists = item.hasProxy();
+        } else if (item.getProxyPath) {
+            var pp = item.getProxyPath();
+            proxyExists = (pp && pp.length > 0);
+        }
+
+        return _ok({
+            projectItemIndex: projectItemIndex,
+            itemName: item.name || "",
+            hasProxy: proxyExists
+        });
+    } catch (e) {
+        return _err("hasProxy failed: " + e.message);
+    }
+}
+
+/**
+ * getProxyPath(projectItemIndex) - Get proxy file path.
+ */
+function getProxyPath(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        projectItemIndex = parseInt(projectItemIndex, 10) || 0;
+
+        var root = app.project.rootItem;
+        if (!root || !root.children) return _err("Project has no items");
+        if (projectItemIndex >= root.children.numItems) {
+            return _err("Project item index " + projectItemIndex + " out of range");
+        }
+
+        var item = root.children[projectItemIndex];
+        var proxyPath = "";
+
+        if (item.getProxyPath) {
+            proxyPath = item.getProxyPath() || "";
+        } else {
+            return _err("getProxyPath not supported in this Premiere Pro version");
+        }
+
+        return _ok({
+            projectItemIndex: projectItemIndex,
+            itemName: item.name || "",
+            proxyPath: proxyPath,
+            hasProxy: proxyPath.length > 0
+        });
+    } catch (e) {
+        return _err("getProxyPath failed: " + e.message);
+    }
+}
+
+/**
+ * toggleProxies(enabled) - Toggle proxy mode on/off globally.
+ */
+function toggleProxies(enabled) {
+    try {
+        if (!app.project) return _err("No project is open");
+
+        enabled = (enabled === true || enabled === "true" || enabled === 1);
+
+        // Use QE DOM or app.project preferences for proxy toggle
+        app.enableQE();
+        if (qe.project && qe.project.toggleProxies) {
+            qe.project.toggleProxies(enabled);
+        } else if (app.project.setProxyToggleState) {
+            app.project.setProxyToggleState(enabled);
+        } else {
+            return _err("toggleProxies not supported in this Premiere Pro version");
+        }
+
+        return _ok({
+            proxiesEnabled: enabled
+        });
+    } catch (e) {
+        return _err("toggleProxies failed: " + e.message);
+    }
+}
+
+/**
+ * detachProxy(projectItemIndex) - Detach proxy from item.
+ */
+function detachProxy(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        projectItemIndex = parseInt(projectItemIndex, 10) || 0;
+
+        var root = app.project.rootItem;
+        if (!root || !root.children) return _err("Project has no items");
+        if (projectItemIndex >= root.children.numItems) {
+            return _err("Project item index " + projectItemIndex + " out of range");
+        }
+
+        var item = root.children[projectItemIndex];
+
+        // Check if proxy exists before detaching
+        var hadProxy = false;
+        if (item.hasProxy) {
+            hadProxy = item.hasProxy();
+        }
+
+        if (item.attachProxy) {
+            // Attaching empty path effectively detaches
+            item.attachProxy("", false);
+        } else {
+            return _err("Proxy detach not supported in this Premiere Pro version");
+        }
+
+        return _ok({
+            projectItemIndex: projectItemIndex,
+            itemName: item.name || "",
+            hadProxy: hadProxy,
+            detached: true
+        });
+    } catch (e) {
+        return _err("detachProxy failed: " + e.message);
+    }
+}
+
+// ===========================================================================
+// Workspace
+// ===========================================================================
+
+/**
+ * getWorkspaces() - List available workspaces.
+ */
+function getWorkspaces() {
+    try {
+        app.enableQE();
+        var workspaces = [];
+
+        if (qe.project && qe.project.getWorkspaces) {
+            var ws = qe.project.getWorkspaces();
+            if (ws) {
+                for (var i = 0; i < ws.numWorkspaces; i++) {
+                    workspaces.push({
+                        index: i,
+                        name: ws.getWorkspaceName(i) || ("Workspace " + i)
+                    });
+                }
+            }
+        } else {
+            // Common default workspaces in Premiere Pro
+            var defaults = ["Assembly", "Editing", "Color", "Effects", "Audio", "Graphics", "Libraries"];
+            for (var d = 0; d < defaults.length; d++) {
+                workspaces.push({ index: d, name: defaults[d] });
+            }
+        }
+
+        return _ok({
+            count: workspaces.length,
+            workspaces: workspaces
+        });
+    } catch (e) {
+        return _err("getWorkspaces failed: " + e.message);
+    }
+}
+
+/**
+ * setWorkspace(name) - Switch to a workspace.
+ */
+function setWorkspace(name) {
+    try {
+        if (!name) return _err("Workspace name is required");
+
+        app.enableQE();
+        if (qe.project && qe.project.setWorkspace) {
+            qe.project.setWorkspace(name);
+        } else {
+            return _err("setWorkspace not supported in this Premiere Pro version");
+        }
+
+        return _ok({
+            workspace: name,
+            status: "switched"
+        });
+    } catch (e) {
+        return _err("setWorkspace failed: " + e.message);
+    }
+}
+
+/**
+ * saveWorkspace(name) - Save current workspace.
+ */
+function saveWorkspace(name) {
+    try {
+        if (!name) return _err("Workspace name is required");
+
+        app.enableQE();
+        if (qe.project && qe.project.saveWorkspace) {
+            qe.project.saveWorkspace(name);
+        } else {
+            return _err("saveWorkspace not supported in this Premiere Pro version");
+        }
+
+        return _ok({
+            workspace: name,
+            status: "saved"
+        });
+    } catch (e) {
+        return _err("saveWorkspace failed: " + e.message);
+    }
+}
+
+// ===========================================================================
+// Undo / Redo
+// ===========================================================================
+
+/**
+ * undo() - Undo last action.
+ */
+function undo() {
+    try {
+        app.enableQE();
+        if (qe.project && qe.project.undo) {
+            qe.project.undo();
+        } else if (app.project && app.project.undo) {
+            app.project.undo();
+        } else {
+            return _err("Undo not available");
+        }
+
+        return _ok({ status: "undo_performed" });
+    } catch (e) {
+        return _err("undo failed: " + e.message);
+    }
+}
+
+/**
+ * redo() - Redo last undone action.
+ */
+function redo() {
+    try {
+        app.enableQE();
+        if (qe.project && qe.project.redo) {
+            qe.project.redo();
+        } else if (app.project && app.project.redo) {
+            app.project.redo();
+        } else {
+            return _err("Redo not available");
+        }
+
+        return _ok({ status: "redo_performed" });
+    } catch (e) {
+        return _err("redo failed: " + e.message);
+    }
+}
+
+// ===========================================================================
+// Project Panel
+// ===========================================================================
+
+/**
+ * sortProjectPanel(field, ascending) - Sort project panel by field.
+ */
+function sortProjectPanel(field, ascending) {
+    try {
+        if (!app.project) return _err("No project is open");
+        field = field || "name";
+        ascending = (ascending === undefined || ascending === true || ascending === "true" || ascending === 1);
+
+        app.enableQE();
+        if (qe.project && qe.project.getSortOrder) {
+            // Map field name to internal sort key
+            var sortFieldMap = {
+                "name": 0,
+                "label": 1,
+                "type": 2,
+                "frameRate": 3,
+                "duration": 4,
+                "videoInfo": 5,
+                "audioInfo": 6,
+                "dateCreated": 7,
+                "dateModified": 8,
+                "filePath": 9
+            };
+            var sortKey = sortFieldMap[field] !== undefined ? sortFieldMap[field] : 0;
+            var sortOrder = ascending ? 0 : 1;
+
+            if (qe.project.setSortOrder) {
+                qe.project.setSortOrder(sortKey, sortOrder);
+            }
+        }
+
+        return _ok({
+            field: field,
+            ascending: ascending,
+            status: "sorted"
+        });
+    } catch (e) {
+        return _err("sortProjectPanel failed: " + e.message);
+    }
+}
+
+/**
+ * searchProjectPanel(query) - Search in project panel.
+ */
+function searchProjectPanel(query) {
+    try {
+        if (!app.project) return _err("No project is open");
+        query = query || "";
+
+        // Use findProjectItems to search
+        var root = app.project.rootItem;
+        var results = [];
+
+        if (!root || !root.children) return _ok({ query: query, count: 0, items: [] });
+
+        var q = query.toLowerCase();
+        for (var i = 0; i < root.children.numItems; i++) {
+            var item = root.children[i];
+            var itemName = (item.name || "").toLowerCase();
+            if (q === "" || itemName.indexOf(q) !== -1) {
+                results.push({
+                    index: i,
+                    name: item.name || "",
+                    type: item.type === 2 ? "bin" : (item.type === 1 ? "clip" : "other"),
+                    mediaPath: item.getMediaPath ? (item.getMediaPath() || "") : ""
+                });
+            }
+        }
+
+        return _ok({
+            query: query,
+            count: results.length,
+            items: results
+        });
+    } catch (e) {
+        return _err("searchProjectPanel failed: " + e.message);
+    }
+}
+
+// ===========================================================================
+// Source Monitor
+// ===========================================================================
+
+/**
+ * openInSourceMonitor(projectItemIndex) - Open clip in source monitor.
+ */
+function openInSourceMonitor(projectItemIndex) {
+    try {
+        if (!app.project) return _err("No project is open");
+        projectItemIndex = parseInt(projectItemIndex, 10) || 0;
+
+        var root = app.project.rootItem;
+        if (!root || !root.children) return _err("Project has no items");
+        if (projectItemIndex >= root.children.numItems) {
+            return _err("Project item index " + projectItemIndex + " out of range");
+        }
+
+        var item = root.children[projectItemIndex];
+
+        if (item.openInSourceMonitor) {
+            item.openInSourceMonitor();
+        } else if (app.sourceMonitor && app.sourceMonitor.openFilePath) {
+            var mediaPath = item.getMediaPath ? item.getMediaPath() : "";
+            if (mediaPath) {
+                app.sourceMonitor.openFilePath(mediaPath);
+            } else {
+                return _err("Cannot determine media path for source monitor");
+            }
+        } else {
+            return _err("openInSourceMonitor not supported");
+        }
+
+        return _ok({
+            projectItemIndex: projectItemIndex,
+            itemName: item.name || "",
+            status: "opened_in_source_monitor"
+        });
+    } catch (e) {
+        return _err("openInSourceMonitor failed: " + e.message);
+    }
+}
+
+/**
+ * getSourceMonitorPosition() - Get source monitor playhead position.
+ */
+function getSourceMonitorPosition() {
+    try {
+        if (!app.sourceMonitor) return _err("Source monitor not available");
+
+        var pos = app.sourceMonitor.getPosition ? app.sourceMonitor.getPosition() : null;
+        if (pos === null || pos === undefined) {
+            return _err("Cannot read source monitor position");
+        }
+
+        return _ok({
+            seconds: _timeToSeconds(pos),
+            ticks: pos.ticks ? String(pos.ticks) : "0"
+        });
+    } catch (e) {
+        return _err("getSourceMonitorPosition failed: " + e.message);
+    }
+}
+
+/**
+ * setSourceMonitorPosition(seconds) - Set source monitor playhead.
+ */
+function setSourceMonitorPosition(seconds) {
+    try {
+        if (!app.sourceMonitor) return _err("Source monitor not available");
+        seconds = parseFloat(seconds) || 0;
+
+        var t = _secondsToTime(seconds);
+
+        if (app.sourceMonitor.setPosition) {
+            app.sourceMonitor.setPosition(t);
+        } else {
+            return _err("setPosition not available on source monitor");
+        }
+
+        return _ok({
+            seconds: seconds,
+            status: "position_set"
+        });
+    } catch (e) {
+        return _err("setSourceMonitorPosition failed: " + e.message);
+    }
+}
+
+// ===========================================================================
+// Preferences
+// ===========================================================================
+
+/**
+ * getAutoSaveSettings() - Get auto-save settings.
+ */
+function getAutoSaveSettings() {
+    try {
+        var settings = {};
+
+        if (app.properties) {
+            try {
+                settings.autoSaveEnabled = app.properties.getProperty("autoSaveEnabled") || "unknown";
+                settings.autoSaveInterval = app.properties.getProperty("autoSaveInterval") || "unknown";
+                settings.maxVersions = app.properties.getProperty("autoSaveMaxVersions") || "unknown";
+            } catch (propErr) {
+                // properties may not have these keys
+            }
+        }
+
+        // Try QE DOM
+        app.enableQE();
+        if (qe.project && qe.project.getAutoSaveEnabled) {
+            settings.autoSaveEnabled = qe.project.getAutoSaveEnabled();
+        }
+        if (qe.project && qe.project.getAutoSaveInterval) {
+            settings.autoSaveInterval = qe.project.getAutoSaveInterval();
+        }
+
+        return _ok(settings);
+    } catch (e) {
+        return _err("getAutoSaveSettings failed: " + e.message);
+    }
+}
+
+/**
+ * setAutoSaveInterval(minutes) - Set auto-save interval.
+ */
+function setAutoSaveInterval(minutes) {
+    try {
+        minutes = parseInt(minutes, 10) || 15;
+        if (minutes < 1) minutes = 1;
+        if (minutes > 99) minutes = 99;
+
+        app.enableQE();
+        if (qe.project && qe.project.setAutoSaveInterval) {
+            qe.project.setAutoSaveInterval(minutes);
+        } else if (app.properties) {
+            try {
+                app.properties.setProperty("autoSaveInterval", String(minutes));
+            } catch (propErr) {
+                return _err("Cannot set auto-save interval via properties");
+            }
+        } else {
+            return _err("setAutoSaveInterval not supported in this Premiere Pro version");
+        }
+
+        return _ok({
+            intervalMinutes: minutes,
+            status: "interval_set"
+        });
+    } catch (e) {
+        return _err("setAutoSaveInterval failed: " + e.message);
+    }
+}
+
+/**
+ * getMemorySettings() - Get memory/performance settings.
+ */
+function getMemorySettings() {
+    try {
+        var settings = {};
+
+        if (app.properties) {
+            try {
+                settings.ramForOtherApps = app.properties.getProperty("BE.Prefs.MemorySettings.RAMForOtherApps") || "unknown";
+            } catch (propErr) { /* ignore */ }
+        }
+
+        // Gather GPU info from project settings
+        if (app.project) {
+            try {
+                settings.gpuRenderer = app.project.gpuAccelRendererInfo ? app.project.gpuAccelRendererInfo.toString() : "unknown";
+            } catch (gpuErr) {
+                settings.gpuRenderer = "unknown";
+            }
+        }
+
+        // App-level info
+        settings.version = app.version || "unknown";
+        settings.build = app.build || "unknown";
+
+        return _ok(settings);
+    } catch (e) {
+        return _err("getMemorySettings failed: " + e.message);
+    }
+}
+
+// ===========================================================================
+// Media Cache
+// ===========================================================================
+
+/**
+ * clearMediaCache() - Clear media cache files.
+ */
+function clearMediaCache() {
+    try {
+        app.enableQE();
+
+        if (qe.project && qe.project.deleteMediaCache) {
+            qe.project.deleteMediaCache();
+        } else if (app.project && app.project.deleteMediaCache) {
+            app.project.deleteMediaCache();
+        } else {
+            return _err("clearMediaCache not supported in this Premiere Pro version");
+        }
+
+        return _ok({ status: "media_cache_cleared" });
+    } catch (e) {
+        return _err("clearMediaCache failed: " + e.message);
+    }
+}
+
+/**
+ * getMediaCachePath() - Get media cache location.
+ */
+function getMediaCachePath() {
+    try {
+        var cachePath = "";
+
+        if (app.properties) {
+            try {
+                cachePath = app.properties.getProperty("BE.Prefs.MediaCache.Path") || "";
+            } catch (propErr) { /* ignore */ }
+        }
+
+        // Try QE DOM
+        if (!cachePath) {
+            app.enableQE();
+            if (qe.project && qe.project.getMediaCachePath) {
+                cachePath = qe.project.getMediaCachePath() || "";
+            }
+        }
+
+        return _ok({
+            cachePath: cachePath,
+            hasCachePath: cachePath.length > 0
+        });
+    } catch (e) {
+        return _err("getMediaCachePath failed: " + e.message);
+    }
 }
