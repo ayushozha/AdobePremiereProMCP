@@ -2,9 +2,9 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
-	"go.uber.org/zap"
 )
 
 // ---------------------------------------------------------------------------
@@ -12,53 +12,105 @@ import (
 // ---------------------------------------------------------------------------
 
 func (e *Engine) Play(ctx context.Context, speed float64) (*GenericResult, error) {
-	e.logger.Debug("play", zap.Float64("speed", speed))
-	return nil, fmt.Errorf("play: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"speed": speed,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "play", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("Play: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) Pause(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("pause")
-	return nil, fmt.Errorf("pause: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "pause", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("Pause: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) Stop(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("stop")
-	return nil, fmt.Errorf("stop: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "stop", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("Stop: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) StepForward(ctx context.Context, frames int) (*GenericResult, error) {
-	e.logger.Debug("step_forward", zap.Int("frames", frames))
-	return nil, fmt.Errorf("step forward: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"frames": frames,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "stepForward", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("StepForward: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) StepBackward(ctx context.Context, frames int) (*GenericResult, error) {
-	e.logger.Debug("step_backward", zap.Int("frames", frames))
-	return nil, fmt.Errorf("step backward: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"frames": frames,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "stepBackward", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("StepBackward: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) ShuttleForward(ctx context.Context, speed float64) (*GenericResult, error) {
-	e.logger.Debug("shuttle_forward", zap.Float64("speed", speed))
-	return nil, fmt.Errorf("shuttle forward: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"speed": speed,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "shuttleForward", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ShuttleForward: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) ShuttleBackward(ctx context.Context, speed float64) (*GenericResult, error) {
-	e.logger.Debug("shuttle_backward", zap.Float64("speed", speed))
-	return nil, fmt.Errorf("shuttle backward: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"speed": speed,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "shuttleBackward", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ShuttleBackward: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) TogglePlayPause(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("toggle_play_pause")
-	return nil, fmt.Errorf("toggle play/pause: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "togglePlayPause", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("TogglePlayPause: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) PlayInToOut(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("play_in_to_out")
-	return nil, fmt.Errorf("play in to out: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "playInToOut", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("PlayInToOut: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) LoopPlayback(ctx context.Context, enabled bool) (*GenericResult, error) {
-	e.logger.Debug("loop_playback", zap.Bool("enabled", enabled))
-	return nil, fmt.Errorf("loop playback: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"enabled": enabled,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "loopPlayback", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("LoopPlayback: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -66,28 +118,50 @@ func (e *Engine) LoopPlayback(ctx context.Context, enabled bool) (*GenericResult
 // ---------------------------------------------------------------------------
 
 func (e *Engine) GetProgramMonitorZoom(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_program_monitor_zoom")
-	return nil, fmt.Errorf("get program monitor zoom: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getProgramMonitorZoom", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetProgramMonitorZoom: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetProgramMonitorZoom(ctx context.Context, percent float64) (*GenericResult, error) {
-	e.logger.Debug("set_program_monitor_zoom", zap.Float64("percent", percent))
-	return nil, fmt.Errorf("set program monitor zoom: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"percent": percent,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setProgramMonitorZoom", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetProgramMonitorZoom: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) FitProgramMonitor(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("fit_program_monitor")
-	return nil, fmt.Errorf("fit program monitor: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "fitProgramMonitor", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("FitProgramMonitor: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) ToggleSafeMargins(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("toggle_safe_margins")
-	return nil, fmt.Errorf("toggle safe margins: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "toggleSafeMargins", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ToggleSafeMargins: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetFrameAtPlayhead(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_frame_at_playhead")
-	return nil, fmt.Errorf("get frame at playhead: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getFrameAtPlayhead", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetFrameAtPlayhead: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -95,28 +169,52 @@ func (e *Engine) GetFrameAtPlayhead(ctx context.Context) (*GenericResult, error)
 // ---------------------------------------------------------------------------
 
 func (e *Engine) GoToTimecode(ctx context.Context, timecode string) (*GenericResult, error) {
-	e.logger.Debug("go_to_timecode", zap.String("timecode", timecode))
-	return nil, fmt.Errorf("go to timecode: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"timecode": timecode,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "goToTimecode", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GoToTimecode: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GoToFrame(ctx context.Context, frameNumber int) (*GenericResult, error) {
-	e.logger.Debug("go_to_frame", zap.Int("frame_number", frameNumber))
-	return nil, fmt.Errorf("go to frame: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"frameNumber": frameNumber,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "goToFrame", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GoToFrame: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetSequenceDuration(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_sequence_duration")
-	return nil, fmt.Errorf("get sequence duration: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getSequenceDuration", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetSequenceDuration: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetFrameCount(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_frame_count")
-	return nil, fmt.Errorf("get frame count: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getFrameCount", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetFrameCount: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetCurrentTimecode(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_current_timecode")
-	return nil, fmt.Errorf("get current timecode: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getCurrentTimecode", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetCurrentTimecode: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -124,23 +222,45 @@ func (e *Engine) GetCurrentTimecode(ctx context.Context) (*GenericResult, error)
 // ---------------------------------------------------------------------------
 
 func (e *Engine) SelectClipsInRange(ctx context.Context, startSeconds, endSeconds float64) (*GenericResult, error) {
-	e.logger.Debug("select_clips_in_range", zap.Float64("start", startSeconds), zap.Float64("end", endSeconds))
-	return nil, fmt.Errorf("select clips in range: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"startSeconds": startSeconds,
+		"endSeconds": endSeconds,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "selectClipsInRange", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SelectClipsInRange: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SelectAllOnTrack(ctx context.Context, trackType string, trackIndex int) (*GenericResult, error) {
-	e.logger.Debug("select_all_on_track", zap.String("track_type", trackType), zap.Int("track_index", trackIndex))
-	return nil, fmt.Errorf("select all on track: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "selectAllOnTrack", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SelectAllOnTrack: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) InvertSelection(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("invert_selection")
-	return nil, fmt.Errorf("invert selection: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "invertSelection", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("InvertSelection: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetSelectionRange(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_selection_range")
-	return nil, fmt.Errorf("get selection range: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getSelectionRange", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetSelectionRange: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -148,13 +268,21 @@ func (e *Engine) GetSelectionRange(ctx context.Context) (*GenericResult, error) 
 // ---------------------------------------------------------------------------
 
 func (e *Engine) GetRenderStatus(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_render_status")
-	return nil, fmt.Errorf("get render status: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getRenderStatus", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetRenderStatus: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) IsRendering(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("is_rendering")
-	return nil, fmt.Errorf("is rendering: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "isRendering", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("IsRendering: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -162,21 +290,42 @@ func (e *Engine) IsRendering(ctx context.Context) (*GenericResult, error) {
 // ---------------------------------------------------------------------------
 
 func (e *Engine) GetSequenceMetadata(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_sequence_metadata")
-	return nil, fmt.Errorf("get sequence metadata: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getSequenceMetadata", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetSequenceMetadata: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetSequenceMetadata(ctx context.Context, key, value string) (*GenericResult, error) {
-	e.logger.Debug("set_sequence_metadata", zap.String("key", key), zap.String("value", value))
-	return nil, fmt.Errorf("set sequence metadata: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"key": key,
+		"value": value,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setSequenceMetadata", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetSequenceMetadata: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetSequenceColorSpace(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_sequence_color_space")
-	return nil, fmt.Errorf("get sequence color space: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getSequenceColorSpace", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetSequenceColorSpace: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetSequenceColorSpace(ctx context.Context, colorSpace string) (*GenericResult, error) {
-	e.logger.Debug("set_sequence_color_space", zap.String("color_space", colorSpace))
-	return nil, fmt.Errorf("set sequence color space: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"colorSpace": colorSpace,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setSequenceColorSpace", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetSequenceColorSpace: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }

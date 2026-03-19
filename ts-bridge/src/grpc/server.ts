@@ -96,6 +96,7 @@ export async function createGrpcServer(
     setAudioLevel: wrapUnary(handlers.setAudioLevel),
     exportSequence: wrapUnary(handlers.exportSequence),
     executeEdl: wrapUnary(handlers.executeEDL),
+    evalCommand: wrapUnary(handlers.evalCommand),
     ping: wrapUnary(handlers.ping),
   });
 

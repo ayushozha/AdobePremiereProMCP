@@ -260,6 +260,20 @@ export interface ExecuteEDLResponse {
   warnings: string[];
 }
 
+export interface EvalCommandRequest {
+  /** e.g. "createBin" */
+  functionName: string;
+  /** JSON-encoded arguments */
+  argsJson: string;
+}
+
+export interface EvalCommandResponse {
+  /** JSON-encoded result */
+  resultJson: string;
+  isError: boolean;
+  errorMessage: string;
+}
+
 export interface PingRequest {
 }
 
@@ -2981,6 +2995,194 @@ export const ExecuteEDLResponse: MessageFns<ExecuteEDLResponse> = {
   },
 };
 
+function createBaseEvalCommandRequest(): EvalCommandRequest {
+  return { functionName: "", argsJson: "" };
+}
+
+export const EvalCommandRequest: MessageFns<EvalCommandRequest> = {
+  encode(message: EvalCommandRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.functionName !== "") {
+      writer.uint32(10).string(message.functionName);
+    }
+    if (message.argsJson !== "") {
+      writer.uint32(18).string(message.argsJson);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): EvalCommandRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseEvalCommandRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.functionName = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.argsJson = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): EvalCommandRequest {
+    return {
+      functionName: isSet(object.functionName)
+        ? globalThis.String(object.functionName)
+        : isSet(object.function_name)
+        ? globalThis.String(object.function_name)
+        : "",
+      argsJson: isSet(object.argsJson)
+        ? globalThis.String(object.argsJson)
+        : isSet(object.args_json)
+        ? globalThis.String(object.args_json)
+        : "",
+    };
+  },
+
+  toJSON(message: EvalCommandRequest): unknown {
+    const obj: any = {};
+    if (message.functionName !== "") {
+      obj.functionName = message.functionName;
+    }
+    if (message.argsJson !== "") {
+      obj.argsJson = message.argsJson;
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<EvalCommandRequest>): EvalCommandRequest {
+    return EvalCommandRequest.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<EvalCommandRequest>): EvalCommandRequest {
+    const message = createBaseEvalCommandRequest();
+    message.functionName = object.functionName ?? "";
+    message.argsJson = object.argsJson ?? "";
+    return message;
+  },
+};
+
+function createBaseEvalCommandResponse(): EvalCommandResponse {
+  return { resultJson: "", isError: false, errorMessage: "" };
+}
+
+export const EvalCommandResponse: MessageFns<EvalCommandResponse> = {
+  encode(message: EvalCommandResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.resultJson !== "") {
+      writer.uint32(10).string(message.resultJson);
+    }
+    if (message.isError !== false) {
+      writer.uint32(16).bool(message.isError);
+    }
+    if (message.errorMessage !== "") {
+      writer.uint32(26).string(message.errorMessage);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): EvalCommandResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseEvalCommandResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.resultJson = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.isError = reader.bool();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.errorMessage = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): EvalCommandResponse {
+    return {
+      resultJson: isSet(object.resultJson)
+        ? globalThis.String(object.resultJson)
+        : isSet(object.result_json)
+        ? globalThis.String(object.result_json)
+        : "",
+      isError: isSet(object.isError)
+        ? globalThis.Boolean(object.isError)
+        : isSet(object.is_error)
+        ? globalThis.Boolean(object.is_error)
+        : false,
+      errorMessage: isSet(object.errorMessage)
+        ? globalThis.String(object.errorMessage)
+        : isSet(object.error_message)
+        ? globalThis.String(object.error_message)
+        : "",
+    };
+  },
+
+  toJSON(message: EvalCommandResponse): unknown {
+    const obj: any = {};
+    if (message.resultJson !== "") {
+      obj.resultJson = message.resultJson;
+    }
+    if (message.isError !== false) {
+      obj.isError = message.isError;
+    }
+    if (message.errorMessage !== "") {
+      obj.errorMessage = message.errorMessage;
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<EvalCommandResponse>): EvalCommandResponse {
+    return EvalCommandResponse.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<EvalCommandResponse>): EvalCommandResponse {
+    const message = createBaseEvalCommandResponse();
+    message.resultJson = object.resultJson ?? "";
+    message.isError = object.isError ?? false;
+    message.errorMessage = object.errorMessage ?? "";
+    return message;
+  },
+};
+
 function createBasePingRequest(): PingRequest {
   return {};
 }
@@ -3265,6 +3467,15 @@ export const PremiereBridgeServiceDefinition = {
       responseStream: false,
       options: {},
     },
+    /** Generic command execution — calls any ExtendScript function by name. */
+    evalCommand: {
+      name: "EvalCommand",
+      requestType: EvalCommandRequest,
+      requestStream: false,
+      responseType: EvalCommandResponse,
+      responseStream: false,
+      options: {},
+    },
     /** Check if Premiere Pro is running and responsive. */
     ping: {
       name: "Ping",
@@ -3332,6 +3543,11 @@ export interface PremiereBridgeServiceImplementation<CallContextExt = {}> {
     request: ExecuteEDLRequest,
     context: CallContext & CallContextExt,
   ): Promise<DeepPartial<ExecuteEDLResponse>>;
+  /** Generic command execution — calls any ExtendScript function by name. */
+  evalCommand(
+    request: EvalCommandRequest,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<EvalCommandResponse>>;
   /** Check if Premiere Pro is running and responsive. */
   ping(request: PingRequest, context: CallContext & CallContextExt): Promise<DeepPartial<PingResponse>>;
 }
@@ -3391,6 +3607,11 @@ export interface PremiereBridgeServiceClient<CallOptionsExt = {}> {
     request: DeepPartial<ExecuteEDLRequest>,
     options?: CallOptions & CallOptionsExt,
   ): Promise<ExecuteEDLResponse>;
+  /** Generic command execution — calls any ExtendScript function by name. */
+  evalCommand(
+    request: DeepPartial<EvalCommandRequest>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<EvalCommandResponse>;
   /** Check if Premiere Pro is running and responsive. */
   ping(request: DeepPartial<PingRequest>, options?: CallOptions & CallOptionsExt): Promise<PingResponse>;
 }

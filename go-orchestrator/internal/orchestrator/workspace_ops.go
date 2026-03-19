@@ -2,9 +2,9 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
-	"go.uber.org/zap"
 )
 
 // ---------------------------------------------------------------------------
@@ -12,23 +12,52 @@ import (
 // ---------------------------------------------------------------------------
 
 func (e *Engine) CreateMulticamSequence(ctx context.Context, name string, clipIndices []int, syncPoint string) (*GenericResult, error) {
-	e.logger.Debug("create_multicam_sequence", zap.String("name", name), zap.Int("clip_count", len(clipIndices)), zap.String("sync_point", syncPoint))
-	return nil, fmt.Errorf("create multicam sequence: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"name": name,
+		"clipIndices": clipIndices,
+		"syncPoint": syncPoint,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "createMulticamSequence", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("CreateMulticamSequence: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SwitchMulticamAngle(ctx context.Context, trackIndex int, time float64, angleIndex int) (*GenericResult, error) {
-	e.logger.Debug("switch_multicam_angle", zap.Int("track", trackIndex), zap.Float64("time", time), zap.Int("angle", angleIndex))
-	return nil, fmt.Errorf("switch multicam angle: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackIndex": trackIndex,
+		"time": time,
+		"angleIndex": angleIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "switchMulticamAngle", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SwitchMulticamAngle: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) FlattenMulticam(ctx context.Context, sequenceIndex int) (*GenericResult, error) {
-	e.logger.Debug("flatten_multicam", zap.Int("sequence", sequenceIndex))
-	return nil, fmt.Errorf("flatten multicam: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"sequenceIndex": sequenceIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "flattenMulticam", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("FlattenMulticam: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetMulticamAngles(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error) {
-	e.logger.Debug("get_multicam_angles", zap.Int("track", trackIndex), zap.Int("clip", clipIndex))
-	return nil, fmt.Errorf("get multicam angles: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "getMulticamAngles", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetMulticamAngles: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -36,33 +65,71 @@ func (e *Engine) GetMulticamAngles(ctx context.Context, trackIndex, clipIndex in
 // ---------------------------------------------------------------------------
 
 func (e *Engine) CreateProxy(ctx context.Context, projectItemIndex int, presetPath string) (*GenericResult, error) {
-	e.logger.Debug("create_proxy", zap.Int("item", projectItemIndex), zap.String("preset_path", presetPath))
-	return nil, fmt.Errorf("create proxy: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"projectItemIndex": projectItemIndex,
+		"presetPath": presetPath,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "createProxy", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("CreateProxy: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) AttachProxy(ctx context.Context, projectItemIndex int, proxyPath string) (*GenericResult, error) {
-	e.logger.Debug("attach_proxy", zap.Int("item", projectItemIndex), zap.String("proxy_path", proxyPath))
-	return nil, fmt.Errorf("attach proxy: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"projectItemIndex": projectItemIndex,
+		"proxyPath": proxyPath,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "attachProxy", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("AttachProxy: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) HasProxy(ctx context.Context, projectItemIndex int) (*GenericResult, error) {
-	e.logger.Debug("has_proxy", zap.Int("item", projectItemIndex))
-	return nil, fmt.Errorf("has proxy: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"projectItemIndex": projectItemIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "hasProxy", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("HasProxy: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetProxyPath(ctx context.Context, projectItemIndex int) (*GenericResult, error) {
-	e.logger.Debug("get_proxy_path", zap.Int("item", projectItemIndex))
-	return nil, fmt.Errorf("get proxy path: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"projectItemIndex": projectItemIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "getProxyPath", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetProxyPath: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) ToggleProxies(ctx context.Context, enabled bool) (*GenericResult, error) {
-	e.logger.Debug("toggle_proxies", zap.Bool("enabled", enabled))
-	return nil, fmt.Errorf("toggle proxies: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"enabled": enabled,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "toggleProxies", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ToggleProxies: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) DetachProxy(ctx context.Context, projectItemIndex int) (*GenericResult, error) {
-	e.logger.Debug("detach_proxy", zap.Int("item", projectItemIndex))
-	return nil, fmt.Errorf("detach proxy: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"projectItemIndex": projectItemIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "detachProxy", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("DetachProxy: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -70,18 +137,34 @@ func (e *Engine) DetachProxy(ctx context.Context, projectItemIndex int) (*Generi
 // ---------------------------------------------------------------------------
 
 func (e *Engine) GetWorkspaces(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_workspaces")
-	return nil, fmt.Errorf("get workspaces: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getWorkspaces", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetWorkspaces: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetWorkspace(ctx context.Context, name string) (*GenericResult, error) {
-	e.logger.Debug("set_workspace", zap.String("name", name))
-	return nil, fmt.Errorf("set workspace: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"name": name,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setWorkspace", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetWorkspace: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SaveWorkspace(ctx context.Context, name string) (*GenericResult, error) {
-	e.logger.Debug("save_workspace", zap.String("name", name))
-	return nil, fmt.Errorf("save workspace: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"name": name,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "saveWorkspace", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SaveWorkspace: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -89,13 +172,21 @@ func (e *Engine) SaveWorkspace(ctx context.Context, name string) (*GenericResult
 // ---------------------------------------------------------------------------
 
 func (e *Engine) Undo(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("undo")
-	return nil, fmt.Errorf("undo: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "undo", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("Undo: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) Redo(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("redo")
-	return nil, fmt.Errorf("redo: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "redo", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("Redo: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -103,13 +194,26 @@ func (e *Engine) Redo(ctx context.Context) (*GenericResult, error) {
 // ---------------------------------------------------------------------------
 
 func (e *Engine) SortProjectPanel(ctx context.Context, field string, ascending bool) (*GenericResult, error) {
-	e.logger.Debug("sort_project_panel", zap.String("field", field), zap.Bool("ascending", ascending))
-	return nil, fmt.Errorf("sort project panel: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"field": field,
+		"ascending": ascending,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "sortProjectPanel", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SortProjectPanel: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SearchProjectPanel(ctx context.Context, query string) (*GenericResult, error) {
-	e.logger.Debug("search_project_panel", zap.String("query", query))
-	return nil, fmt.Errorf("search project panel: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"query": query,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "searchProjectPanel", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SearchProjectPanel: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -117,18 +221,34 @@ func (e *Engine) SearchProjectPanel(ctx context.Context, query string) (*Generic
 // ---------------------------------------------------------------------------
 
 func (e *Engine) OpenInSourceMonitor(ctx context.Context, projectItemIndex int) (*GenericResult, error) {
-	e.logger.Debug("open_in_source_monitor", zap.Int("item", projectItemIndex))
-	return nil, fmt.Errorf("open in source monitor: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"projectItemIndex": projectItemIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "openInSourceMonitor", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("OpenInSourceMonitor: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetSourceMonitorPosition(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_source_monitor_position")
-	return nil, fmt.Errorf("get source monitor position: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getSourceMonitorPosition", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetSourceMonitorPosition: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetSourceMonitorPosition(ctx context.Context, seconds float64) (*GenericResult, error) {
-	e.logger.Debug("set_source_monitor_position", zap.Float64("seconds", seconds))
-	return nil, fmt.Errorf("set source monitor position: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"seconds": seconds,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setSourceMonitorPosition", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetSourceMonitorPosition: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -136,18 +256,32 @@ func (e *Engine) SetSourceMonitorPosition(ctx context.Context, seconds float64) 
 // ---------------------------------------------------------------------------
 
 func (e *Engine) GetAutoSaveSettings(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_auto_save_settings")
-	return nil, fmt.Errorf("get auto save settings: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getAutoSaveSettings", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetAutoSaveSettings: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetAutoSaveInterval(ctx context.Context, minutes int) (*GenericResult, error) {
-	e.logger.Debug("set_auto_save_interval", zap.Int("minutes", minutes))
-	return nil, fmt.Errorf("set auto save interval: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"minutes": minutes,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setAutoSaveInterval", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetAutoSaveInterval: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetMemorySettings(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_memory_settings")
-	return nil, fmt.Errorf("get memory settings: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getMemorySettings", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetMemorySettings: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -155,11 +289,19 @@ func (e *Engine) GetMemorySettings(ctx context.Context) (*GenericResult, error) 
 // ---------------------------------------------------------------------------
 
 func (e *Engine) ClearMediaCache(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("clear_media_cache")
-	return nil, fmt.Errorf("clear media cache: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "clearMediaCache", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ClearMediaCache: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetMediaCachePath(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_media_cache_path")
-	return nil, fmt.Errorf("get media cache path: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getMediaCachePath", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetMediaCachePath: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }

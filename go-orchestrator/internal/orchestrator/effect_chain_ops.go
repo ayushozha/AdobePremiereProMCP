@@ -2,9 +2,9 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
-	"go.uber.org/zap"
 )
 
 // ---------------------------------------------------------------------------
@@ -12,28 +12,71 @@ import (
 // ---------------------------------------------------------------------------
 
 func (e *Engine) GetEffectChain(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error) {
-	e.logger.Debug("get_effect_chain", zap.String("track_type", trackType), zap.Int("track", trackIndex), zap.Int("clip", clipIndex))
-	return nil, fmt.Errorf("get effect chain: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "getEffectChain", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetEffectChain: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) ReorderEffect(ctx context.Context, trackType string, trackIndex, clipIndex, fromIndex, toIndex int) (*GenericResult, error) {
-	e.logger.Debug("reorder_effect", zap.String("track_type", trackType), zap.Int("track", trackIndex), zap.Int("clip", clipIndex), zap.Int("from", fromIndex), zap.Int("to", toIndex))
-	return nil, fmt.Errorf("reorder effect: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+		"fromIndex": fromIndex,
+		"toIndex": toIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "reorderEffect", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ReorderEffect: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetEffectCount(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error) {
-	e.logger.Debug("get_effect_count", zap.String("track_type", trackType), zap.Int("track", trackIndex), zap.Int("clip", clipIndex))
-	return nil, fmt.Errorf("get effect count: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "getEffectCount", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetEffectCount: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) ClearAllEffects(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error) {
-	e.logger.Debug("clear_all_effects", zap.String("track_type", trackType), zap.Int("track", trackIndex), zap.Int("clip", clipIndex))
-	return nil, fmt.Errorf("clear all effects: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "clearAllEffects", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ClearAllEffects: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) DuplicateEffect(ctx context.Context, trackType string, trackIndex, clipIndex, effectIndex int) (*GenericResult, error) {
-	e.logger.Debug("duplicate_effect", zap.String("track_type", trackType), zap.Int("track", trackIndex), zap.Int("clip", clipIndex), zap.Int("effect", effectIndex))
-	return nil, fmt.Errorf("duplicate effect: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+		"effectIndex": effectIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "duplicateEffect", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("DuplicateEffect: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -41,28 +84,79 @@ func (e *Engine) DuplicateEffect(ctx context.Context, trackType string, trackInd
 // ---------------------------------------------------------------------------
 
 func (e *Engine) AnimateEffectParameter(ctx context.Context, trackType string, trackIndex, clipIndex, componentIndex, paramIndex int, keyframesJSON string) (*GenericResult, error) {
-	e.logger.Debug("animate_effect_parameter", zap.String("track_type", trackType), zap.Int("track", trackIndex), zap.Int("clip", clipIndex), zap.Int("component", componentIndex), zap.Int("param", paramIndex))
-	return nil, fmt.Errorf("animate effect parameter: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+		"componentIndex": componentIndex,
+		"paramIndex": paramIndex,
+		"keyframesJSON": keyframesJSON,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "animateEffectParameter", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("AnimateEffectParameter: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetEffectParameterRange(ctx context.Context, trackType string, trackIndex, clipIndex, componentIndex, paramIndex int) (*GenericResult, error) {
-	e.logger.Debug("get_effect_parameter_range", zap.String("track_type", trackType), zap.Int("track", trackIndex), zap.Int("clip", clipIndex), zap.Int("component", componentIndex), zap.Int("param", paramIndex))
-	return nil, fmt.Errorf("get effect parameter range: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+		"componentIndex": componentIndex,
+		"paramIndex": paramIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "getEffectParameterRange", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetEffectParameterRange: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) ResetEffectParameter(ctx context.Context, trackType string, trackIndex, clipIndex, componentIndex, paramIndex int) (*GenericResult, error) {
-	e.logger.Debug("reset_effect_parameter", zap.String("track_type", trackType), zap.Int("track", trackIndex), zap.Int("clip", clipIndex), zap.Int("component", componentIndex), zap.Int("param", paramIndex))
-	return nil, fmt.Errorf("reset effect parameter: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+		"componentIndex": componentIndex,
+		"paramIndex": paramIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "resetEffectParameter", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ResetEffectParameter: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) LinkEffectParameters(ctx context.Context, trackType string, trackIndex, clipIndex, comp1, param1, comp2, param2 int) (*GenericResult, error) {
-	e.logger.Debug("link_effect_parameters", zap.String("track_type", trackType), zap.Int("track", trackIndex), zap.Int("clip", clipIndex), zap.Int("comp1", comp1), zap.Int("param1", param1), zap.Int("comp2", comp2), zap.Int("param2", param2))
-	return nil, fmt.Errorf("link effect parameters: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+		"comp1": comp1,
+		"param1": param1,
+		"comp2": comp2,
+		"param2": param2,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "linkEffectParameters", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("LinkEffectParameters: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetEffectRenderOrder(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error) {
-	e.logger.Debug("get_effect_render_order", zap.String("track_type", trackType), zap.Int("track", trackIndex), zap.Int("clip", clipIndex))
-	return nil, fmt.Errorf("get effect render order: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "getEffectRenderOrder", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetEffectRenderOrder: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -70,53 +164,136 @@ func (e *Engine) GetEffectRenderOrder(ctx context.Context, trackType string, tra
 // ---------------------------------------------------------------------------
 
 func (e *Engine) ApplyBlackAndWhite(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error) {
-	e.logger.Debug("apply_black_and_white", zap.Int("track", trackIndex), zap.Int("clip", clipIndex))
-	return nil, fmt.Errorf("apply black and white: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "applyBlackAndWhite", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ApplyBlackAndWhite: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) ApplySepia(ctx context.Context, trackIndex, clipIndex int, intensity float64) (*GenericResult, error) {
-	e.logger.Debug("apply_sepia", zap.Int("track", trackIndex), zap.Int("clip", clipIndex), zap.Float64("intensity", intensity))
-	return nil, fmt.Errorf("apply sepia: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+		"intensity": intensity,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "applySepia", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ApplySepia: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) ApplyVintageFilm(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error) {
-	e.logger.Debug("apply_vintage_film", zap.Int("track", trackIndex), zap.Int("clip", clipIndex))
-	return nil, fmt.Errorf("apply vintage film: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "applyVintageFilm", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ApplyVintageFilm: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) ApplyFilmGrain(ctx context.Context, trackIndex, clipIndex int, amount float64) (*GenericResult, error) {
-	e.logger.Debug("apply_film_grain", zap.Int("track", trackIndex), zap.Int("clip", clipIndex), zap.Float64("amount", amount))
-	return nil, fmt.Errorf("apply film grain: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+		"amount": amount,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "applyFilmGrain", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ApplyFilmGrain: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) ApplyVignetteEffect(ctx context.Context, trackIndex, clipIndex int, amount, feather float64) (*GenericResult, error) {
-	e.logger.Debug("apply_vignette_effect", zap.Int("track", trackIndex), zap.Int("clip", clipIndex), zap.Float64("amount", amount), zap.Float64("feather", feather))
-	return nil, fmt.Errorf("apply vignette effect: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+		"amount": amount,
+		"feather": feather,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "applyVignetteEffect", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ApplyVignetteEffect: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) ApplyGlow(ctx context.Context, trackIndex, clipIndex int, intensity, radius float64) (*GenericResult, error) {
-	e.logger.Debug("apply_glow", zap.Int("track", trackIndex), zap.Int("clip", clipIndex), zap.Float64("intensity", intensity), zap.Float64("radius", radius))
-	return nil, fmt.Errorf("apply glow: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+		"intensity": intensity,
+		"radius": radius,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "applyGlow", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ApplyGlow: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) ApplyDropShadow(ctx context.Context, trackIndex, clipIndex int, opacity, distance, softness, direction float64) (*GenericResult, error) {
-	e.logger.Debug("apply_drop_shadow", zap.Int("track", trackIndex), zap.Int("clip", clipIndex), zap.Float64("opacity", opacity), zap.Float64("distance", distance))
-	return nil, fmt.Errorf("apply drop shadow: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+		"opacity": opacity,
+		"distance": distance,
+		"softness": softness,
+		"direction": direction,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "applyDropShadow", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ApplyDropShadow: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) ApplyStroke(ctx context.Context, trackIndex, clipIndex int, color string, width float64) (*GenericResult, error) {
-	e.logger.Debug("apply_stroke", zap.Int("track", trackIndex), zap.Int("clip", clipIndex), zap.String("color", color), zap.Float64("width", width))
-	return nil, fmt.Errorf("apply stroke: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+		"color": color,
+		"width": width,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "applyStroke", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ApplyStroke: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) ApplyCinematicBars(ctx context.Context, trackIndex, clipIndex int, barHeight float64) (*GenericResult, error) {
-	e.logger.Debug("apply_cinematic_bars", zap.Int("track", trackIndex), zap.Int("clip", clipIndex), zap.Float64("bar_height", barHeight))
-	return nil, fmt.Errorf("apply cinematic bars: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+		"barHeight": barHeight,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "applyCinematicBars", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ApplyCinematicBars: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) ApplyFlipHorizontal(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error) {
-	e.logger.Debug("apply_flip_horizontal", zap.Int("track", trackIndex), zap.Int("clip", clipIndex))
-	return nil, fmt.Errorf("apply flip horizontal: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "applyFlipHorizontal", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ApplyFlipHorizontal: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -124,23 +301,57 @@ func (e *Engine) ApplyFlipHorizontal(ctx context.Context, trackIndex, clipIndex 
 // ---------------------------------------------------------------------------
 
 func (e *Engine) GetDurationOfTransition(ctx context.Context, trackType string, trackIndex, transitionIndex int) (*GenericResult, error) {
-	e.logger.Debug("get_duration_of_transition", zap.String("track_type", trackType), zap.Int("track", trackIndex), zap.Int("transition", transitionIndex))
-	return nil, fmt.Errorf("get duration of transition: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"transitionIndex": transitionIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "getDurationOfTransition", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetDurationOfTransition: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetTransitionDuration(ctx context.Context, trackType string, trackIndex, transitionIndex int, duration float64) (*GenericResult, error) {
-	e.logger.Debug("set_transition_duration", zap.String("track_type", trackType), zap.Int("track", trackIndex), zap.Int("transition", transitionIndex), zap.Float64("duration", duration))
-	return nil, fmt.Errorf("set transition duration: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"transitionIndex": transitionIndex,
+		"duration": duration,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setTransitionDuration", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetTransitionDuration: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetTransitionAlignment(ctx context.Context, trackType string, trackIndex, transitionIndex int, alignment string) (*GenericResult, error) {
-	e.logger.Debug("set_transition_alignment", zap.String("track_type", trackType), zap.Int("track", trackIndex), zap.Int("transition", transitionIndex), zap.String("alignment", alignment))
-	return nil, fmt.Errorf("set transition alignment: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"transitionIndex": transitionIndex,
+		"alignment": alignment,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setTransitionAlignment", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetTransitionAlignment: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetTransitionProperties(ctx context.Context, trackType string, trackIndex, transitionIndex int) (*GenericResult, error) {
-	e.logger.Debug("get_transition_properties", zap.String("track_type", trackType), zap.Int("track", trackIndex), zap.Int("transition", transitionIndex))
-	return nil, fmt.Errorf("get transition properties: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"transitionIndex": transitionIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "getTransitionProperties", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetTransitionProperties: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -148,18 +359,42 @@ func (e *Engine) GetTransitionProperties(ctx context.Context, trackType string, 
 // ---------------------------------------------------------------------------
 
 func (e *Engine) ToggleEffectsPreview(ctx context.Context, trackType string, trackIndex, clipIndex int, enabled bool) (*GenericResult, error) {
-	e.logger.Debug("toggle_effects_preview", zap.String("track_type", trackType), zap.Int("track", trackIndex), zap.Int("clip", clipIndex), zap.Bool("enabled", enabled))
-	return nil, fmt.Errorf("toggle effects preview: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+		"enabled": enabled,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "toggleEffectsPreview", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ToggleEffectsPreview: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetBeforeAfterSnapshot(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error) {
-	e.logger.Debug("get_before_after_snapshot", zap.String("track_type", trackType), zap.Int("track", trackIndex), zap.Int("clip", clipIndex))
-	return nil, fmt.Errorf("get before/after snapshot: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "getBeforeAfterSnapshot", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetBeforeAfterSnapshot: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) CompareEffectSettings(ctx context.Context, clip1RefJSON, clip2RefJSON string) (*GenericResult, error) {
-	e.logger.Debug("compare_effect_settings")
-	return nil, fmt.Errorf("compare effect settings: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"clip1RefJSON": clip1RefJSON,
+		"clip2RefJSON": clip2RefJSON,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "compareEffectSettings", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("CompareEffectSettings: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -167,16 +402,38 @@ func (e *Engine) CompareEffectSettings(ctx context.Context, clip1RefJSON, clip2R
 // ---------------------------------------------------------------------------
 
 func (e *Engine) SaveEffectChainAsTemplate(ctx context.Context, trackType string, trackIndex, clipIndex int, name string) (*GenericResult, error) {
-	e.logger.Debug("save_effect_chain_as_template", zap.String("track_type", trackType), zap.Int("track", trackIndex), zap.Int("clip", clipIndex), zap.String("name", name))
-	return nil, fmt.Errorf("save effect chain as template: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+		"name": name,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "saveEffectChainAsTemplate", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SaveEffectChainAsTemplate: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) LoadEffectChainTemplate(ctx context.Context, trackType string, trackIndex, clipIndex int, name string) (*GenericResult, error) {
-	e.logger.Debug("load_effect_chain_template", zap.String("track_type", trackType), zap.Int("track", trackIndex), zap.Int("clip", clipIndex), zap.String("name", name))
-	return nil, fmt.Errorf("load effect chain template: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"clipIndex": clipIndex,
+		"name": name,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "loadEffectChainTemplate", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("LoadEffectChainTemplate: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) ListEffectChainTemplates(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("list_effect_chain_templates")
-	return nil, fmt.Errorf("list effect chain templates: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "listEffectChainTemplates", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ListEffectChainTemplates: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }

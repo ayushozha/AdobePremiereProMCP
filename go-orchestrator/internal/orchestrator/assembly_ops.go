@@ -2,9 +2,9 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
-	"go.uber.org/zap"
 )
 
 // ---------------------------------------------------------------------------
@@ -12,28 +12,63 @@ import (
 // ---------------------------------------------------------------------------
 
 func (e *Engine) AssembleFromEDL(ctx context.Context, edlJSON string) (*GenericResult, error) {
-	e.logger.Debug("assemble_from_edl", zap.String("edl_json_len", fmt.Sprintf("%d", len(edlJSON))))
-	return nil, fmt.Errorf("assemble from EDL: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"edlJSON": edlJSON,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "assembleFromEDL", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("AssembleFromEDL: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) AssembleFromCSV(ctx context.Context, csvPath string) (*GenericResult, error) {
-	e.logger.Debug("assemble_from_csv", zap.String("csv_path", csvPath))
-	return nil, fmt.Errorf("assemble from CSV: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"csvPath": csvPath,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "assembleFromCSV", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("AssembleFromCSV: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) AssembleFromFolderOrder(ctx context.Context, folderPath, transitionName string, transitionDuration float64) (*GenericResult, error) {
-	e.logger.Debug("assemble_from_folder_order", zap.String("folder_path", folderPath), zap.String("transition", transitionName), zap.Float64("duration", transitionDuration))
-	return nil, fmt.Errorf("assemble from folder order: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"folderPath": folderPath,
+		"transitionName": transitionName,
+		"transitionDuration": transitionDuration,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "assembleFromFolderOrder", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("AssembleFromFolderOrder: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) InterleaveClips(ctx context.Context, trackIndexA, trackIndexB int, transitionDuration float64) (*GenericResult, error) {
-	e.logger.Debug("interleave_clips", zap.Int("track_a", trackIndexA), zap.Int("track_b", trackIndexB), zap.Float64("transition_duration", transitionDuration))
-	return nil, fmt.Errorf("interleave clips: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackIndexA": trackIndexA,
+		"trackIndexB": trackIndexB,
+		"transitionDuration": transitionDuration,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "interleaveClips", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("InterleaveClips: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) ShuffleClips(ctx context.Context, trackType string, trackIndex int) (*GenericResult, error) {
-	e.logger.Debug("shuffle_clips", zap.String("track_type", trackType), zap.Int("track_index", trackIndex))
-	return nil, fmt.Errorf("shuffle clips: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "shuffleClips", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ShuffleClips: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -41,33 +76,80 @@ func (e *Engine) ShuffleClips(ctx context.Context, trackType string, trackIndex 
 // ---------------------------------------------------------------------------
 
 func (e *Engine) SortClipsByDuration(ctx context.Context, trackType string, trackIndex int, ascending bool) (*GenericResult, error) {
-	e.logger.Debug("sort_clips_by_duration", zap.String("track_type", trackType), zap.Int("track_index", trackIndex), zap.Bool("ascending", ascending))
-	return nil, fmt.Errorf("sort clips by duration: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"ascending": ascending,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "sortClipsByDuration", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SortClipsByDuration: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SortClipsByName(ctx context.Context, trackType string, trackIndex int, ascending bool) (*GenericResult, error) {
-	e.logger.Debug("sort_clips_by_name", zap.String("track_type", trackType), zap.Int("track_index", trackIndex), zap.Bool("ascending", ascending))
-	return nil, fmt.Errorf("sort clips by name: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"ascending": ascending,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "sortClipsByName", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SortClipsByName: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SortClipsByFileName(ctx context.Context, trackType string, trackIndex int, ascending bool) (*GenericResult, error) {
-	e.logger.Debug("sort_clips_by_file_name", zap.String("track_type", trackType), zap.Int("track_index", trackIndex), zap.Bool("ascending", ascending))
-	return nil, fmt.Errorf("sort clips by file name: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"ascending": ascending,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "sortClipsByFileName", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SortClipsByFileName: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) ReverseClipOrder(ctx context.Context, trackType string, trackIndex int) (*GenericResult, error) {
-	e.logger.Debug("reverse_clip_order", zap.String("track_type", trackType), zap.Int("track_index", trackIndex))
-	return nil, fmt.Errorf("reverse clip order: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "reverseClipOrder", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ReverseClipOrder: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) DistributeClipsEvenly(ctx context.Context, trackType string, trackIndex int, totalDuration float64) (*GenericResult, error) {
-	e.logger.Debug("distribute_clips_evenly", zap.String("track_type", trackType), zap.Int("track_index", trackIndex), zap.Float64("total_duration", totalDuration))
-	return nil, fmt.Errorf("distribute clips evenly: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"totalDuration": totalDuration,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "distributeClipsEvenly", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("DistributeClipsEvenly: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) StackClips(ctx context.Context, trackType string, trackIndex int, startTime float64) (*GenericResult, error) {
-	e.logger.Debug("stack_clips", zap.String("track_type", trackType), zap.Int("track_index", trackIndex), zap.Float64("start_time", startTime))
-	return nil, fmt.Errorf("stack clips: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackType": trackType,
+		"trackIndex": trackIndex,
+		"startTime": startTime,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "stackClips", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("StackClips: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -75,23 +157,57 @@ func (e *Engine) StackClips(ctx context.Context, trackType string, trackIndex in
 // ---------------------------------------------------------------------------
 
 func (e *Engine) CreateOverlayTrack(ctx context.Context, sourceTrack, destTrack int, opacity float64, blendMode string) (*GenericResult, error) {
-	e.logger.Debug("create_overlay_track", zap.Int("source_track", sourceTrack), zap.Int("dest_track", destTrack), zap.Float64("opacity", opacity), zap.String("blend_mode", blendMode))
-	return nil, fmt.Errorf("create overlay track: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"sourceTrack": sourceTrack,
+		"destTrack": destTrack,
+		"opacity": opacity,
+		"blendMode": blendMode,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "createOverlayTrack", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("CreateOverlayTrack: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) CreateGreenScreenComposite(ctx context.Context, fgTrackIndex, fgClipIndex, bgTrackIndex, bgClipIndex int, keyColor string) (*GenericResult, error) {
-	e.logger.Debug("create_green_screen_composite", zap.Int("fg_track", fgTrackIndex), zap.Int("fg_clip", fgClipIndex), zap.Int("bg_track", bgTrackIndex), zap.Int("bg_clip", bgClipIndex), zap.String("key_color", keyColor))
-	return nil, fmt.Errorf("create green screen composite: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"fgTrackIndex": fgTrackIndex,
+		"fgClipIndex": fgClipIndex,
+		"bgTrackIndex": bgTrackIndex,
+		"bgClipIndex": bgClipIndex,
+		"keyColor": keyColor,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "createGreenScreenComposite", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("CreateGreenScreenComposite: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) CreatePictureInPictureGrid(ctx context.Context, trackIndices []int, layout string) (*GenericResult, error) {
-	e.logger.Debug("create_pip_grid", zap.Ints("track_indices", trackIndices), zap.String("layout", layout))
-	return nil, fmt.Errorf("create picture-in-picture grid: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackIndices": trackIndices,
+		"layout": layout,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "createPictureInPictureGrid", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("CreatePictureInPictureGrid: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) LayerTracks(ctx context.Context, baseTrack int, overlayTracks []int, opacities []float64) (*GenericResult, error) {
-	e.logger.Debug("layer_tracks", zap.Int("base_track", baseTrack), zap.Ints("overlay_tracks", overlayTracks), zap.Float64s("opacities", opacities))
-	return nil, fmt.Errorf("layer tracks: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"baseTrack": baseTrack,
+		"overlayTracks": overlayTracks,
+		"opacities": opacities,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "layerTracks", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("LayerTracks: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -99,33 +215,88 @@ func (e *Engine) LayerTracks(ctx context.Context, baseTrack int, overlayTracks [
 // ---------------------------------------------------------------------------
 
 func (e *Engine) GenerateBlackClip(ctx context.Context, trackIndex int, startTime, duration float64) (*GenericResult, error) {
-	e.logger.Debug("generate_black_clip", zap.Int("track_index", trackIndex), zap.Float64("start_time", startTime), zap.Float64("duration", duration))
-	return nil, fmt.Errorf("generate black clip: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackIndex": trackIndex,
+		"startTime": startTime,
+		"duration": duration,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "generateBlackClip", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GenerateBlackClip: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GenerateColorClip(ctx context.Context, trackIndex int, startTime, duration float64, color string) (*GenericResult, error) {
-	e.logger.Debug("generate_color_clip", zap.Int("track_index", trackIndex), zap.Float64("start_time", startTime), zap.Float64("duration", duration), zap.String("color", color))
-	return nil, fmt.Errorf("generate color clip: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackIndex": trackIndex,
+		"startTime": startTime,
+		"duration": duration,
+		"color": color,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "generateColorClip", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GenerateColorClip: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GenerateGradientClip(ctx context.Context, trackIndex int, startTime, duration float64, colorStart, colorEnd, direction string) (*GenericResult, error) {
-	e.logger.Debug("generate_gradient_clip", zap.Int("track_index", trackIndex), zap.Float64("start_time", startTime), zap.Float64("duration", duration), zap.String("color_start", colorStart), zap.String("color_end", colorEnd), zap.String("direction", direction))
-	return nil, fmt.Errorf("generate gradient clip: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackIndex": trackIndex,
+		"startTime": startTime,
+		"duration": duration,
+		"colorStart": colorStart,
+		"colorEnd": colorEnd,
+		"direction": direction,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "generateGradientClip", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GenerateGradientClip: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GenerateTestPattern(ctx context.Context, trackIndex int, startTime, duration float64, pattern string) (*GenericResult, error) {
-	e.logger.Debug("generate_test_pattern", zap.Int("track_index", trackIndex), zap.Float64("start_time", startTime), zap.Float64("duration", duration), zap.String("pattern", pattern))
-	return nil, fmt.Errorf("generate test pattern: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackIndex": trackIndex,
+		"startTime": startTime,
+		"duration": duration,
+		"pattern": pattern,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "generateTestPattern", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GenerateTestPattern: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GenerateSilence(ctx context.Context, trackIndex int, startTime, duration float64) (*GenericResult, error) {
-	e.logger.Debug("generate_silence", zap.Int("track_index", trackIndex), zap.Float64("start_time", startTime), zap.Float64("duration", duration))
-	return nil, fmt.Errorf("generate silence: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackIndex": trackIndex,
+		"startTime": startTime,
+		"duration": duration,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "generateSilence", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GenerateSilence: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GenerateTone(ctx context.Context, trackIndex int, startTime, duration, frequency, amplitude float64) (*GenericResult, error) {
-	e.logger.Debug("generate_tone", zap.Int("track_index", trackIndex), zap.Float64("start_time", startTime), zap.Float64("duration", duration), zap.Float64("frequency", frequency), zap.Float64("amplitude", amplitude))
-	return nil, fmt.Errorf("generate tone: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"trackIndex": trackIndex,
+		"startTime": startTime,
+		"duration": duration,
+		"frequency": frequency,
+		"amplitude": amplitude,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "generateTone", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GenerateTone: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -133,23 +304,47 @@ func (e *Engine) GenerateTone(ctx context.Context, trackIndex int, startTime, du
 // ---------------------------------------------------------------------------
 
 func (e *Engine) DuplicateTimelineSection(ctx context.Context, startTime, endTime, destTime float64) (*GenericResult, error) {
-	e.logger.Debug("duplicate_timeline_section", zap.Float64("start_time", startTime), zap.Float64("end_time", endTime), zap.Float64("dest_time", destTime))
-	return nil, fmt.Errorf("duplicate timeline section: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"startTime": startTime,
+		"endTime": endTime,
+		"destTime": destTime,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "duplicateTimelineSection", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("DuplicateTimelineSection: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) RepeatTimelineSection(ctx context.Context, startTime, endTime float64, count int) (*GenericResult, error) {
-	e.logger.Debug("repeat_timeline_section", zap.Float64("start_time", startTime), zap.Float64("end_time", endTime), zap.Int("count", count))
-	return nil, fmt.Errorf("repeat timeline section: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"startTime": startTime,
+		"endTime": endTime,
+		"count": count,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "repeatTimelineSection", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("RepeatTimelineSection: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) MirrorTimeline(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("mirror_timeline")
-	return nil, fmt.Errorf("mirror timeline: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "mirrorTimeline", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("MirrorTimeline: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SplitTimelineAtPlayhead(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("split_timeline_at_playhead")
-	return nil, fmt.Errorf("split timeline at playhead: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "splitTimelineAtPlayhead", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SplitTimelineAtPlayhead: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -157,26 +352,46 @@ func (e *Engine) SplitTimelineAtPlayhead(ctx context.Context) (*GenericResult, e
 // ---------------------------------------------------------------------------
 
 func (e *Engine) GetTimelineGapReport(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_timeline_gap_report")
-	return nil, fmt.Errorf("get timeline gap report: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getTimelineGapReport", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetTimelineGapReport: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetTimelineConflictReport(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_timeline_conflict_report")
-	return nil, fmt.Errorf("get timeline conflict report: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getTimelineConflictReport", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetTimelineConflictReport: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetTimelineEffectsReport(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_timeline_effects_report")
-	return nil, fmt.Errorf("get timeline effects report: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getTimelineEffectsReport", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetTimelineEffectsReport: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetTimelineDurationBreakdown(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_timeline_duration_breakdown")
-	return nil, fmt.Errorf("get timeline duration breakdown: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getTimelineDurationBreakdown", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetTimelineDurationBreakdown: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetTimelineTrackUsageReport(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_timeline_track_usage_report")
-	return nil, fmt.Errorf("get timeline track usage report: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getTimelineTrackUsageReport", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetTimelineTrackUsageReport: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }

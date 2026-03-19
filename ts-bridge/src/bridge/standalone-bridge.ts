@@ -27,6 +27,7 @@ import type {
   ExportResult,
   EDLExecutionResult,
   PingResult,
+  EvalCommandResult,
   Resolution,
   TrackTarget,
   Timecode,
@@ -277,6 +278,55 @@ export class StandaloneBridge implements PremiereBridge {
   }): Promise<EDLExecutionResult> {
     const script = ES.executeEDL(params.edl);
     return this.execute<EDLExecutionResult>(script, "executeEDL");
+  }
+
+  // -----------------------------------------------------------------------
+  // Generic Command
+  // -----------------------------------------------------------------------
+
+  async evalCommand(functionName: string, argsJson: string): Promise<EvalCommandResult> {
+    try {
+      // Build ExtendScript: functionName('argsJson') or functionName()
+      let script: string;
+      if (argsJson && argsJson !== "{}" && argsJson !== "[]") {
+        // Escape the JSON string for embedding inside a single-quoted ExtendScript string.
+        const escapedArgs = argsJson
+          .replace(/\\/g, "\\\\")
+          .replace(/'/g, "\\'")
+          .replace(/"/g, '\\"')
+          .replace(/\n/g, "\\n")
+          .replace(/\r/g, "\\r");
+        script = `(function(){ try { var r = ${functionName}('${escapedArgs}'); return JSON.stringify({result: r}); } catch(e) { return JSON.stringify({error: e.message || String(e)}); } })()`;
+      } else {
+        script = `(function(){ try { var r = ${functionName}(); return JSON.stringify({result: r}); } catch(e) { return JSON.stringify({error: e.message || String(e)}); } })()`;
+      }
+
+      const raw = this.execute<Record<string, unknown>>(script, `evalCommand:${functionName}`);
+
+      if (typeof raw === "object" && raw !== null && typeof raw["error"] === "string") {
+        return {
+          resultJson: "",
+          isError: true,
+          errorMessage: raw["error"] as string,
+        };
+      }
+
+      const result = typeof raw === "object" && raw !== null && "result" in raw
+        ? raw["result"]
+        : raw;
+
+      return {
+        resultJson: typeof result === "string" ? result : JSON.stringify(result),
+        isError: false,
+        errorMessage: "",
+      };
+    } catch (err) {
+      return {
+        resultJson: "",
+        isError: true,
+        errorMessage: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 
   // -----------------------------------------------------------------------

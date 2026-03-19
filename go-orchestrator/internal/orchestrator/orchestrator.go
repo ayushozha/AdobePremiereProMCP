@@ -266,6 +266,30 @@ func (e *Engine) SetAudioLevel(ctx context.Context, clipID, sequenceID string, l
 	return nil
 }
 
+// EvalCommand is the generic dispatcher for calling any ExtendScript function
+// by name with JSON-encoded arguments. This is the critical pipeline that
+// allows all ~1000 MCP tools to call through to Premiere Pro.
+func (e *Engine) EvalCommand(ctx context.Context, functionName, argsJSON string) (string, error) {
+	if functionName == "" {
+		return "", fmt.Errorf("eval_command: function_name must not be empty")
+	}
+	e.logger.Debug("eval_command",
+		zap.String("function_name", functionName),
+	)
+	result, err := e.premiere.EvalCommand(ctx, functionName, argsJSON)
+	if err != nil {
+		e.logger.Error("eval_command: failed",
+			zap.String("function_name", functionName),
+			zap.Error(err),
+		)
+		return "", fmt.Errorf("eval command %q: %w", functionName, err)
+	}
+	e.logger.Debug("eval_command: success",
+		zap.String("function_name", functionName),
+	)
+	return result, nil
+}
+
 // EvalAudioCommand is a generic dispatcher for audio and track management
 // ExtendScript commands. The MCP audio_tools layer calls this with a command
 // name (e.g. "setAudioLevelKeyframe") and an args map, and the engine

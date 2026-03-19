@@ -4,6 +4,7 @@ package grpc
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -451,36 +452,99 @@ func (c *PremiereBridgeClient) ExecuteEDL(ctx context.Context, params ExecuteEDL
 }
 
 // ---------------------------------------------------------------------------
+// Generic Command Execution
+// ---------------------------------------------------------------------------
+
+// EvalCommand calls any ExtendScript function by name with JSON arguments.
+// This is the generic passthrough that all MCP tools can use to invoke their
+// corresponding ExtendScript functions in Premiere Pro.
+func (c *PremiereBridgeClient) EvalCommand(ctx context.Context, functionName, argsJSON string) (string, error) {
+	ctx, cancel := c.callCtx(ctx)
+	defer cancel()
+
+	c.logger.Debug("EvalCommand",
+		zap.String("function_name", functionName),
+	)
+
+	resp, err := c.client.EvalCommand(ctx, &premierepb.EvalCommandRequest{
+		FunctionName: functionName,
+		ArgsJson:     argsJSON,
+	})
+	if err != nil {
+		return "", fmt.Errorf("EvalCommand rpc (%s): %w", functionName, err)
+	}
+
+	if resp.GetIsError() {
+		return "", fmt.Errorf("EvalCommand(%s): %s", functionName, resp.GetErrorMessage())
+	}
+
+	return resp.GetResultJson(), nil
+}
+
+// ---------------------------------------------------------------------------
 // Audio & Track Management (generic command dispatcher)
 // ---------------------------------------------------------------------------
 
 // EvalAudioCommand dispatches a named ExtendScript audio/track command.
-// This is a passthrough: the bridge evaluates the function and returns
-// the JSON result as a map.
-//
-// NOTE: The EvalScript RPC has not yet been added to the proto definition.
-// Once the premiere.proto is updated with an EvalScript RPC and the stubs
-// are regenerated, replace this placeholder with the actual gRPC call.
+// Uses the generic EvalCommand RPC to call the function in Premiere Pro.
 func (c *PremiereBridgeClient) EvalAudioCommand(ctx context.Context, command string, args map[string]any) (map[string]any, error) {
 	c.logger.Debug("EvalAudioCommand", zap.String("command", command))
 
-	// TODO: implement once EvalScript RPC is added to premiere.proto
-	return nil, fmt.Errorf("EvalAudioCommand(%s): EvalScript RPC not yet defined in proto", command)
+	argsJSON, err := marshalArgs(args)
+	if err != nil {
+		return nil, fmt.Errorf("EvalAudioCommand(%s): marshal args: %w", command, err)
+	}
+
+	resultJSON, err := c.EvalCommand(ctx, command, argsJSON)
+	if err != nil {
+		return nil, err
+	}
+
+	return parseJSONResult(resultJSON)
 }
 
 // EvalImmersiveCommand dispatches a named ExtendScript immersive-video command
 // (VR/360, HDR, stereoscopic, frame-rate, aspect-ratio, timecode, render,
-// captions). This is a passthrough: the bridge evaluates the function and
-// returns the JSON result as a map.
-//
-// NOTE: The EvalScript RPC has not yet been added to the proto definition.
-// Once the premiere.proto is updated with an EvalScript RPC and the stubs
-// are regenerated, replace this placeholder with the actual gRPC call.
+// captions). Uses the generic EvalCommand RPC.
 func (c *PremiereBridgeClient) EvalImmersiveCommand(ctx context.Context, command string, args map[string]any) (map[string]any, error) {
 	c.logger.Debug("EvalImmersiveCommand", zap.String("command", command))
 
-	// TODO: implement once EvalScript RPC is added to premiere.proto
-	return nil, fmt.Errorf("EvalImmersiveCommand(%s): EvalScript RPC not yet defined in proto", command)
+	argsJSON, err := marshalArgs(args)
+	if err != nil {
+		return nil, fmt.Errorf("EvalImmersiveCommand(%s): marshal args: %w", command, err)
+	}
+
+	resultJSON, err := c.EvalCommand(ctx, command, argsJSON)
+	if err != nil {
+		return nil, err
+	}
+
+	return parseJSONResult(resultJSON)
+}
+
+// marshalArgs converts a map of arguments to a JSON string.
+func marshalArgs(args map[string]any) (string, error) {
+	if args == nil || len(args) == 0 {
+		return "{}", nil
+	}
+	data, err := json.Marshal(args)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// parseJSONResult parses a JSON string into a map.
+func parseJSONResult(resultJSON string) (map[string]any, error) {
+	if resultJSON == "" {
+		return map[string]any{}, nil
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(resultJSON), &result); err != nil {
+		// If the result is not a JSON object, wrap it
+		return map[string]any{"result": resultJSON}, nil
+	}
+	return result, nil
 }
 
 // ---------------------------------------------------------------------------

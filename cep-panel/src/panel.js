@@ -115,6 +115,15 @@
         addText:            function (p)       { return "addText(" + escapeForEval(p.text || "") + "," + (p.trackIndex || 0) + "," + (p.startTime || 0) + "," + (p.duration || 5) + ")"; },
         setAudioLevel:      function (p)       { return "setAudioLevel(" + (p.trackIndex || 0) + "," + (p.clipIndex || 0) + "," + (p.levelDb || 0) + ")"; },
         exportSequence:     function (p)       { return "exportSequence(" + escapeForEval(p.outputPath || "") + "," + escapeForEval(p.presetPath || "") + ")"; },
+        evalCommand:        function (p)       {
+            var fn = p.function_name || "";
+            var argsJson = p.args_json || "";
+            if (argsJson && argsJson !== "{}" && argsJson !== "[]") {
+                return fn + "(" + escapeForEval(argsJson) + ")";
+            } else {
+                return fn + "()";
+            }
+        },
     };
 
     /**

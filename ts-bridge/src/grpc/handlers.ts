@@ -200,6 +200,16 @@ export interface ExecuteEDLResponse {
   warnings: string[];
 }
 
+export interface EvalCommandRequest {
+  functionName: string;
+  argsJson: string;
+}
+export interface EvalCommandResponse {
+  resultJson: string;
+  isError: boolean;
+  errorMessage: string;
+}
+
 export interface PingRequest {}
 export interface PingResponse {
   premiereRunning: boolean;
@@ -253,6 +263,7 @@ export interface PremiereBridgeServiceHandlers {
   setAudioLevel(request: SetAudioLevelRequest): Promise<SetAudioLevelResponse>;
   exportSequence(request: ExportSequenceRequest): Promise<ExportSequenceResponse>;
   executeEDL(request: ExecuteEDLRequest): Promise<ExecuteEDLResponse>;
+  evalCommand(request: EvalCommandRequest): Promise<EvalCommandResponse>;
   ping(request: PingRequest): Promise<PingResponse>;
 }
 
@@ -493,6 +504,23 @@ export function createHandlers(
         transitionsAdded: result.transitionsAdded,
         errors: result.errors,
         warnings: result.warnings,
+      };
+    },
+
+    // -- Generic Command -----------------------------------------------------
+
+    async evalCommand(request) {
+      logger.info("gRPC call: EvalCommand", {
+        functionName: request.functionName,
+      });
+      const result = await bridge.evalCommand(
+        request.functionName,
+        request.argsJson,
+      );
+      return {
+        resultJson: result.resultJson,
+        isError: result.isError,
+        errorMessage: result.errorMessage,
       };
     },
 

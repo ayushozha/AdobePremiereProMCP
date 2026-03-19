@@ -57,6 +57,11 @@ service PremiereBridgeService {
   // Execute a full EDL — creates sequence, imports, places all clips, transitions.
   rpc ExecuteEDL(ExecuteEDLRequest) returns (ExecuteEDLResponse);
 
+  // ─── Generic Command ───
+
+  // Generic command execution — calls any ExtendScript function by name.
+  rpc EvalCommand(EvalCommandRequest) returns (EvalCommandResponse);
+
   // ─── Health ───
 
   // Check if Premiere Pro is running and responsive.
@@ -248,6 +253,19 @@ message ExecuteEDLResponse {
   uint32 transitions_added = 4;
   repeated string errors = 5;
   repeated string warnings = 6;
+}
+
+// ─── Generic Command Execution ───
+
+message EvalCommandRequest {
+  string function_name = 1; // e.g. "createBin"
+  string args_json = 2;     // JSON-encoded arguments
+}
+
+message EvalCommandResponse {
+  string result_json = 1;   // JSON-encoded result
+  bool is_error = 2;
+  string error_message = 3;
 }
 
 // ─── Health ───

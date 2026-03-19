@@ -24,6 +24,7 @@ import type {
   ExportResult,
   EDLExecutionResult,
   PingResult,
+  EvalCommandResult,
   Resolution,
   TrackTarget,
   Timecode,
@@ -364,6 +365,30 @@ export class CepBridge implements PremiereBridge {
     autoCreateSequence: boolean;
   }): Promise<EDLExecutionResult> {
     return this.send<EDLExecutionResult>("executeEDL", params);
+  }
+
+  // -----------------------------------------------------------------------
+  // Generic Command
+  // -----------------------------------------------------------------------
+
+  async evalCommand(functionName: string, argsJson: string): Promise<EvalCommandResult> {
+    try {
+      const result = await this.send<unknown>("evalCommand", {
+        function_name: functionName,
+        args_json: argsJson,
+      });
+      return {
+        resultJson: typeof result === "string" ? result : JSON.stringify(result),
+        isError: false,
+        errorMessage: "",
+      };
+    } catch (err) {
+      return {
+        resultJson: "",
+        isError: true,
+        errorMessage: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 
   // -----------------------------------------------------------------------

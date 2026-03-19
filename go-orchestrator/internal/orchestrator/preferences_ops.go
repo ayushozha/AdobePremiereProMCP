@@ -2,9 +2,9 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
-	"go.uber.org/zap"
 )
 
 // ---------------------------------------------------------------------------
@@ -12,23 +12,45 @@ import (
 // ---------------------------------------------------------------------------
 
 func (e *Engine) GetGeneralPreferences(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_general_preferences")
-	return nil, fmt.Errorf("get general preferences: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getGeneralPreferences", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetGeneralPreferences: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetDefaultStillDuration(ctx context.Context, frames int) (*GenericResult, error) {
-	e.logger.Debug("set_default_still_duration", zap.Int("frames", frames))
-	return nil, fmt.Errorf("set default still duration: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"frames": frames,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setDefaultStillDuration", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetDefaultStillDuration: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetDefaultTransitionDuration(ctx context.Context, seconds float64) (*GenericResult, error) {
-	e.logger.Debug("set_default_transition_duration", zap.Float64("seconds", seconds))
-	return nil, fmt.Errorf("set default transition duration: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"seconds": seconds,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setDefaultTransitionDuration", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetDefaultTransitionDuration: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetDefaultAudioTransitionDuration(ctx context.Context, seconds float64) (*GenericResult, error) {
-	e.logger.Debug("set_default_audio_transition_duration", zap.Float64("seconds", seconds))
-	return nil, fmt.Errorf("set default audio transition duration: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"seconds": seconds,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setDefaultAudioTransitionDuration", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetDefaultAudioTransitionDuration: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -36,13 +58,23 @@ func (e *Engine) SetDefaultAudioTransitionDuration(ctx context.Context, seconds 
 // ---------------------------------------------------------------------------
 
 func (e *Engine) GetBrightness(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_brightness")
-	return nil, fmt.Errorf("get brightness: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getBrightness", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetBrightness: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetBrightness(ctx context.Context, level int) (*GenericResult, error) {
-	e.logger.Debug("set_brightness", zap.Int("level", level))
-	return nil, fmt.Errorf("set brightness: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"level": level,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setBrightness", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetBrightness: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -50,18 +82,34 @@ func (e *Engine) SetBrightness(ctx context.Context, level int) (*GenericResult, 
 // ---------------------------------------------------------------------------
 
 func (e *Engine) SetAutoSaveEnabled(ctx context.Context, enabled bool) (*GenericResult, error) {
-	e.logger.Debug("set_auto_save_enabled", zap.Bool("enabled", enabled))
-	return nil, fmt.Errorf("set auto save enabled: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"enabled": enabled,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setAutoSaveEnabled", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetAutoSaveEnabled: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetAutoSaveMaxVersions(ctx context.Context, count int) (*GenericResult, error) {
-	e.logger.Debug("set_auto_save_max_versions", zap.Int("count", count))
-	return nil, fmt.Errorf("set auto save max versions: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"count": count,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setAutoSaveMaxVersions", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetAutoSaveMaxVersions: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetAutoSaveLocation(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_auto_save_location")
-	return nil, fmt.Errorf("get auto save location: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getAutoSaveLocation", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetAutoSaveLocation: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -69,33 +117,63 @@ func (e *Engine) GetAutoSaveLocation(ctx context.Context) (*GenericResult, error
 // ---------------------------------------------------------------------------
 
 func (e *Engine) GetPlaybackResolution(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_playback_resolution")
-	return nil, fmt.Errorf("get playback resolution: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getPlaybackResolution", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetPlaybackResolution: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetPlaybackResolution(ctx context.Context, quality string) (*GenericResult, error) {
-	e.logger.Debug("set_playback_resolution", zap.String("quality", quality))
-	return nil, fmt.Errorf("set playback resolution: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"quality": quality,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setPlaybackResolution", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetPlaybackResolution: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetPrerollFrames(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_preroll_frames")
-	return nil, fmt.Errorf("get preroll frames: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getPrerollFrames", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetPrerollFrames: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetPrerollFrames(ctx context.Context, frames int) (*GenericResult, error) {
-	e.logger.Debug("set_preroll_frames", zap.Int("frames", frames))
-	return nil, fmt.Errorf("set preroll frames: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"frames": frames,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setPrerollFrames", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetPrerollFrames: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetPostrollFrames(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_postroll_frames")
-	return nil, fmt.Errorf("get postroll frames: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getPostrollFrames", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetPostrollFrames: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetPostrollFrames(ctx context.Context, frames int) (*GenericResult, error) {
-	e.logger.Debug("set_postroll_frames", zap.Int("frames", frames))
-	return nil, fmt.Errorf("set postroll frames: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"frames": frames,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setPostrollFrames", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetPostrollFrames: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -103,18 +181,34 @@ func (e *Engine) SetPostrollFrames(ctx context.Context, frames int) (*GenericRes
 // ---------------------------------------------------------------------------
 
 func (e *Engine) GetTimelineSettings(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_timeline_settings")
-	return nil, fmt.Errorf("get timeline settings: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getTimelineSettings", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetTimelineSettings: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetTimeDisplayFormat(ctx context.Context, format string) (*GenericResult, error) {
-	e.logger.Debug("set_time_display_format", zap.String("format", format))
-	return nil, fmt.Errorf("set time display format: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"format": format,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setTimeDisplayFormat", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetTimeDisplayFormat: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetVideoTransitionDefaultDuration(ctx context.Context, frames int) (*GenericResult, error) {
-	e.logger.Debug("set_video_transition_default_duration", zap.Int("frames", frames))
-	return nil, fmt.Errorf("set video transition default duration: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"frames": frames,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setVideoTransitionDefaultDuration", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetVideoTransitionDefaultDuration: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -122,23 +216,45 @@ func (e *Engine) SetVideoTransitionDefaultDuration(ctx context.Context, frames i
 // ---------------------------------------------------------------------------
 
 func (e *Engine) GetMediaCacheSettings(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_media_cache_settings")
-	return nil, fmt.Errorf("get media cache settings: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getMediaCacheSettings", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetMediaCacheSettings: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetMediaCacheLocation(ctx context.Context, path string) (*GenericResult, error) {
-	e.logger.Debug("set_media_cache_location", zap.String("path", path))
-	return nil, fmt.Errorf("set media cache location: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"path": path,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setMediaCacheLocation", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetMediaCacheLocation: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetMediaCacheSize(ctx context.Context, maxGB float64) (*GenericResult, error) {
-	e.logger.Debug("set_media_cache_size", zap.Float64("max_gb", maxGB))
-	return nil, fmt.Errorf("set media cache size: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"maxGB": maxGB,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setMediaCacheSize", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetMediaCacheSize: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) CleanMediaCacheOlderThan(ctx context.Context, days int) (*GenericResult, error) {
-	e.logger.Debug("clean_media_cache_older_than", zap.Int("days", days))
-	return nil, fmt.Errorf("clean media cache older than: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"days": days,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "cleanMediaCacheOlderThan", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("CleanMediaCacheOlderThan: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -146,13 +262,24 @@ func (e *Engine) CleanMediaCacheOlderThan(ctx context.Context, days int) (*Gener
 // ---------------------------------------------------------------------------
 
 func (e *Engine) GetLabelColorNames(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_label_color_names")
-	return nil, fmt.Errorf("get label color names: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getLabelColorNames", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetLabelColorNames: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetLabelColorName(ctx context.Context, index int, name string) (*GenericResult, error) {
-	e.logger.Debug("set_label_color_name", zap.Int("index", index), zap.String("name", name))
-	return nil, fmt.Errorf("set label color name: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"index": index,
+		"name": name,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setLabelColorName", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetLabelColorName: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -160,18 +287,32 @@ func (e *Engine) SetLabelColorName(ctx context.Context, index int, name string) 
 // ---------------------------------------------------------------------------
 
 func (e *Engine) GetRendererInfo(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_renderer_info")
-	return nil, fmt.Errorf("get renderer info: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getRendererInfo", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetRendererInfo: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetGPUInfo(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_gpu_info")
-	return nil, fmt.Errorf("get GPU info: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getGPUInfo", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetGPUInfo: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetRenderer(ctx context.Context, rendererName string) (*GenericResult, error) {
-	e.logger.Debug("set_renderer", zap.String("renderer", rendererName))
-	return nil, fmt.Errorf("set renderer: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"rendererName": rendererName,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setRenderer", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetRenderer: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -179,16 +320,30 @@ func (e *Engine) SetRenderer(ctx context.Context, rendererName string) (*Generic
 // ---------------------------------------------------------------------------
 
 func (e *Engine) GetDefaultSequencePresets(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_default_sequence_presets")
-	return nil, fmt.Errorf("get default sequence presets: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getDefaultSequencePresets", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetDefaultSequencePresets: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) SetDefaultSequencePreset(ctx context.Context, presetPath string) (*GenericResult, error) {
-	e.logger.Debug("set_default_sequence_preset", zap.String("preset_path", presetPath))
-	return nil, fmt.Errorf("set default sequence preset: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{
+		"presetPath": presetPath,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "setDefaultSequencePreset", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("SetDefaultSequencePreset: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }
 
 func (e *Engine) GetInstalledCodecs(ctx context.Context) (*GenericResult, error) {
-	e.logger.Debug("get_installed_codecs")
-	return nil, fmt.Errorf("get installed codecs: not yet implemented in bridge")
+	argsJSON, _ := json.Marshal(map[string]any{})
+	result, err := e.premiere.EvalCommand(ctx, "getInstalledCodecs", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("GetInstalledCodecs: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
 }

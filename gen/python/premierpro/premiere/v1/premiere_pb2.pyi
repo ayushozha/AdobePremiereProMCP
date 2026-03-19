@@ -293,6 +293,24 @@ class ExecuteEDLResponse(_message.Message):
     warnings: _containers.RepeatedScalarFieldContainer[str]
     def __init__(self, sequence_id: _Optional[str] = ..., status: _Optional[_Union[_common_pb2.OperationStatus, str]] = ..., clips_placed: _Optional[int] = ..., transitions_added: _Optional[int] = ..., errors: _Optional[_Iterable[str]] = ..., warnings: _Optional[_Iterable[str]] = ...) -> None: ...
 
+class EvalCommandRequest(_message.Message):
+    __slots__ = ("function_name", "args_json")
+    FUNCTION_NAME_FIELD_NUMBER: _ClassVar[int]
+    ARGS_JSON_FIELD_NUMBER: _ClassVar[int]
+    function_name: str
+    args_json: str
+    def __init__(self, function_name: _Optional[str] = ..., args_json: _Optional[str] = ...) -> None: ...
+
+class EvalCommandResponse(_message.Message):
+    __slots__ = ("result_json", "is_error", "error_message")
+    RESULT_JSON_FIELD_NUMBER: _ClassVar[int]
+    IS_ERROR_FIELD_NUMBER: _ClassVar[int]
+    ERROR_MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    result_json: str
+    is_error: bool
+    error_message: str
+    def __init__(self, result_json: _Optional[str] = ..., is_error: _Optional[bool] = ..., error_message: _Optional[str] = ...) -> None: ...
+
 class PingRequest(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...

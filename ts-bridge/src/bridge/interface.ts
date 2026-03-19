@@ -150,6 +150,12 @@ export interface PingResult {
   bridgeMode: string;
 }
 
+export interface EvalCommandResult {
+  resultJson: string;
+  isError: boolean;
+  errorMessage: string;
+}
+
 // ---------------------------------------------------------------------------
 // The bridge interface
 // ---------------------------------------------------------------------------
@@ -245,6 +251,10 @@ export interface PremiereBridge {
     autoImport: boolean;
     autoCreateSequence: boolean;
   }): Promise<EDLExecutionResult>;
+
+  // -- Generic Command -------------------------------------------------------
+
+  evalCommand(functionName: string, argsJson: string): Promise<EvalCommandResult>;
 
   // -- Health ----------------------------------------------------------------
 
