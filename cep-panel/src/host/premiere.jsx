@@ -32,32 +32,51 @@ function _err(message) {
 if (typeof JSON === "undefined") {
     // Minimal JSON polyfill for ExtendScript environments that lack it.
     JSON = {
-        stringify: function (obj) {
-            if (obj === null) return "null";
-            if (obj === undefined) return "undefined";
-            if (typeof obj === "number" || typeof obj === "boolean") return String(obj);
-            if (typeof obj === "string") {
-                return '"' + obj.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
-                                .replace(/\n/g, "\\n").replace(/\r/g, "\\r")
-                                .replace(/\t/g, "\\t") + '"';
+        stringify: function (obj, replacer, space) {
+            var indent = "";
+            if (typeof space === "number") {
+                for (var si = 0; si < space; si++) indent += " ";
+            } else if (typeof space === "string") {
+                indent = space;
             }
-            if (obj instanceof Array) {
-                var arrParts = [];
-                for (var i = 0; i < obj.length; i++) {
-                    arrParts.push(JSON.stringify(obj[i]));
+            function _str(val, depth) {
+                if (val === null) return "null";
+                if (val === undefined) return "undefined";
+                if (typeof val === "number" || typeof val === "boolean") return String(val);
+                if (typeof val === "string") {
+                    return '"' + val.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+                                    .replace(/\n/g, "\\n").replace(/\r/g, "\\r")
+                                    .replace(/\t/g, "\\t") + '"';
                 }
-                return "[" + arrParts.join(",") + "]";
-            }
-            if (typeof obj === "object") {
-                var objParts = [];
-                for (var key in obj) {
-                    if (obj.hasOwnProperty(key)) {
-                        objParts.push('"' + key + '":' + JSON.stringify(obj[key]));
+                var pad = "";
+                var childPad = "";
+                if (indent) {
+                    for (var pi = 0; pi < depth; pi++) pad += indent;
+                    childPad = pad + indent;
+                }
+                var nl = indent ? "\n" : "";
+                var sep = indent ? " " : "";
+                if (val instanceof Array) {
+                    if (val.length === 0) return "[]";
+                    var arrParts = [];
+                    for (var i = 0; i < val.length; i++) {
+                        arrParts.push(childPad + _str(val[i], depth + 1));
                     }
+                    return "[" + nl + arrParts.join("," + nl) + nl + pad + "]";
                 }
-                return "{" + objParts.join(",") + "}";
+                if (typeof val === "object") {
+                    var objParts = [];
+                    for (var key in val) {
+                        if (val.hasOwnProperty(key)) {
+                            objParts.push(childPad + '"' + key + '":' + sep + _str(val[key], depth + 1));
+                        }
+                    }
+                    if (objParts.length === 0) return "{}";
+                    return "{" + nl + objParts.join("," + nl) + nl + pad + "}";
+                }
+                return String(val);
             }
-            return String(obj);
+            return _str(obj, 0);
         },
         parse: function (str) {
             return eval("(" + str + ")");
