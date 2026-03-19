@@ -51,6 +51,7 @@ func registerTools(s *server.MCPServer, orch Orchestrator, logger *zap.Logger) {
 	registerAssemblyTools(s, orch, logger)
 	registerScriptingTools(s, orch, logger)
 	registerAnalyticsTools(s, orch, logger)
+	registerEffectChainTools(s, orch, logger)
 }
 
 // ---------------------------------------------------------------------------

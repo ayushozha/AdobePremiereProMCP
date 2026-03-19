@@ -1164,6 +1164,48 @@ type Orchestrator interface {
 	ExportEffectsList(ctx context.Context, sequenceIndex int, outputPath string) (*GenericResult, error)
 	ExportMediaList(ctx context.Context, outputPath, format string) (*GenericResult, error)
 
+	// --- Effect Chain Management ---
+	GetEffectChain(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error)
+	ReorderEffect(ctx context.Context, trackType string, trackIndex, clipIndex, fromIndex, toIndex int) (*GenericResult, error)
+	GetEffectCount(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error)
+	ClearAllEffects(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error)
+	DuplicateEffect(ctx context.Context, trackType string, trackIndex, clipIndex, effectIndex int) (*GenericResult, error)
+
+	// --- Effect Parameter Animation ---
+	AnimateEffectParameter(ctx context.Context, trackType string, trackIndex, clipIndex, componentIndex, paramIndex int, keyframesJSON string) (*GenericResult, error)
+	GetEffectParameterRange(ctx context.Context, trackType string, trackIndex, clipIndex, componentIndex, paramIndex int) (*GenericResult, error)
+	ResetEffectParameter(ctx context.Context, trackType string, trackIndex, clipIndex, componentIndex, paramIndex int) (*GenericResult, error)
+	LinkEffectParameters(ctx context.Context, trackType string, trackIndex, clipIndex, comp1, param1, comp2, param2 int) (*GenericResult, error)
+	GetEffectRenderOrder(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error)
+
+	// --- Common Effect Presets ---
+	ApplyBlackAndWhite(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error)
+	ApplySepia(ctx context.Context, trackIndex, clipIndex int, intensity float64) (*GenericResult, error)
+	ApplyVintageFilm(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error)
+	ApplyFilmGrain(ctx context.Context, trackIndex, clipIndex int, amount float64) (*GenericResult, error)
+	ApplyVignetteEffect(ctx context.Context, trackIndex, clipIndex int, amount, feather float64) (*GenericResult, error)
+	ApplyGlow(ctx context.Context, trackIndex, clipIndex int, intensity, radius float64) (*GenericResult, error)
+	ApplyDropShadow(ctx context.Context, trackIndex, clipIndex int, opacity, distance, softness, direction float64) (*GenericResult, error)
+	ApplyStroke(ctx context.Context, trackIndex, clipIndex int, color string, width float64) (*GenericResult, error)
+	ApplyCinematicBars(ctx context.Context, trackIndex, clipIndex int, barHeight float64) (*GenericResult, error)
+	ApplyFlipHorizontal(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error)
+
+	// --- Transition Effects ---
+	GetDurationOfTransition(ctx context.Context, trackType string, trackIndex, transitionIndex int) (*GenericResult, error)
+	SetTransitionDuration(ctx context.Context, trackType string, trackIndex, transitionIndex int, duration float64) (*GenericResult, error)
+	SetTransitionAlignment(ctx context.Context, trackType string, trackIndex, transitionIndex int, alignment string) (*GenericResult, error)
+	GetTransitionProperties(ctx context.Context, trackType string, trackIndex, transitionIndex int) (*GenericResult, error)
+
+	// --- Effect Comparison ---
+	ToggleEffectsPreview(ctx context.Context, trackType string, trackIndex, clipIndex int, enabled bool) (*GenericResult, error)
+	GetBeforeAfterSnapshot(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error)
+	CompareEffectSettings(ctx context.Context, clip1RefJSON, clip2RefJSON string) (*GenericResult, error)
+
+	// --- Effect Templates ---
+	SaveEffectChainAsTemplate(ctx context.Context, trackType string, trackIndex, clipIndex int, name string) (*GenericResult, error)
+	LoadEffectChainTemplate(ctx context.Context, trackType string, trackIndex, clipIndex int, name string) (*GenericResult, error)
+	ListEffectChainTemplates(ctx context.Context) (*GenericResult, error)
+
 	// --- Comparison ---
 	CompareSequences(ctx context.Context, seqIndex1, seqIndex2 int) (*GenericResult, error)
 	CompareClips(ctx context.Context, clip1TrackType string, clip1TrackIndex, clip1ClipIndex int, clip2TrackType string, clip2TrackIndex, clip2ClipIndex int) (*GenericResult, error)
