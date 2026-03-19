@@ -1297,4 +1297,92 @@ type Orchestrator interface {
 	CompareExportVersions(ctx context.Context, version1Path, version2Path string) (*GenericResult, error)
 	CreateApprovalPackage(ctx context.Context, sequenceIndex int, outputDir string) (*GenericResult, error)
 	ArchiveAndCleanup(ctx context.Context, sequenceIndex int, archiveDir string, deleteRenders bool) (*GenericResult, error)
+
+	// --- Timeline Diff ---
+	SnapshotTimeline(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	CompareTimelineSnapshots(ctx context.Context, snapshot1JSON, snapshot2JSON string) (*GenericResult, error)
+	GetTimelineChanges(ctx context.Context, sequenceIndex int, sinceTimestamp string) (*GenericResult, error)
+	HighlightChangedClips(ctx context.Context, sequenceIndex int, changedClipIDs string) (*GenericResult, error)
+	RevertClipToSnapshot(ctx context.Context, trackType string, trackIndex, clipIndex int, snapshotJSON string) (*GenericResult, error)
+
+	// --- Sequence Versioning ---
+	SaveSequenceVersion(ctx context.Context, sequenceIndex int, versionName, notes string) (*GenericResult, error)
+	ListSequenceVersions(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	LoadSequenceVersion(ctx context.Context, sequenceIndex int, versionName string) (*GenericResult, error)
+	DeleteSequenceVersion(ctx context.Context, sequenceIndex int, versionName string) (*GenericResult, error)
+	MergeSequenceVersions(ctx context.Context, baseVersion, overlayVersion, strategy string) (*GenericResult, error)
+
+	// --- A/B Comparison ---
+	CreateABComparison(ctx context.Context, seqIndexA, seqIndexB int) (*GenericResult, error)
+	SwitchABView(ctx context.Context, view string) (*GenericResult, error)
+	GetABDifferences(ctx context.Context, seqIndexA, seqIndexB int) (*GenericResult, error)
+
+	// --- Clipboard Extended ---
+	GetClipboardContents(ctx context.Context) (*GenericResult, error)
+	ClearClipboard(ctx context.Context) (*GenericResult, error)
+	ClipboardHasContent(ctx context.Context) (*GenericResult, error)
+
+	// --- History ---
+	GetUndoHistory(ctx context.Context, count int) (*GenericResult, error)
+	GetUndoCount(ctx context.Context) (*GenericResult, error)
+	UndoMultiple(ctx context.Context, count int) (*GenericResult, error)
+	RedoMultiple(ctx context.Context, count int) (*GenericResult, error)
+
+	// --- Project Backup ---
+	CreateProjectBackup(ctx context.Context, outputPath string, includeMedia bool) (*GenericResult, error)
+	GetAutoSaveVersions(ctx context.Context) (*GenericResult, error)
+	RestoreAutoSave(ctx context.Context, versionPath string) (*GenericResult, error)
+	SetAutoSaveNow(ctx context.Context) (*GenericResult, error)
+	GetBackupSchedule(ctx context.Context) (*GenericResult, error)
+
+	// --- Project Migration ---
+	UpgradeProjectVersion(ctx context.Context, projectPath string) (*GenericResult, error)
+	GetProjectVersion(ctx context.Context, projectPath string) (*GenericResult, error)
+	ExportProjectForOlderVersion(ctx context.Context, outputPath, targetVersion string) (*GenericResult, error)
+	CheckProjectCompatibility(ctx context.Context, projectPath string) (*GenericResult, error)
+	ImportProjectFromOtherNLE(ctx context.Context, sourcePath, sourceFormat string) (*GenericResult, error)
+
+	// --- Shot/Camera Metadata ---
+	GetClipCameraInfo(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	GetClipGPSInfo(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	GetClipRecordDate(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	SortClipsByRecordDate(ctx context.Context, binPath string) (*GenericResult, error)
+	GroupClipsByCamera(ctx context.Context, binPath string) (*GenericResult, error)
+
+	// --- Shot Management ---
+	MarkShotType(ctx context.Context, trackType string, trackIndex, clipIndex int, shotType string) (*GenericResult, error)
+	GetShotType(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error)
+	FilterByShotType(ctx context.Context, sequenceIndex int, shotType string) (*GenericResult, error)
+	CreateShotList(ctx context.Context, sequenceIndex int, outputPath string) (*GenericResult, error)
+	ImportShotList(ctx context.Context, csvPath string, sequenceIndex int) (*GenericResult, error)
+
+	// --- Scene/Take Management ---
+	MarkScene(ctx context.Context, trackType string, trackIndex, clipIndex int, sceneNumber string) (*GenericResult, error)
+	MarkTake(ctx context.Context, trackType string, trackIndex, clipIndex int, takeNumber string) (*GenericResult, error)
+	GetBestTake(ctx context.Context, sceneNumber string) (*GenericResult, error)
+	OrganizeByScenesAndTakes(ctx context.Context) (*GenericResult, error)
+	GetSceneList(ctx context.Context) (*GenericResult, error)
+
+	// --- Camera Matching ---
+	MatchCameraSettings(ctx context.Context, clip1Index, clip2Index int) (*GenericResult, error)
+	FindClipsFromSameCamera(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	CreateMulticamByCamera(ctx context.Context, outputName string) (*GenericResult, error)
+
+	// --- Timecode Management ---
+	GetSourceTimecode(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	SetSourceTimecodeOffset(ctx context.Context, projectItemIndex int, offset string) (*GenericResult, error)
+	SyncByTimecode(ctx context.Context, trackIndices []int) (*GenericResult, error)
+	FindTimecodeBreaks(ctx context.Context, trackType string, trackIndex int) (*GenericResult, error)
+
+	// --- Clip Rating ---
+	RateClip(ctx context.Context, projectItemIndex, rating int) (*GenericResult, error)
+	GetClipRating(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	FilterByRating(ctx context.Context, minRating int) (*GenericResult, error)
+	GetTopRatedClips(ctx context.Context, count int) (*GenericResult, error)
+
+	// --- Clip Notes ---
+	SetClipNote(ctx context.Context, projectItemIndex int, note string) (*GenericResult, error)
+	GetClipNote(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	SearchClipNotes(ctx context.Context, searchText string) (*GenericResult, error)
+	ExportClipNotes(ctx context.Context, outputPath, format string) (*GenericResult, error)
 }

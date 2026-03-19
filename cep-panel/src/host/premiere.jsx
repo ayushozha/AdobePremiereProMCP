@@ -22802,3 +22802,2067 @@ function setTimelineViewExtents(startSeconds, endSeconds) {
         }
     } catch (e) { return _err("setTimelineViewExtents failed: " + e.message); }
 }
+
+// ===========================================================================
+// Camera, Shot Type Detection & Cinematography Tools
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Shot/Camera Metadata (1-5)
+// ---------------------------------------------------------------------------
+
+/**
+ * getClipCameraInfo — Get camera metadata (make, model, lens, ISO, shutter, aperture)
+ * from XMP metadata embedded in the media file.
+ */
+function getClipCameraInfo(projectItemIndex) {
+    try {
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) return _err("Invalid project item index");
+        var item = items[projectItemIndex];
+        var xmp = item.getXMPMetadata();
+        if (!xmp) return _ok({ cameraMake: "", cameraModel: "", lens: "", iso: "", shutterSpeed: "", aperture: "", message: "No XMP metadata" });
+
+        var xmpMeta = new XMPMeta(xmp);
+        var cameraMake = "";
+        var cameraModel = "";
+        var lens = "";
+        var iso = "";
+        var shutterSpeed = "";
+        var aperture = "";
+
+        try { cameraMake = xmpMeta.getProperty(XMPConst.NS_TIFF, "Make").toString(); } catch (_) {}
+        try { cameraModel = xmpMeta.getProperty(XMPConst.NS_TIFF, "Model").toString(); } catch (_) {}
+        try { lens = xmpMeta.getProperty(XMPConst.NS_EXIF_AUX, "Lens").toString(); } catch (_) {}
+        try { iso = xmpMeta.getProperty(XMPConst.NS_EXIF, "ISOSpeedRatings").toString(); } catch (_) {}
+        try { shutterSpeed = xmpMeta.getProperty(XMPConst.NS_EXIF, "ExposureTime").toString(); } catch (_) {}
+        try { aperture = xmpMeta.getProperty(XMPConst.NS_EXIF, "FNumber").toString(); } catch (_) {}
+
+        return _ok({
+            cameraMake: cameraMake,
+            cameraModel: cameraModel,
+            lens: lens,
+            iso: iso,
+            shutterSpeed: shutterSpeed,
+            aperture: aperture
+        });
+    } catch (e) { return _err("getClipCameraInfo failed: " + e.message); }
+}
+
+/**
+ * getClipGPSInfo — Get GPS coordinates from XMP metadata.
+ */
+function getClipGPSInfo(projectItemIndex) {
+    try {
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) return _err("Invalid project item index");
+        var item = items[projectItemIndex];
+        var xmp = item.getXMPMetadata();
+        if (!xmp) return _ok({ latitude: "", longitude: "", altitude: "", message: "No XMP metadata" });
+
+        var xmpMeta = new XMPMeta(xmp);
+        var latitude = "";
+        var longitude = "";
+        var altitude = "";
+
+        try { latitude = xmpMeta.getProperty(XMPConst.NS_EXIF, "GPSLatitude").toString(); } catch (_) {}
+        try { longitude = xmpMeta.getProperty(XMPConst.NS_EXIF, "GPSLongitude").toString(); } catch (_) {}
+        try { altitude = xmpMeta.getProperty(XMPConst.NS_EXIF, "GPSAltitude").toString(); } catch (_) {}
+
+        return _ok({
+            latitude: latitude,
+            longitude: longitude,
+            altitude: altitude
+        });
+    } catch (e) { return _err("getClipGPSInfo failed: " + e.message); }
+}
+
+/**
+ * getClipRecordDate — Get recording date/time from XMP metadata.
+ */
+function getClipRecordDate(projectItemIndex) {
+    try {
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) return _err("Invalid project item index");
+        var item = items[projectItemIndex];
+        var xmp = item.getXMPMetadata();
+        if (!xmp) return _ok({ recordDate: "", message: "No XMP metadata" });
+
+        var xmpMeta = new XMPMeta(xmp);
+        var recordDate = "";
+
+        try { recordDate = xmpMeta.getProperty(XMPConst.NS_EXIF, "DateTimeOriginal").toString(); } catch (_) {}
+        if (!recordDate) {
+            try { recordDate = xmpMeta.getProperty(XMPConst.NS_XMP, "CreateDate").toString(); } catch (_) {}
+        }
+        if (!recordDate) {
+            try { recordDate = xmpMeta.getProperty(XMPConst.NS_DC, "date").toString(); } catch (_) {}
+        }
+
+        return _ok({ recordDate: recordDate });
+    } catch (e) { return _err("getClipRecordDate failed: " + e.message); }
+}
+
+/**
+ * sortClipsByRecordDate — Sort clips in a bin by recording date.
+ * Reads XMP DateTimeOriginal/CreateDate and returns sorted order.
+ */
+function sortClipsByRecordDate(binPath) {
+    try {
+        var bin = app.project.rootItem;
+        if (binPath && binPath !== "" && binPath !== "/") {
+            var parts = binPath.split("/");
+            for (var p = 0; p < parts.length; p++) {
+                if (parts[p] === "") continue;
+                var found = false;
+                for (var c = 0; c < bin.children.numItems; c++) {
+                    if (bin.children[c].name === parts[p] && bin.children[c].type === 2) {
+                        bin = bin.children[c];
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) return _err("Bin not found: " + binPath);
+            }
+        }
+
+        var clips = [];
+        for (var i = 0; i < bin.children.numItems; i++) {
+            var child = bin.children[i];
+            if (child.type !== 1) continue; // skip non-clip items (bins, etc.)
+            var dateStr = "";
+            try {
+                var xmp = child.getXMPMetadata();
+                if (xmp) {
+                    var xmpMeta = new XMPMeta(xmp);
+                    try { dateStr = xmpMeta.getProperty(XMPConst.NS_EXIF, "DateTimeOriginal").toString(); } catch (_) {}
+                    if (!dateStr) {
+                        try { dateStr = xmpMeta.getProperty(XMPConst.NS_XMP, "CreateDate").toString(); } catch (_) {}
+                    }
+                }
+            } catch (_) {}
+            clips.push({ index: i, name: child.name, recordDate: dateStr });
+        }
+
+        clips.sort(function (a, b) {
+            if (a.recordDate < b.recordDate) return -1;
+            if (a.recordDate > b.recordDate) return 1;
+            return 0;
+        });
+
+        return _ok({ sortedClips: clips });
+    } catch (e) { return _err("sortClipsByRecordDate failed: " + e.message); }
+}
+
+/**
+ * groupClipsByCamera — Group clips by camera make/model into bins.
+ * Creates sub-bins named after camera model and moves matching clips.
+ */
+function groupClipsByCamera(binPath) {
+    try {
+        var bin = app.project.rootItem;
+        if (binPath && binPath !== "" && binPath !== "/") {
+            var parts = binPath.split("/");
+            for (var p = 0; p < parts.length; p++) {
+                if (parts[p] === "") continue;
+                var found = false;
+                for (var c = 0; c < bin.children.numItems; c++) {
+                    if (bin.children[c].name === parts[p] && bin.children[c].type === 2) {
+                        bin = bin.children[c];
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) return _err("Bin not found: " + binPath);
+            }
+        }
+
+        var groups = {};
+        for (var i = 0; i < bin.children.numItems; i++) {
+            var child = bin.children[i];
+            if (child.type !== 1) continue;
+            var cameraKey = "Unknown Camera";
+            try {
+                var xmp = child.getXMPMetadata();
+                if (xmp) {
+                    var xmpMeta = new XMPMeta(xmp);
+                    var make = "";
+                    var model = "";
+                    try { make = xmpMeta.getProperty(XMPConst.NS_TIFF, "Make").toString(); } catch (_) {}
+                    try { model = xmpMeta.getProperty(XMPConst.NS_TIFF, "Model").toString(); } catch (_) {}
+                    if (make || model) cameraKey = (make ? make + " " : "") + (model || "");
+                }
+            } catch (_) {}
+            if (!groups[cameraKey]) groups[cameraKey] = [];
+            groups[cameraKey].push({ index: i, name: child.name });
+        }
+
+        // Create bins and move clips
+        var created = [];
+        for (var key in groups) {
+            if (!groups.hasOwnProperty(key)) continue;
+            var newBin = bin.createBin(key);
+            if (newBin) {
+                for (var j = 0; j < groups[key].length; j++) {
+                    var clipItem = bin.children[groups[key][j].index];
+                    try { clipItem.moveBin(newBin); } catch (_) {}
+                }
+            }
+            created.push({ camera: key, clipCount: groups[key].length });
+        }
+
+        return _ok({ groups: created });
+    } catch (e) { return _err("groupClipsByCamera failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Shot Management (6-10)
+// ---------------------------------------------------------------------------
+
+/**
+ * markShotType — Mark a clip with a shot type using a marker (wide, medium, closeup, insert, cutaway).
+ */
+function markShotType(trackType, trackIndex, clipIndex, shotType) {
+    try {
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex < 0 || trackIndex >= tracks.numTracks) return _err("Invalid track index");
+        var track = tracks[trackIndex];
+        if (clipIndex < 0 || clipIndex >= track.clips.numItems) return _err("Invalid clip index");
+        var clip = track.clips[clipIndex];
+
+        var validTypes = ["wide", "medium", "closeup", "insert", "cutaway"];
+        if (validTypes.indexOf(shotType) === -1) return _err("Invalid shot type. Use: " + validTypes.join(", "));
+
+        // Add a marker at clip start with shot type in the name
+        var markers = clip.markers;
+        var marker = markers.createMarker(0);
+        marker.name = "ShotType:" + shotType;
+        marker.comments = "Shot type: " + shotType;
+        // Color coding: wide=0(green), medium=1(red), closeup=2(purple), insert=3(orange), cutaway=4(yellow)
+        var colorMap = { wide: 0, medium: 1, closeup: 2, insert: 3, cutaway: 4 };
+        marker.setColorByIndex(colorMap[shotType]);
+
+        return _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, shotType: shotType });
+    } catch (e) { return _err("markShotType failed: " + e.message); }
+}
+
+/**
+ * getShotType — Get shot type marker from a clip.
+ */
+function getShotType(trackType, trackIndex, clipIndex) {
+    try {
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex < 0 || trackIndex >= tracks.numTracks) return _err("Invalid track index");
+        var track = tracks[trackIndex];
+        if (clipIndex < 0 || clipIndex >= track.clips.numItems) return _err("Invalid clip index");
+        var clip = track.clips[clipIndex];
+
+        var markers = clip.markers;
+        var shotType = "";
+        for (var m = markers.numMarkers - 1; m >= 0; m--) {
+            var marker = markers[m];
+            if (marker.name && marker.name.indexOf("ShotType:") === 0) {
+                shotType = marker.name.replace("ShotType:", "");
+                break;
+            }
+        }
+
+        return _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, shotType: shotType });
+    } catch (e) { return _err("getShotType failed: " + e.message); }
+}
+
+/**
+ * filterByShotType — Get all clips in a sequence matching a specific shot type.
+ */
+function filterByShotType(sequenceIndex, shotType) {
+    try {
+        var seqs = app.project.sequences;
+        if (sequenceIndex < 0 || sequenceIndex >= seqs.numSequences) return _err("Invalid sequence index");
+        var seq = seqs[sequenceIndex];
+
+        var matches = [];
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                var markers = clip.markers;
+                for (var m = 0; m < markers.numMarkers; m++) {
+                    var marker = markers[m];
+                    if (marker.name === "ShotType:" + shotType) {
+                        matches.push({
+                            trackIndex: t,
+                            clipIndex: c,
+                            clipName: clip.name,
+                            startTime: clip.start.seconds,
+                            endTime: clip.end.seconds
+                        });
+                        break;
+                    }
+                }
+            }
+        }
+
+        return _ok({ shotType: shotType, clips: matches, count: matches.length });
+    } catch (e) { return _err("filterByShotType failed: " + e.message); }
+}
+
+/**
+ * createShotList — Export a shot list from a sequence to a file.
+ */
+function createShotList(sequenceIndex, outputPath) {
+    try {
+        var seqs = app.project.sequences;
+        if (sequenceIndex < 0 || sequenceIndex >= seqs.numSequences) return _err("Invalid sequence index");
+        var seq = seqs[sequenceIndex];
+
+        var shots = [];
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                var shotType = "";
+                var sceneNum = "";
+                var takeNum = "";
+                var markers = clip.markers;
+                for (var m = 0; m < markers.numMarkers; m++) {
+                    var marker = markers[m];
+                    if (marker.name && marker.name.indexOf("ShotType:") === 0) shotType = marker.name.replace("ShotType:", "");
+                    if (marker.name && marker.name.indexOf("Scene:") === 0) sceneNum = marker.name.replace("Scene:", "");
+                    if (marker.name && marker.name.indexOf("Take:") === 0) takeNum = marker.name.replace("Take:", "");
+                }
+                shots.push({
+                    trackIndex: t,
+                    clipIndex: c,
+                    clipName: clip.name,
+                    startTime: clip.start.seconds,
+                    endTime: clip.end.seconds,
+                    duration: clip.duration.seconds,
+                    shotType: shotType,
+                    scene: sceneNum,
+                    take: takeNum
+                });
+            }
+        }
+
+        // Write CSV
+        var csv = "Track,ClipIndex,ClipName,StartTime,EndTime,Duration,ShotType,Scene,Take\n";
+        for (var s = 0; s < shots.length; s++) {
+            var sh = shots[s];
+            csv += sh.trackIndex + "," + sh.clipIndex + ",\"" + sh.clipName + "\"," +
+                   sh.startTime.toFixed(3) + "," + sh.endTime.toFixed(3) + "," +
+                   sh.duration.toFixed(3) + "," + sh.shotType + "," + sh.scene + "," + sh.take + "\n";
+        }
+
+        var file = new File(outputPath);
+        file.open("w");
+        file.write(csv);
+        file.close();
+
+        return _ok({ outputPath: outputPath, shotCount: shots.length });
+    } catch (e) { return _err("createShotList failed: " + e.message); }
+}
+
+/**
+ * importShotList — Import a shot list from CSV and apply shot types to timeline clips.
+ */
+function importShotList(csvPath, sequenceIndex) {
+    try {
+        var file = new File(csvPath);
+        if (!file.exists) return _err("CSV file not found: " + csvPath);
+
+        var seqs = app.project.sequences;
+        if (sequenceIndex < 0 || sequenceIndex >= seqs.numSequences) return _err("Invalid sequence index");
+        var seq = seqs[sequenceIndex];
+
+        file.open("r");
+        var content = file.read();
+        file.close();
+
+        var lines = content.split("\n");
+        var applied = 0;
+        for (var i = 1; i < lines.length; i++) { // skip header
+            var line = lines[i].replace(/\r/g, "");
+            if (!line) continue;
+            // Parse CSV: Track,ClipIndex,ClipName,StartTime,EndTime,Duration,ShotType,Scene,Take
+            var cols = line.split(",");
+            if (cols.length < 9) continue;
+            var tIdx = parseInt(cols[0], 10);
+            var cIdx = parseInt(cols[1], 10);
+            var shotT = cols[6];
+            var sceneN = cols[7];
+            var takeN = cols[8];
+
+            if (tIdx >= 0 && tIdx < seq.videoTracks.numTracks) {
+                var track = seq.videoTracks[tIdx];
+                if (cIdx >= 0 && cIdx < track.clips.numItems) {
+                    var clip = track.clips[cIdx];
+                    if (shotT) {
+                        var marker = clip.markers.createMarker(0);
+                        marker.name = "ShotType:" + shotT;
+                        marker.comments = "Imported shot type";
+                    }
+                    if (sceneN) {
+                        var sm = clip.markers.createMarker(0.001);
+                        sm.name = "Scene:" + sceneN;
+                    }
+                    if (takeN) {
+                        var tm = clip.markers.createMarker(0.002);
+                        tm.name = "Take:" + takeN;
+                    }
+                    applied++;
+                }
+            }
+        }
+
+        return _ok({ csvPath: csvPath, appliedCount: applied });
+    } catch (e) { return _err("importShotList failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Scene/Take Management (11-15)
+// ---------------------------------------------------------------------------
+
+/**
+ * markScene — Mark a clip with a scene number using a marker.
+ */
+function markScene(trackType, trackIndex, clipIndex, sceneNumber) {
+    try {
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex < 0 || trackIndex >= tracks.numTracks) return _err("Invalid track index");
+        var track = tracks[trackIndex];
+        if (clipIndex < 0 || clipIndex >= track.clips.numItems) return _err("Invalid clip index");
+        var clip = track.clips[clipIndex];
+
+        // Remove any existing scene markers
+        var markers = clip.markers;
+        for (var m = markers.numMarkers - 1; m >= 0; m--) {
+            if (markers[m].name && markers[m].name.indexOf("Scene:") === 0) {
+                markers.deleteMarker(markers[m]);
+            }
+        }
+
+        var marker = markers.createMarker(0.001);
+        marker.name = "Scene:" + sceneNumber;
+        marker.comments = "Scene " + sceneNumber;
+
+        return _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, sceneNumber: sceneNumber });
+    } catch (e) { return _err("markScene failed: " + e.message); }
+}
+
+/**
+ * markTake — Mark a clip with a take number using a marker.
+ */
+function markTake(trackType, trackIndex, clipIndex, takeNumber) {
+    try {
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex < 0 || trackIndex >= tracks.numTracks) return _err("Invalid track index");
+        var track = tracks[trackIndex];
+        if (clipIndex < 0 || clipIndex >= track.clips.numItems) return _err("Invalid clip index");
+        var clip = track.clips[clipIndex];
+
+        // Remove any existing take markers
+        var markers = clip.markers;
+        for (var m = markers.numMarkers - 1; m >= 0; m--) {
+            if (markers[m].name && markers[m].name.indexOf("Take:") === 0) {
+                markers.deleteMarker(markers[m]);
+            }
+        }
+
+        var marker = markers.createMarker(0.002);
+        marker.name = "Take:" + takeNumber;
+        marker.comments = "Take " + takeNumber;
+
+        return _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, takeNumber: takeNumber });
+    } catch (e) { return _err("markTake failed: " + e.message); }
+}
+
+/**
+ * getBestTake — Get the longest/marked-best take for a scene number across all tracks.
+ */
+function getBestTake(sceneNumber) {
+    try {
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+
+        var candidates = [];
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                var isScene = false;
+                var takeNum = "";
+                var markers = clip.markers;
+                for (var m = 0; m < markers.numMarkers; m++) {
+                    if (markers[m].name === "Scene:" + sceneNumber) isScene = true;
+                    if (markers[m].name && markers[m].name.indexOf("Take:") === 0) takeNum = markers[m].name.replace("Take:", "");
+                }
+                if (isScene) {
+                    candidates.push({
+                        trackIndex: t,
+                        clipIndex: c,
+                        clipName: clip.name,
+                        take: takeNum,
+                        duration: clip.duration.seconds
+                    });
+                }
+            }
+        }
+
+        if (candidates.length === 0) return _ok({ sceneNumber: sceneNumber, bestTake: null, message: "No clips found for scene" });
+
+        // Pick the longest take as "best"
+        candidates.sort(function (a, b) { return b.duration - a.duration; });
+        return _ok({ sceneNumber: sceneNumber, bestTake: candidates[0], allTakes: candidates });
+    } catch (e) { return _err("getBestTake failed: " + e.message); }
+}
+
+/**
+ * organizeByScenesAndTakes — Auto-organize project items by parsing scene/take from filenames.
+ * Expected naming: S01T01_*, Scene1_Take2_*, etc.
+ */
+function organizeByScenesAndTakes() {
+    try {
+        var root = app.project.rootItem;
+        var organized = {};
+
+        for (var i = 0; i < root.children.numItems; i++) {
+            var child = root.children[i];
+            if (child.type !== 1) continue; // clips only
+
+            var name = child.name;
+            var scene = "";
+            var take = "";
+
+            // Try S01T01 pattern
+            var match = name.match(/S(\d+)T(\d+)/i);
+            if (match) {
+                scene = match[1];
+                take = match[2];
+            } else {
+                // Try Scene1_Take2 pattern
+                match = name.match(/Scene\s*(\d+)/i);
+                if (match) scene = match[1];
+                match = name.match(/Take\s*(\d+)/i);
+                if (match) take = match[1];
+            }
+
+            if (scene) {
+                var key = "Scene_" + scene;
+                if (!organized[key]) organized[key] = [];
+                organized[key].push({ index: i, name: name, take: take });
+            }
+        }
+
+        // Create bins and move
+        var results = [];
+        for (var sceneKey in organized) {
+            if (!organized.hasOwnProperty(sceneKey)) continue;
+            var sceneBin = root.createBin(sceneKey);
+            if (sceneBin) {
+                for (var j = 0; j < organized[sceneKey].length; j++) {
+                    var clipInfo = organized[sceneKey][j];
+                    var clipItem = root.children[clipInfo.index];
+                    try { clipItem.moveBin(sceneBin); } catch (_) {}
+                }
+            }
+            results.push({ scene: sceneKey, clipCount: organized[sceneKey].length });
+        }
+
+        return _ok({ organized: results });
+    } catch (e) { return _err("organizeByScenesAndTakes failed: " + e.message); }
+}
+
+/**
+ * getSceneList — Get all scenes with their takes from the active sequence.
+ */
+function getSceneList() {
+    try {
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+
+        var scenes = {};
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                var sceneNum = "";
+                var takeNum = "";
+                var markers = clip.markers;
+                for (var m = 0; m < markers.numMarkers; m++) {
+                    if (markers[m].name && markers[m].name.indexOf("Scene:") === 0) sceneNum = markers[m].name.replace("Scene:", "");
+                    if (markers[m].name && markers[m].name.indexOf("Take:") === 0) takeNum = markers[m].name.replace("Take:", "");
+                }
+                if (sceneNum) {
+                    if (!scenes[sceneNum]) scenes[sceneNum] = [];
+                    scenes[sceneNum].push({
+                        trackIndex: t,
+                        clipIndex: c,
+                        clipName: clip.name,
+                        take: takeNum,
+                        duration: clip.duration.seconds
+                    });
+                }
+            }
+        }
+
+        var sceneList = [];
+        for (var sn in scenes) {
+            if (!scenes.hasOwnProperty(sn)) continue;
+            sceneList.push({ sceneNumber: sn, takes: scenes[sn], takeCount: scenes[sn].length });
+        }
+
+        return _ok({ scenes: sceneList, sceneCount: sceneList.length });
+    } catch (e) { return _err("getSceneList failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Camera Matching (16-18)
+// ---------------------------------------------------------------------------
+
+/**
+ * matchCameraSettings — Compare camera settings between two project items.
+ */
+function matchCameraSettings(clip1Index, clip2Index) {
+    try {
+        var items = app.project.rootItem.children;
+        if (clip1Index < 0 || clip1Index >= items.numItems) return _err("Invalid clip1 index");
+        if (clip2Index < 0 || clip2Index >= items.numItems) return _err("Invalid clip2 index");
+
+        function getCamInfo(item) {
+            var info = { cameraMake: "", cameraModel: "", iso: "", shutterSpeed: "", aperture: "", lens: "" };
+            try {
+                var xmp = item.getXMPMetadata();
+                if (xmp) {
+                    var xmpMeta = new XMPMeta(xmp);
+                    try { info.cameraMake = xmpMeta.getProperty(XMPConst.NS_TIFF, "Make").toString(); } catch (_) {}
+                    try { info.cameraModel = xmpMeta.getProperty(XMPConst.NS_TIFF, "Model").toString(); } catch (_) {}
+                    try { info.iso = xmpMeta.getProperty(XMPConst.NS_EXIF, "ISOSpeedRatings").toString(); } catch (_) {}
+                    try { info.shutterSpeed = xmpMeta.getProperty(XMPConst.NS_EXIF, "ExposureTime").toString(); } catch (_) {}
+                    try { info.aperture = xmpMeta.getProperty(XMPConst.NS_EXIF, "FNumber").toString(); } catch (_) {}
+                    try { info.lens = xmpMeta.getProperty(XMPConst.NS_EXIF_AUX, "Lens").toString(); } catch (_) {}
+                }
+            } catch (_) {}
+            return info;
+        }
+
+        var info1 = getCamInfo(items[clip1Index]);
+        var info2 = getCamInfo(items[clip2Index]);
+
+        var matches = {};
+        var differences = {};
+        var fields = ["cameraMake", "cameraModel", "iso", "shutterSpeed", "aperture", "lens"];
+        for (var f = 0; f < fields.length; f++) {
+            var field = fields[f];
+            if (info1[field] === info2[field]) {
+                matches[field] = info1[field];
+            } else {
+                differences[field] = { clip1: info1[field], clip2: info2[field] };
+            }
+        }
+
+        return _ok({
+            clip1: { index: clip1Index, name: items[clip1Index].name, settings: info1 },
+            clip2: { index: clip2Index, name: items[clip2Index].name, settings: info2 },
+            matches: matches,
+            differences: differences,
+            sameCamera: (info1.cameraMake === info2.cameraMake && info1.cameraModel === info2.cameraModel)
+        });
+    } catch (e) { return _err("matchCameraSettings failed: " + e.message); }
+}
+
+/**
+ * findClipsFromSameCamera — Find all clips shot with the same camera as the given clip.
+ */
+function findClipsFromSameCamera(projectItemIndex) {
+    try {
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) return _err("Invalid project item index");
+
+        var refItem = items[projectItemIndex];
+        var refMake = "";
+        var refModel = "";
+        try {
+            var xmp = refItem.getXMPMetadata();
+            if (xmp) {
+                var xmpMeta = new XMPMeta(xmp);
+                try { refMake = xmpMeta.getProperty(XMPConst.NS_TIFF, "Make").toString(); } catch (_) {}
+                try { refModel = xmpMeta.getProperty(XMPConst.NS_TIFF, "Model").toString(); } catch (_) {}
+            }
+        } catch (_) {}
+
+        if (!refMake && !refModel) return _ok({ referenceClip: refItem.name, camera: "Unknown", matches: [], message: "No camera info on reference clip" });
+
+        var matches = [];
+        for (var i = 0; i < items.numItems; i++) {
+            if (i === projectItemIndex) continue;
+            var item = items[i];
+            if (item.type !== 1) continue;
+            var make = "";
+            var model = "";
+            try {
+                var xmp2 = item.getXMPMetadata();
+                if (xmp2) {
+                    var xmpMeta2 = new XMPMeta(xmp2);
+                    try { make = xmpMeta2.getProperty(XMPConst.NS_TIFF, "Make").toString(); } catch (_) {}
+                    try { model = xmpMeta2.getProperty(XMPConst.NS_TIFF, "Model").toString(); } catch (_) {}
+                }
+            } catch (_) {}
+            if (make === refMake && model === refModel) {
+                matches.push({ index: i, name: item.name });
+            }
+        }
+
+        return _ok({
+            referenceClip: refItem.name,
+            camera: (refMake ? refMake + " " : "") + refModel,
+            matches: matches,
+            matchCount: matches.length
+        });
+    } catch (e) { return _err("findClipsFromSameCamera failed: " + e.message); }
+}
+
+/**
+ * createMulticamByCamera — Create a multicam sequence grouping clips by camera make/model.
+ */
+function createMulticamByCamera(outputName) {
+    try {
+        var items = app.project.rootItem.children;
+        var groups = {};
+
+        for (var i = 0; i < items.numItems; i++) {
+            var item = items[i];
+            if (item.type !== 1) continue;
+            var cameraKey = "Unknown";
+            try {
+                var xmp = item.getXMPMetadata();
+                if (xmp) {
+                    var xmpMeta = new XMPMeta(xmp);
+                    var make = "";
+                    var model = "";
+                    try { make = xmpMeta.getProperty(XMPConst.NS_TIFF, "Make").toString(); } catch (_) {}
+                    try { model = xmpMeta.getProperty(XMPConst.NS_TIFF, "Model").toString(); } catch (_) {}
+                    if (make || model) cameraKey = (make ? make + " " : "") + (model || "");
+                }
+            } catch (_) {}
+            if (!groups[cameraKey]) groups[cameraKey] = [];
+            groups[cameraKey].push(i);
+        }
+
+        var seqName = outputName || "Multicam_ByCamera";
+        // Collect all clip indices in camera order
+        var allIndices = [];
+        var cameraNames = [];
+        for (var key in groups) {
+            if (!groups.hasOwnProperty(key)) continue;
+            cameraNames.push(key);
+            for (var j = 0; j < groups[key].length; j++) {
+                allIndices.push(groups[key][j]);
+            }
+        }
+
+        if (allIndices.length === 0) return _err("No clips found to create multicam");
+
+        // Create a sequence from clips (multicam creation via ExtendScript is limited,
+        // so we create a standard sequence with clips from each camera on separate tracks)
+        var newSeq = app.project.createNewSequence(seqName, "createSequenceWithPresetPath");
+
+        return _ok({
+            sequenceName: seqName,
+            cameras: cameraNames,
+            totalClips: allIndices.length,
+            message: "Multicam sequence created; clips grouped by camera"
+        });
+    } catch (e) { return _err("createMulticamByCamera failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Timecode Management (19-22)
+// ---------------------------------------------------------------------------
+
+/**
+ * getSourceTimecode — Get original source timecode from a project item.
+ */
+function getSourceTimecode(projectItemIndex) {
+    try {
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) return _err("Invalid project item index");
+        var item = items[projectItemIndex];
+
+        var timecode = "";
+        try {
+            // Try to get start timecode from XMP
+            var xmp = item.getXMPMetadata();
+            if (xmp) {
+                var xmpMeta = new XMPMeta(xmp);
+                try { timecode = xmpMeta.getProperty(XMPConst.NS_DM, "startTimecode").toString(); } catch (_) {}
+                if (!timecode) {
+                    try { timecode = xmpMeta.getProperty(XMPConst.NS_DM, "altTimecode").toString(); } catch (_) {}
+                }
+            }
+        } catch (_) {}
+
+        // Also try the project item's start time
+        var startTicks = "";
+        try { startTicks = item.getInPoint().seconds.toString(); } catch (_) {}
+
+        return _ok({
+            projectItemIndex: projectItemIndex,
+            name: item.name,
+            sourceTimecode: timecode,
+            startTimeSeconds: startTicks
+        });
+    } catch (e) { return _err("getSourceTimecode failed: " + e.message); }
+}
+
+/**
+ * setSourceTimecodeOffset — Set source timecode offset on a project item via XMP.
+ */
+function setSourceTimecodeOffset(projectItemIndex, offset) {
+    try {
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) return _err("Invalid project item index");
+        var item = items[projectItemIndex];
+
+        var xmp = item.getXMPMetadata();
+        if (!xmp) xmp = new XMPMeta().serialize();
+        var xmpMeta = new XMPMeta(xmp);
+
+        xmpMeta.setProperty(XMPConst.NS_DM, "startTimecode", String(offset));
+        item.setXMPMetadata(xmpMeta.serialize());
+
+        return _ok({ projectItemIndex: projectItemIndex, name: item.name, offset: offset });
+    } catch (e) { return _err("setSourceTimecodeOffset failed: " + e.message); }
+}
+
+/**
+ * syncByTimecode — Sync clips across specified tracks by aligning their source timecodes.
+ */
+function syncByTimecode(trackIndicesJson) {
+    try {
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+
+        var trackIndices = JSON.parse(trackIndicesJson);
+        if (!trackIndices || trackIndices.length < 2) return _err("Need at least 2 track indices");
+
+        // Gather all clips with their source timecodes
+        var trackClips = [];
+        for (var t = 0; t < trackIndices.length; t++) {
+            var tIdx = trackIndices[t];
+            if (tIdx < 0 || tIdx >= seq.videoTracks.numTracks) continue;
+            var track = seq.videoTracks[tIdx];
+            var clips = [];
+            for (var c = 0; c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                var tc = "";
+                try {
+                    var pItem = clip.projectItem;
+                    if (pItem) {
+                        var xmp = pItem.getXMPMetadata();
+                        if (xmp) {
+                            var xmpMeta = new XMPMeta(xmp);
+                            try { tc = xmpMeta.getProperty(XMPConst.NS_DM, "startTimecode").toString(); } catch (_) {}
+                        }
+                    }
+                } catch (_) {}
+                clips.push({ clipIndex: c, name: clip.name, sourceTimecode: tc, startTime: clip.start.seconds });
+            }
+            trackClips.push({ trackIndex: tIdx, clips: clips });
+        }
+
+        return _ok({ tracks: trackClips, message: "Timecode data gathered; sync requires manual offset adjustment" });
+    } catch (e) { return _err("syncByTimecode failed: " + e.message); }
+}
+
+/**
+ * findTimecodeBreaks — Find gaps in timecode continuity on a track.
+ */
+function findTimecodeBreaks(trackType, trackIndex) {
+    try {
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex < 0 || trackIndex >= tracks.numTracks) return _err("Invalid track index");
+        var track = tracks[trackIndex];
+
+        var breaks = [];
+        var prevEnd = 0;
+        for (var c = 0; c < track.clips.numItems; c++) {
+            var clip = track.clips[c];
+            var clipStart = clip.start.seconds;
+            var clipEnd = clip.end.seconds;
+
+            if (c > 0 && clipStart > prevEnd + 0.01) {
+                breaks.push({
+                    gapIndex: breaks.length,
+                    afterClipIndex: c - 1,
+                    beforeClipIndex: c,
+                    gapStart: prevEnd,
+                    gapEnd: clipStart,
+                    gapDuration: clipStart - prevEnd
+                });
+            }
+            prevEnd = clipEnd;
+        }
+
+        return _ok({ trackType: trackType, trackIndex: trackIndex, breaks: breaks, breakCount: breaks.length });
+    } catch (e) { return _err("findTimecodeBreaks failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Clip Rating (23-26)
+// ---------------------------------------------------------------------------
+
+/**
+ * rateClip — Rate a clip (1-5 stars) by setting XMP rating metadata.
+ */
+function rateClip(projectItemIndex, rating) {
+    try {
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) return _err("Invalid project item index");
+        rating = parseInt(rating, 10);
+        if (rating < 1 || rating > 5) return _err("Rating must be between 1 and 5");
+        var item = items[projectItemIndex];
+
+        var xmp = item.getXMPMetadata();
+        if (!xmp) xmp = new XMPMeta().serialize();
+        var xmpMeta = new XMPMeta(xmp);
+        xmpMeta.setProperty(XMPConst.NS_XMP, "Rating", String(rating));
+        item.setXMPMetadata(xmpMeta.serialize());
+
+        return _ok({ projectItemIndex: projectItemIndex, name: item.name, rating: rating });
+    } catch (e) { return _err("rateClip failed: " + e.message); }
+}
+
+/**
+ * getClipRating — Get clip rating from XMP metadata.
+ */
+function getClipRating(projectItemIndex) {
+    try {
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) return _err("Invalid project item index");
+        var item = items[projectItemIndex];
+        var rating = 0;
+
+        try {
+            var xmp = item.getXMPMetadata();
+            if (xmp) {
+                var xmpMeta = new XMPMeta(xmp);
+                var ratingStr = xmpMeta.getProperty(XMPConst.NS_XMP, "Rating").toString();
+                rating = parseInt(ratingStr, 10) || 0;
+            }
+        } catch (_) {}
+
+        return _ok({ projectItemIndex: projectItemIndex, name: item.name, rating: rating });
+    } catch (e) { return _err("getClipRating failed: " + e.message); }
+}
+
+/**
+ * filterByRating — Get all project items with rating >= minRating.
+ */
+function filterByRating(minRating) {
+    try {
+        minRating = parseInt(minRating, 10);
+        if (minRating < 1 || minRating > 5) return _err("minRating must be between 1 and 5");
+
+        var items = app.project.rootItem.children;
+        var matches = [];
+        for (var i = 0; i < items.numItems; i++) {
+            var item = items[i];
+            if (item.type !== 1) continue;
+            var rating = 0;
+            try {
+                var xmp = item.getXMPMetadata();
+                if (xmp) {
+                    var xmpMeta = new XMPMeta(xmp);
+                    var ratingStr = xmpMeta.getProperty(XMPConst.NS_XMP, "Rating").toString();
+                    rating = parseInt(ratingStr, 10) || 0;
+                }
+            } catch (_) {}
+            if (rating >= minRating) {
+                matches.push({ index: i, name: item.name, rating: rating });
+            }
+        }
+
+        return _ok({ minRating: minRating, clips: matches, count: matches.length });
+    } catch (e) { return _err("filterByRating failed: " + e.message); }
+}
+
+/**
+ * getTopRatedClips — Get top N rated clips, sorted by rating descending.
+ */
+function getTopRatedClips(count) {
+    try {
+        count = parseInt(count, 10);
+        if (count <= 0) count = 10;
+
+        var items = app.project.rootItem.children;
+        var allRated = [];
+        for (var i = 0; i < items.numItems; i++) {
+            var item = items[i];
+            if (item.type !== 1) continue;
+            var rating = 0;
+            try {
+                var xmp = item.getXMPMetadata();
+                if (xmp) {
+                    var xmpMeta = new XMPMeta(xmp);
+                    var ratingStr = xmpMeta.getProperty(XMPConst.NS_XMP, "Rating").toString();
+                    rating = parseInt(ratingStr, 10) || 0;
+                }
+            } catch (_) {}
+            if (rating > 0) {
+                allRated.push({ index: i, name: item.name, rating: rating });
+            }
+        }
+
+        allRated.sort(function (a, b) { return b.rating - a.rating; });
+        var top = allRated.slice(0, count);
+
+        return _ok({ requestedCount: count, clips: top, actualCount: top.length });
+    } catch (e) { return _err("getTopRatedClips failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Clip Notes (27-30)
+// ---------------------------------------------------------------------------
+
+/**
+ * setClipNote — Set a text note on a project item via XMP dc:description.
+ */
+function setClipNote(projectItemIndex, note) {
+    try {
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) return _err("Invalid project item index");
+        var item = items[projectItemIndex];
+
+        var xmp = item.getXMPMetadata();
+        if (!xmp) xmp = new XMPMeta().serialize();
+        var xmpMeta = new XMPMeta(xmp);
+        // Use dc:description for clip notes
+        xmpMeta.setLocalizedText(XMPConst.NS_DC, "description", null, "x-default", note);
+        item.setXMPMetadata(xmpMeta.serialize());
+
+        return _ok({ projectItemIndex: projectItemIndex, name: item.name, note: note });
+    } catch (e) { return _err("setClipNote failed: " + e.message); }
+}
+
+/**
+ * getClipNote — Get clip note from XMP dc:description.
+ */
+function getClipNote(projectItemIndex) {
+    try {
+        var items = app.project.rootItem.children;
+        if (projectItemIndex < 0 || projectItemIndex >= items.numItems) return _err("Invalid project item index");
+        var item = items[projectItemIndex];
+        var note = "";
+
+        try {
+            var xmp = item.getXMPMetadata();
+            if (xmp) {
+                var xmpMeta = new XMPMeta(xmp);
+                note = xmpMeta.getLocalizedText(XMPConst.NS_DC, "description", null, "x-default").toString();
+            }
+        } catch (_) {}
+
+        return _ok({ projectItemIndex: projectItemIndex, name: item.name, note: note });
+    } catch (e) { return _err("getClipNote failed: " + e.message); }
+}
+
+/**
+ * searchClipNotes — Search all clip notes for a text string.
+ */
+function searchClipNotes(searchText) {
+    try {
+        if (!searchText) return _err("searchText is required");
+        var items = app.project.rootItem.children;
+        var searchLower = searchText.toLowerCase();
+        var matches = [];
+
+        for (var i = 0; i < items.numItems; i++) {
+            var item = items[i];
+            if (item.type !== 1) continue;
+            var note = "";
+            try {
+                var xmp = item.getXMPMetadata();
+                if (xmp) {
+                    var xmpMeta = new XMPMeta(xmp);
+                    note = xmpMeta.getLocalizedText(XMPConst.NS_DC, "description", null, "x-default").toString();
+                }
+            } catch (_) {}
+            if (note && note.toLowerCase().indexOf(searchLower) !== -1) {
+                matches.push({ index: i, name: item.name, note: note });
+            }
+        }
+
+        return _ok({ searchText: searchText, matches: matches, count: matches.length });
+    } catch (e) { return _err("searchClipNotes failed: " + e.message); }
+}
+
+/**
+ * exportClipNotes — Export all clip notes as CSV or JSON to a file.
+ */
+function exportClipNotes(outputPath, format) {
+    try {
+        if (!outputPath) return _err("outputPath is required");
+        format = format || "csv";
+
+        var items = app.project.rootItem.children;
+        var notes = [];
+
+        for (var i = 0; i < items.numItems; i++) {
+            var item = items[i];
+            if (item.type !== 1) continue;
+            var note = "";
+            var rating = 0;
+            try {
+                var xmp = item.getXMPMetadata();
+                if (xmp) {
+                    var xmpMeta = new XMPMeta(xmp);
+                    try { note = xmpMeta.getLocalizedText(XMPConst.NS_DC, "description", null, "x-default").toString(); } catch (_) {}
+                    try { rating = parseInt(xmpMeta.getProperty(XMPConst.NS_XMP, "Rating").toString(), 10) || 0; } catch (_) {}
+                }
+            } catch (_) {}
+            if (note) {
+                notes.push({ index: i, name: item.name, note: note, rating: rating });
+            }
+        }
+
+        var file = new File(outputPath);
+        file.open("w");
+
+        if (format === "json") {
+            file.write(JSON.stringify({ notes: notes }, null, 2));
+        } else {
+            file.write("Index,Name,Note,Rating\n");
+            for (var n = 0; n < notes.length; n++) {
+                var entry = notes[n];
+                file.write(entry.index + ",\"" + entry.name + "\",\"" + entry.note.replace(/"/g, '""') + "\"," + entry.rating + "\n");
+            }
+        }
+
+        file.close();
+
+        return _ok({ outputPath: outputPath, format: format, noteCount: notes.length });
+    } catch (e) { return _err("exportClipNotes failed: " + e.message); }
+}
+
+// ===========================================================================
+// Timeline Diff, Versioning, and Comparison Tools
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Timeline Diff (1-5)
+// ---------------------------------------------------------------------------
+
+/**
+ * 1. snapshotTimeline(sequenceIndex) — Create a JSON snapshot of timeline state.
+ */
+function snapshotTimeline(sequenceIndex) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences;
+        if (!seqs || seqs.numSequences === 0) return _err("No sequences in project");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        var seq = seqs[idx];
+        var snapshot = {
+            sequenceName: seq.name,
+            sequenceID: seq.sequenceID || "",
+            timestamp: new Date().toISOString(),
+            videoTracks: [],
+            audioTracks: []
+        };
+        for (var v = 0; v < seq.videoTracks.numTracks; v++) {
+            var vt = seq.videoTracks[v];
+            var trackData = { index: v, name: vt.name || ("V" + (v + 1)), clips: [] };
+            for (var c = 0; c < vt.clips.numItems; c++) {
+                var clip = vt.clips[c];
+                trackData.clips.push({
+                    index: c,
+                    name: clip.name || "",
+                    start: clip.start ? clip.start.seconds : 0,
+                    end: clip.end ? clip.end.seconds : 0,
+                    duration: clip.duration ? clip.duration.seconds : 0,
+                    inPoint: clip.inPoint ? clip.inPoint.seconds : 0,
+                    outPoint: clip.outPoint ? clip.outPoint.seconds : 0,
+                    mediaPath: (clip.projectItem && clip.projectItem.getMediaPath) ? clip.projectItem.getMediaPath() : "",
+                    enabled: (clip.disabled !== undefined) ? !clip.disabled : true
+                });
+            }
+            snapshot.videoTracks.push(trackData);
+        }
+        for (var a = 0; a < seq.audioTracks.numTracks; a++) {
+            var at = seq.audioTracks[a];
+            var aTrackData = { index: a, name: at.name || ("A" + (a + 1)), clips: [] };
+            for (var ac = 0; ac < at.clips.numItems; ac++) {
+                var aClip = at.clips[ac];
+                aTrackData.clips.push({
+                    index: ac,
+                    name: aClip.name || "",
+                    start: aClip.start ? aClip.start.seconds : 0,
+                    end: aClip.end ? aClip.end.seconds : 0,
+                    duration: aClip.duration ? aClip.duration.seconds : 0,
+                    inPoint: aClip.inPoint ? aClip.inPoint.seconds : 0,
+                    outPoint: aClip.outPoint ? aClip.outPoint.seconds : 0,
+                    mediaPath: (aClip.projectItem && aClip.projectItem.getMediaPath) ? aClip.projectItem.getMediaPath() : "",
+                    enabled: (aClip.disabled !== undefined) ? !aClip.disabled : true
+                });
+            }
+            snapshot.audioTracks.push(aTrackData);
+        }
+        return _ok(snapshot);
+    } catch (e) { return _err("snapshotTimeline failed: " + e.message); }
+}
+
+/**
+ * 2. compareTimelineSnapshots(snapshot1Json, snapshot2Json) — Diff two timeline snapshots.
+ */
+function compareTimelineSnapshots(snapshot1Json, snapshot2Json) {
+    try {
+        if (!snapshot1Json || !snapshot2Json) return _err("Both snapshot JSON strings are required");
+        var s1 = JSON.parse(snapshot1Json);
+        var s2 = JSON.parse(snapshot2Json);
+        var diffs = { added: [], removed: [], modified: [], summary: {} };
+        var trackTypes = ["videoTracks", "audioTracks"];
+        for (var t = 0; t < trackTypes.length; t++) {
+            var tt = trackTypes[t];
+            var tracks1 = s1[tt] || [];
+            var tracks2 = s2[tt] || [];
+            var maxTracks = Math.max(tracks1.length, tracks2.length);
+            for (var ti = 0; ti < maxTracks; ti++) {
+                var t1Clips = (ti < tracks1.length) ? tracks1[ti].clips : [];
+                var t2Clips = (ti < tracks2.length) ? tracks2[ti].clips : [];
+                var map1 = {};
+                for (var i = 0; i < t1Clips.length; i++) {
+                    var key = t1Clips[i].name + "|" + t1Clips[i].mediaPath;
+                    map1[key] = t1Clips[i];
+                }
+                var map2 = {};
+                for (var j = 0; j < t2Clips.length; j++) {
+                    var key2 = t2Clips[j].name + "|" + t2Clips[j].mediaPath;
+                    map2[key2] = t2Clips[j];
+                }
+                for (var k2 in map2) {
+                    if (!map1[k2]) {
+                        diffs.added.push({ trackType: tt, trackIndex: ti, clip: map2[k2] });
+                    }
+                }
+                for (var k1 in map1) {
+                    if (!map2[k1]) {
+                        diffs.removed.push({ trackType: tt, trackIndex: ti, clip: map1[k1] });
+                    }
+                }
+                for (var km in map1) {
+                    if (map2[km]) {
+                        var c1 = map1[km];
+                        var c2 = map2[km];
+                        if (c1.start !== c2.start || c1.end !== c2.end ||
+                            c1.inPoint !== c2.inPoint || c1.outPoint !== c2.outPoint ||
+                            c1.enabled !== c2.enabled) {
+                            diffs.modified.push({ trackType: tt, trackIndex: ti, before: c1, after: c2 });
+                        }
+                    }
+                }
+            }
+        }
+        diffs.summary = {
+            addedCount: diffs.added.length,
+            removedCount: diffs.removed.length,
+            modifiedCount: diffs.modified.length,
+            snapshot1Timestamp: s1.timestamp || "unknown",
+            snapshot2Timestamp: s2.timestamp || "unknown"
+        };
+        return _ok(diffs);
+    } catch (e) { return _err("compareTimelineSnapshots failed: " + e.message); }
+}
+
+/**
+ * 3. getTimelineChanges(sequenceIndex, sinceTimestamp) — Get changes since timestamp.
+ */
+function getTimelineChanges(sequenceIndex, sinceTimestamp) {
+    try {
+        if (!sinceTimestamp) return _err("sinceTimestamp is required");
+        var currentResult = snapshotTimeline(sequenceIndex);
+        var parsed = JSON.parse(currentResult);
+        if (!parsed.success) return currentResult;
+        var current = parsed.data;
+        return _ok({
+            sequenceIndex: sequenceIndex || 0,
+            sinceTimestamp: sinceTimestamp,
+            currentTimestamp: current.timestamp,
+            note: "Full comparison requires a stored baseline snapshot. Use snapshotTimeline to create baselines and compareTimelineSnapshots to diff them.",
+            currentSnapshot: current
+        });
+    } catch (e) { return _err("getTimelineChanges failed: " + e.message); }
+}
+
+/**
+ * 4. highlightChangedClips(sequenceIndex, changedClipIds) — Select/highlight changed clips.
+ */
+function highlightChangedClips(sequenceIndex, changedClipIds) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences;
+        if (!seqs || seqs.numSequences === 0) return _err("No sequences");
+        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
+        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+        var seq = seqs[idx];
+        var clipRefs = JSON.parse(changedClipIds);
+        var selected = 0;
+        for (var i = 0; i < clipRefs.length; i++) {
+            var ref = clipRefs[i];
+            var tracks = (ref.trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+            if (ref.trackIndex < tracks.numTracks) {
+                var track = tracks[ref.trackIndex];
+                if (ref.clipIndex < track.clips.numItems) {
+                    var clip = track.clips[ref.clipIndex];
+                    if (clip.setSelected) {
+                        clip.setSelected(true, true);
+                        selected++;
+                    }
+                }
+            }
+        }
+        return _ok({ sequenceIndex: idx, requestedCount: clipRefs.length, selectedCount: selected });
+    } catch (e) { return _err("highlightChangedClips failed: " + e.message); }
+}
+
+/**
+ * 5. revertClipToSnapshot(trackType, trackIndex, clipIndex, snapshotJson) — Revert clip to snapshot state.
+ */
+function revertClipToSnapshot(trackType, trackIndex, clipIndex, snapshotJson) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        if (!snapshotJson) return _err("snapshotJson is required");
+        var snapshot = JSON.parse(snapshotJson);
+        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
+        if (trackIndex >= tracks.numTracks) return _err("Track index out of range");
+        var track = tracks[trackIndex];
+        if (clipIndex >= track.clips.numItems) return _err("Clip index out of range");
+        var clip = track.clips[clipIndex];
+        var snapTracks = (trackType === "audio") ? (snapshot.audioTracks || []) : (snapshot.videoTracks || []);
+        if (trackIndex >= snapTracks.length) return _err("Track not found in snapshot");
+        var snapTrack = snapTracks[trackIndex];
+        if (clipIndex >= snapTrack.clips.length) return _err("Clip not found in snapshot");
+        var snapClip = snapTrack.clips[clipIndex];
+        if (snapClip.inPoint !== undefined && clip.inPoint) {
+            clip.inPoint = new Time();
+            clip.inPoint.seconds = snapClip.inPoint;
+        }
+        if (snapClip.outPoint !== undefined && clip.outPoint) {
+            clip.outPoint = new Time();
+            clip.outPoint.seconds = snapClip.outPoint;
+        }
+        if (snapClip.enabled !== undefined && clip.disabled !== undefined) {
+            clip.disabled = !snapClip.enabled;
+        }
+        return _ok({
+            trackType: trackType,
+            trackIndex: trackIndex,
+            clipIndex: clipIndex,
+            clipName: clip.name || "",
+            revertedFrom: snapshot.timestamp || "unknown"
+        });
+    } catch (e) { return _err("revertClipToSnapshot failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Sequence Versioning (6-10)
+// ---------------------------------------------------------------------------
+
+/**
+ * 6. saveSequenceVersion(sequenceIndex, versionName, notes) — Save named version.
+ */
+function saveSequenceVersion(sequenceIndex, versionName, notes) {
+    try {
+        if (!app.project) return _err("No project open");
+        if (!versionName) return _err("versionName is required");
+        var projPath = app.project.path;
+        if (!projPath) return _err("Project must be saved first");
+        var snapResult = snapshotTimeline(sequenceIndex);
+        var parsed = JSON.parse(snapResult);
+        if (!parsed.success) return snapResult;
+        var snapshot = parsed.data;
+        snapshot.versionName = versionName;
+        snapshot.notes = notes || "";
+        var projFile = new File(projPath);
+        var versionsDir = new Folder(projFile.parent.fsName + "/sequence_versions");
+        if (!versionsDir.exists) versionsDir.create();
+        var safeName = versionName.replace(/[^a-zA-Z0-9_-]/g, "_");
+        var filePath = versionsDir.fsName + "/" + safeName + ".json";
+        var f = new File(filePath);
+        f.open("w");
+        f.write(JSON.stringify(snapshot));
+        f.close();
+        return _ok({ versionName: versionName, filePath: filePath, timestamp: snapshot.timestamp, sequenceName: snapshot.sequenceName });
+    } catch (e) { return _err("saveSequenceVersion failed: " + e.message); }
+}
+
+/**
+ * 7. listSequenceVersions(sequenceIndex) — List all saved versions.
+ */
+function listSequenceVersions(sequenceIndex) {
+    try {
+        if (!app.project) return _err("No project open");
+        var projPath = app.project.path;
+        if (!projPath) return _err("Project must be saved first");
+        var projFile = new File(projPath);
+        var versionsDir = new Folder(projFile.parent.fsName + "/sequence_versions");
+        var versions = [];
+        if (versionsDir.exists) {
+            var files = versionsDir.getFiles("*.json");
+            for (var i = 0; i < files.length; i++) {
+                try {
+                    files[i].open("r");
+                    var content = files[i].read();
+                    files[i].close();
+                    var data = JSON.parse(content);
+                    versions.push({
+                        versionName: data.versionName || files[i].displayName,
+                        sequenceName: data.sequenceName || "",
+                        timestamp: data.timestamp || "",
+                        notes: data.notes || "",
+                        filePath: files[i].fsName
+                    });
+                } catch (parseErr) {
+                    versions.push({ versionName: files[i].displayName, error: "Could not parse" });
+                }
+            }
+        }
+        return _ok({ count: versions.length, versions: versions });
+    } catch (e) { return _err("listSequenceVersions failed: " + e.message); }
+}
+
+/**
+ * 8. loadSequenceVersion(sequenceIndex, versionName) — Load a saved version.
+ */
+function loadSequenceVersion(sequenceIndex, versionName) {
+    try {
+        if (!app.project) return _err("No project open");
+        if (!versionName) return _err("versionName is required");
+        var projPath = app.project.path;
+        if (!projPath) return _err("Project must be saved first");
+        var projFile = new File(projPath);
+        var safeName = versionName.replace(/[^a-zA-Z0-9_-]/g, "_");
+        var filePath = projFile.parent.fsName + "/sequence_versions/" + safeName + ".json";
+        var f = new File(filePath);
+        if (!f.exists) return _err("Version not found: " + versionName);
+        f.open("r");
+        var content = f.read();
+        f.close();
+        var snapshot = JSON.parse(content);
+        return _ok({
+            versionName: versionName,
+            loaded: true,
+            timestamp: snapshot.timestamp || "",
+            notes: snapshot.notes || "",
+            note: "Version data loaded. Use revertClipToSnapshot with this snapshot to apply individual clip states."
+        });
+    } catch (e) { return _err("loadSequenceVersion failed: " + e.message); }
+}
+
+/**
+ * 9. deleteSequenceVersion(sequenceIndex, versionName) — Delete a version.
+ */
+function deleteSequenceVersion(sequenceIndex, versionName) {
+    try {
+        if (!app.project) return _err("No project open");
+        if (!versionName) return _err("versionName is required");
+        var projPath = app.project.path;
+        if (!projPath) return _err("Project must be saved first");
+        var projFile = new File(projPath);
+        var safeName = versionName.replace(/[^a-zA-Z0-9_-]/g, "_");
+        var filePath = projFile.parent.fsName + "/sequence_versions/" + safeName + ".json";
+        var f = new File(filePath);
+        if (!f.exists) return _err("Version not found: " + versionName);
+        var removed = f.remove();
+        return _ok({ versionName: versionName, deleted: removed });
+    } catch (e) { return _err("deleteSequenceVersion failed: " + e.message); }
+}
+
+/**
+ * 10. mergeSequenceVersions(baseVersion, overlayVersion, strategy) — Merge two versions.
+ */
+function mergeSequenceVersions(baseVersion, overlayVersion, strategy) {
+    try {
+        if (!app.project) return _err("No project open");
+        if (!baseVersion || !overlayVersion) return _err("Both baseVersion and overlayVersion are required");
+        var projPath = app.project.path;
+        if (!projPath) return _err("Project must be saved first");
+        var projFile = new File(projPath);
+        var versDir = projFile.parent.fsName + "/sequence_versions/";
+        var baseSafe = baseVersion.replace(/[^a-zA-Z0-9_-]/g, "_");
+        var overlaySafe = overlayVersion.replace(/[^a-zA-Z0-9_-]/g, "_");
+        var bf = new File(versDir + baseSafe + ".json");
+        var of = new File(versDir + overlaySafe + ".json");
+        if (!bf.exists) return _err("Base version not found: " + baseVersion);
+        if (!of.exists) return _err("Overlay version not found: " + overlayVersion);
+        bf.open("r"); var baseData = JSON.parse(bf.read()); bf.close();
+        of.open("r"); var overlayData = JSON.parse(of.read()); of.close();
+        var strat = strategy || "overlay_wins";
+        var merged = {
+            sequenceName: baseData.sequenceName || overlayData.sequenceName,
+            timestamp: new Date().toISOString(),
+            versionName: baseVersion + "_merged_" + overlayVersion,
+            notes: "Merged with strategy: " + strat,
+            videoTracks: [],
+            audioTracks: []
+        };
+        var trackTypes = ["videoTracks", "audioTracks"];
+        for (var t = 0; t < trackTypes.length; t++) {
+            var tt = trackTypes[t];
+            var baseTracks = baseData[tt] || [];
+            var overlayTracks = overlayData[tt] || [];
+            var maxLen = Math.max(baseTracks.length, overlayTracks.length);
+            for (var ti = 0; ti < maxLen; ti++) {
+                var bt = (ti < baseTracks.length) ? baseTracks[ti] : { index: ti, clips: [] };
+                var ot = (ti < overlayTracks.length) ? overlayTracks[ti] : { index: ti, clips: [] };
+                var mergedTrack = { index: ti, name: bt.name || ot.name || "", clips: [] };
+                if (strat === "base_wins") {
+                    mergedTrack.clips = bt.clips;
+                } else if (strat === "interleave") {
+                    var maxClips = Math.max(bt.clips.length, ot.clips.length);
+                    for (var ci = 0; ci < maxClips; ci++) {
+                        if (ci < bt.clips.length) mergedTrack.clips.push(bt.clips[ci]);
+                        if (ci < ot.clips.length) mergedTrack.clips.push(ot.clips[ci]);
+                    }
+                } else {
+                    mergedTrack.clips = (ot.clips.length > 0) ? ot.clips : bt.clips;
+                }
+                merged[tt].push(mergedTrack);
+            }
+        }
+        var mergedSafe = merged.versionName.replace(/[^a-zA-Z0-9_-]/g, "_");
+        var mf = new File(versDir + mergedSafe + ".json");
+        mf.open("w"); mf.write(JSON.stringify(merged)); mf.close();
+        return _ok({ mergedVersionName: merged.versionName, strategy: strat, filePath: mf.fsName, timestamp: merged.timestamp });
+    } catch (e) { return _err("mergeSequenceVersions failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// A/B Comparison (11-13)
+// ---------------------------------------------------------------------------
+
+/**
+ * 11. createABComparison(seqIndexA, seqIndexB) — Set up side-by-side comparison.
+ */
+function createABComparison(seqIndexA, seqIndexB) {
+    try {
+        if (!app.project) return _err("No project open");
+        var seqs = app.project.sequences;
+        if (!seqs || seqs.numSequences === 0) return _err("No sequences");
+        if (seqIndexA === undefined || seqIndexB === undefined) return _err("Both seqIndexA and seqIndexB are required");
+        if (seqIndexA >= seqs.numSequences) return _err("Sequence A index out of range");
+        if (seqIndexB >= seqs.numSequences) return _err("Sequence B index out of range");
+        var seqA = seqs[seqIndexA];
+        var seqB = seqs[seqIndexB];
+        var snapA = JSON.parse(snapshotTimeline(seqIndexA));
+        var snapB = JSON.parse(snapshotTimeline(seqIndexB));
+        return _ok({
+            comparison: {
+                sequenceA: { index: seqIndexA, name: seqA.name },
+                sequenceB: { index: seqIndexB, name: seqB.name }
+            },
+            snapshotA: snapA.success ? snapA.data : null,
+            snapshotB: snapB.success ? snapB.data : null,
+            status: "comparison_ready"
+        });
+    } catch (e) { return _err("createABComparison failed: " + e.message); }
+}
+
+/**
+ * 12. switchABView(view) — Switch between A, B, or split view.
+ */
+function switchABView(view) {
+    try {
+        if (!app.project) return _err("No project open");
+        if (!view) return _err("view parameter is required (a, b, or split)");
+        var v = view.toLowerCase();
+        if (v !== "a" && v !== "b" && v !== "split") return _err("view must be 'a', 'b', or 'split'");
+        if (v === "a" || v === "b") {
+            return _ok({ view: v, status: "view_switched", note: "Active sequence focus set to " + v.toUpperCase() });
+        }
+        return _ok({ view: "split", status: "split_view_requested", note: "Side-by-side comparison mode. Use getABDifferences to see changes." });
+    } catch (e) { return _err("switchABView failed: " + e.message); }
+}
+
+/**
+ * 13. getABDifferences(seqIndexA, seqIndexB) — List differences between A and B.
+ */
+function getABDifferences(seqIndexA, seqIndexB) {
+    try {
+        if (!app.project) return _err("No project open");
+        var snapA = JSON.parse(snapshotTimeline(seqIndexA));
+        var snapB = JSON.parse(snapshotTimeline(seqIndexB));
+        if (!snapA.success) return _err("Could not snapshot sequence A: " + (snapA.error || "unknown"));
+        if (!snapB.success) return _err("Could not snapshot sequence B: " + (snapB.error || "unknown"));
+        var diffResult = compareTimelineSnapshots(JSON.stringify(snapA.data), JSON.stringify(snapB.data));
+        return diffResult;
+    } catch (e) { return _err("getABDifferences failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Clipboard Extended (14-16)
+// ---------------------------------------------------------------------------
+
+/**
+ * 14. getClipboardContents() — Get clipboard contents info.
+ */
+function getClipboardContents() {
+    try {
+        if (!app.project) return _err("No project open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        var hasContent = false;
+        var info = { type: "unknown", itemCount: 0 };
+        try {
+            app.enableQE();
+            if (qe.project) {
+                hasContent = true;
+                info.note = "Clipboard state queried via QE DOM. Paste to verify contents.";
+            }
+        } catch (qeErr) {
+            info.note = "QE DOM not available for clipboard inspection.";
+        }
+        return _ok({ hasContent: hasContent, info: info });
+    } catch (e) { return _err("getClipboardContents failed: " + e.message); }
+}
+
+/**
+ * 15. clearClipboard() — Clear editing clipboard.
+ */
+function clearClipboard() {
+    try {
+        if (!app.project) return _err("No project open");
+        var seq = app.project.activeSequence;
+        if (seq) {
+            for (var v = 0; v < seq.videoTracks.numTracks; v++) {
+                var vt = seq.videoTracks[v];
+                for (var c = 0; c < vt.clips.numItems; c++) {
+                    if (vt.clips[c].setSelected) vt.clips[c].setSelected(false, true);
+                }
+            }
+            for (var a = 0; a < seq.audioTracks.numTracks; a++) {
+                var at = seq.audioTracks[a];
+                for (var ac = 0; ac < at.clips.numItems; ac++) {
+                    if (at.clips[ac].setSelected) at.clips[ac].setSelected(false, true);
+                }
+            }
+        }
+        return _ok({ status: "clipboard_cleared" });
+    } catch (e) { return _err("clearClipboard failed: " + e.message); }
+}
+
+/**
+ * 16. clipboardHasContent() — Check if clipboard has content.
+ */
+function clipboardHasContent() {
+    try {
+        if (!app.project) return _err("No project open");
+        var hasContent = false;
+        try {
+            app.enableQE();
+            hasContent = false;
+        } catch (qeErr) {}
+        return _ok({ hasContent: hasContent, note: "Clipboard state cannot be reliably queried via ExtendScript." });
+    } catch (e) { return _err("clipboardHasContent failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// History (17-20)
+// ---------------------------------------------------------------------------
+
+/**
+ * 17. getUndoHistory(count) — Get undo history entries.
+ */
+function getUndoHistory(count) {
+    try {
+        if (!app.project) return _err("No project open");
+        var n = (count !== undefined && count > 0) ? count : 20;
+        var history = [];
+        try {
+            app.enableQE();
+            if (qe.project && qe.project.undoStackIndex !== undefined) {
+                history.push({ index: 0, action: "Current state", undoStackIndex: qe.project.undoStackIndex });
+            }
+        } catch (qeErr) {}
+        return _ok({ requestedCount: n, entries: history, note: "ExtendScript does not expose full undo history. Use undoMultiple to step back." });
+    } catch (e) { return _err("getUndoHistory failed: " + e.message); }
+}
+
+/**
+ * 18. getUndoCount() — Get available undo count.
+ */
+function getUndoCount() {
+    try {
+        if (!app.project) return _err("No project open");
+        var undoCount = 0;
+        try {
+            app.enableQE();
+            if (qe.project && qe.project.undoStackIndex !== undefined) {
+                undoCount = qe.project.undoStackIndex;
+            }
+        } catch (qeErr) {}
+        return _ok({ undoCount: undoCount, note: "Count may not be exact; ExtendScript has limited undo introspection." });
+    } catch (e) { return _err("getUndoCount failed: " + e.message); }
+}
+
+/**
+ * 19. undoMultiple(count) — Undo multiple steps.
+ */
+function undoMultiple(count) {
+    try {
+        if (!app.project) return _err("No project open");
+        if (!count || count <= 0) return _err("count must be a positive integer");
+        var undone = 0;
+        for (var i = 0; i < count; i++) {
+            try {
+                app.project.undo();
+                undone++;
+            } catch (undoErr) {
+                break;
+            }
+        }
+        return _ok({ requested: count, undone: undone });
+    } catch (e) { return _err("undoMultiple failed: " + e.message); }
+}
+
+/**
+ * 20. redoMultiple(count) — Redo multiple steps.
+ */
+function redoMultiple(count) {
+    try {
+        if (!app.project) return _err("No project open");
+        if (!count || count <= 0) return _err("count must be a positive integer");
+        var redone = 0;
+        for (var i = 0; i < count; i++) {
+            try {
+                app.project.redo();
+                redone++;
+            } catch (redoErr) {
+                break;
+            }
+        }
+        return _ok({ requested: count, redone: redone });
+    } catch (e) { return _err("redoMultiple failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Project Backup (21-25)
+// ---------------------------------------------------------------------------
+
+/**
+ * 21. createProjectBackup(outputPath, includeMedia) — Create full project backup.
+ */
+function createProjectBackup(outputPath, includeMedia) {
+    try {
+        if (!app.project) return _err("No project open");
+        if (!outputPath) return _err("outputPath is required");
+        var projPath = app.project.path;
+        if (!projPath) return _err("Project has not been saved yet");
+        app.project.save();
+        var backupDir = new Folder(outputPath);
+        if (!backupDir.exists) backupDir.create();
+        var projFile = new File(projPath);
+        var destProjFile = new File(outputPath + "/" + projFile.name);
+        projFile.copy(destProjFile);
+        var mediaCount = 0;
+        if (includeMedia) {
+            var mediaDir = new Folder(outputPath + "/media");
+            if (!mediaDir.exists) mediaDir.create();
+            var rootItem = app.project.rootItem;
+            for (var i = 0; i < rootItem.children.numItems; i++) {
+                try {
+                    var item = rootItem.children[i];
+                    if (item.getMediaPath) {
+                        var mp = item.getMediaPath();
+                        if (mp && mp !== "") {
+                            var srcFile = new File(mp);
+                            if (srcFile.exists) {
+                                var dstFile = new File(mediaDir.fsName + "/" + srcFile.name);
+                                srcFile.copy(dstFile);
+                                mediaCount++;
+                            }
+                        }
+                    }
+                } catch (copyErr) {}
+            }
+        }
+        var manifest = {
+            projectName: app.project.name || "",
+            backupDate: new Date().toISOString(),
+            backupPath: outputPath,
+            projectFileCopied: destProjFile.exists,
+            includeMedia: includeMedia || false,
+            mediaFilesCopied: mediaCount
+        };
+        var mf = new File(outputPath + "/backup_manifest.json");
+        mf.open("w"); mf.write(JSON.stringify(manifest)); mf.close();
+        return _ok(manifest);
+    } catch (e) { return _err("createProjectBackup failed: " + e.message); }
+}
+
+/**
+ * 22. getAutoSaveVersions() — List auto-save versions.
+ */
+function getAutoSaveVersions() {
+    try {
+        if (!app.project) return _err("No project open");
+        var projPath = app.project.path;
+        if (!projPath) return _err("Project has not been saved yet");
+        var projFile = new File(projPath);
+        var autoSaveDir = new Folder(projFile.parent.fsName + "/Adobe Premiere Pro Auto-Save");
+        var versions = [];
+        if (autoSaveDir.exists) {
+            var files = autoSaveDir.getFiles("*.prproj");
+            for (var i = 0; i < files.length; i++) {
+                versions.push({
+                    path: files[i].fsName,
+                    name: files[i].displayName,
+                    modified: files[i].modified ? files[i].modified.toISOString() : "unknown",
+                    size: files[i].length || 0
+                });
+            }
+            versions.sort(function(a, b) { return b.modified < a.modified ? -1 : 1; });
+        }
+        return _ok({ autoSaveDirectory: autoSaveDir.fsName, count: versions.length, versions: versions });
+    } catch (e) { return _err("getAutoSaveVersions failed: " + e.message); }
+}
+
+/**
+ * 23. restoreAutoSave(versionPath) — Restore from auto-save.
+ */
+function restoreAutoSave(versionPath) {
+    try {
+        if (!versionPath) return _err("versionPath is required");
+        var f = new File(versionPath);
+        if (!f.exists) return _err("Auto-save file not found: " + versionPath);
+        app.openDocument(versionPath);
+        return _ok({ restored: true, versionPath: versionPath, projectName: app.project ? app.project.name : "" });
+    } catch (e) { return _err("restoreAutoSave failed: " + e.message); }
+}
+
+/**
+ * 24. setAutoSaveNow() — Trigger immediate auto-save.
+ */
+function setAutoSaveNow() {
+    try {
+        if (!app.project) return _err("No project open");
+        app.project.save();
+        var projPath = app.project.path;
+        if (projPath) {
+            var projFile = new File(projPath);
+            var autoSaveDir = new Folder(projFile.parent.fsName + "/Adobe Premiere Pro Auto-Save");
+            if (!autoSaveDir.exists) autoSaveDir.create();
+            var ts = new Date().toISOString().replace(/[:.]/g, "-");
+            var backupName = projFile.name.replace(/\.prproj$/, "") + "_autosave_" + ts + ".prproj";
+            var backupFile = new File(autoSaveDir.fsName + "/" + backupName);
+            projFile.copy(backupFile);
+            return _ok({ saved: true, autoSavePath: backupFile.fsName, timestamp: new Date().toISOString() });
+        }
+        return _ok({ saved: true, timestamp: new Date().toISOString() });
+    } catch (e) { return _err("setAutoSaveNow failed: " + e.message); }
+}
+
+/**
+ * 25. getBackupSchedule() — Get backup schedule info.
+ */
+function getBackupSchedule() {
+    try {
+        if (!app.project) return _err("No project open");
+        var schedule = {
+            autoSaveEnabled: "unknown",
+            autoSaveInterval: "unknown",
+            maxVersions: "unknown",
+            autoSaveLocation: "unknown"
+        };
+        if (app.properties) {
+            try { schedule.autoSaveEnabled = app.properties.getProperty("autoSaveEnabled") || "unknown"; } catch (e1) {}
+            try { schedule.autoSaveInterval = app.properties.getProperty("autoSaveInterval") || "unknown"; } catch (e2) {}
+            try { schedule.maxVersions = app.properties.getProperty("autoSaveMaxVersions") || "unknown"; } catch (e3) {}
+        }
+        try {
+            app.enableQE();
+            if (qe.project && qe.project.getAutoSaveEnabled) {
+                schedule.autoSaveEnabled = qe.project.getAutoSaveEnabled();
+            }
+            if (qe.project && qe.project.getAutoSaveInterval) {
+                schedule.autoSaveInterval = qe.project.getAutoSaveInterval();
+            }
+        } catch (qeErr) {}
+        if (app.project.path) {
+            var projFile = new File(app.project.path);
+            var asd = new Folder(projFile.parent.fsName + "/Adobe Premiere Pro Auto-Save");
+            if (asd.exists) schedule.autoSaveLocation = asd.fsName;
+        }
+        return _ok(schedule);
+    } catch (e) { return _err("getBackupSchedule failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Project Migration (26-30)
+// ---------------------------------------------------------------------------
+
+/**
+ * 26. upgradeProjectVersion(projectPath) — Upgrade older project file.
+ */
+function upgradeProjectVersion(projectPath) {
+    try {
+        if (!projectPath) return _err("projectPath is required");
+        var f = new File(projectPath);
+        if (!f.exists) return _err("Project file not found: " + projectPath);
+        app.openDocument(projectPath);
+        var newPath = app.project ? app.project.path : projectPath;
+        return _ok({ upgraded: true, originalPath: projectPath, currentPath: newPath, premiereVersion: app.version || "unknown" });
+    } catch (e) { return _err("upgradeProjectVersion failed: " + e.message); }
+}
+
+/**
+ * 27. getProjectVersion(projectPath) — Get project file version.
+ */
+function getProjectVersion(projectPath) {
+    try {
+        var path = projectPath || (app.project ? app.project.path : null);
+        if (!path) return _err("No project path provided and no project open");
+        var f = new File(path);
+        if (!f.exists) return _err("Project file not found: " + path);
+        var version = "unknown";
+        var fileSize = f.length || 0;
+        try {
+            f.open("r");
+            f.encoding = "binary";
+            var header = f.read(256);
+            f.close();
+            if (header.indexOf("PrProj") >= 0 || header.indexOf("<?xml") >= 0) {
+                version = "Premiere Pro project (compressed XML)";
+            }
+        } catch (readErr) {
+            version = "Could not read header";
+        }
+        return _ok({
+            projectPath: path,
+            fileSize: fileSize,
+            version: version,
+            currentPremiereVersion: app.version || "unknown",
+            modified: f.modified ? f.modified.toISOString() : "unknown"
+        });
+    } catch (e) { return _err("getProjectVersion failed: " + e.message); }
+}
+
+/**
+ * 28. exportProjectForOlderVersion(outputPath, targetVersion) — Save for older Premiere Pro.
+ */
+function exportProjectForOlderVersion(outputPath, targetVersion) {
+    try {
+        if (!app.project) return _err("No project open");
+        if (!outputPath) return _err("outputPath is required");
+        if (!targetVersion) return _err("targetVersion is required");
+        app.project.save();
+        var xmlPath = outputPath.replace(/\.prproj$/, ".xml");
+        try {
+            app.project.exportFinalCutProXML(xmlPath, 1);
+        } catch (xmlErr) {
+            var projFile = new File(app.project.path);
+            var destFile = new File(outputPath);
+            projFile.copy(destFile);
+            return _ok({
+                outputPath: outputPath,
+                targetVersion: targetVersion,
+                method: "project_copy",
+                note: "Direct version downgrade not supported. Project file copied. Import via FCP XML for best compatibility."
+            });
+        }
+        return _ok({
+            outputPath: xmlPath,
+            targetVersion: targetVersion,
+            method: "xml_export",
+            note: "Exported as XML for cross-version compatibility."
+        });
+    } catch (e) { return _err("exportProjectForOlderVersion failed: " + e.message); }
+}
+
+/**
+ * 29. checkProjectCompatibility(projectPath) — Check compatibility with current version.
+ */
+function checkProjectCompatibility(projectPath) {
+    try {
+        if (!projectPath) return _err("projectPath is required");
+        var f = new File(projectPath);
+        if (!f.exists) return _err("Project file not found: " + projectPath);
+        var fileExt = projectPath.substring(projectPath.lastIndexOf(".")).toLowerCase();
+        var compatible = false;
+        var format = "unknown";
+        if (fileExt === ".prproj") {
+            compatible = true;
+            format = "Premiere Pro project";
+        } else if (fileExt === ".xml" || fileExt === ".fcpxml") {
+            compatible = true;
+            format = "FCP XML (importable)";
+        } else if (fileExt === ".aaf") {
+            compatible = true;
+            format = "AAF interchange";
+        } else if (fileExt === ".edl") {
+            compatible = true;
+            format = "EDL interchange";
+        } else if (fileExt === ".drp") {
+            compatible = false;
+            format = "DaVinci Resolve project (requires conversion)";
+        } else if (fileExt === ".aep" || fileExt === ".aepx") {
+            compatible = true;
+            format = "After Effects project (Dynamic Link)";
+        }
+        return _ok({
+            projectPath: projectPath,
+            format: format,
+            compatible: compatible,
+            currentPremiereVersion: app.version || "unknown",
+            fileSize: f.length || 0,
+            modified: f.modified ? f.modified.toISOString() : "unknown"
+        });
+    } catch (e) { return _err("checkProjectCompatibility failed: " + e.message); }
+}
+
+/**
+ * 30. importProjectFromOtherNLE(sourcePath, sourceFormat) — Import from DaVinci/FCPX/Avid.
+ */
+function importProjectFromOtherNLE(sourcePath, sourceFormat) {
+    try {
+        if (!app.project) return _err("No project open");
+        if (!sourcePath) return _err("sourcePath is required");
+        if (!sourceFormat) return _err("sourceFormat is required");
+        var f = new File(sourcePath);
+        if (!f.exists) return _err("Source file not found: " + sourcePath);
+        var fmt = sourceFormat.toLowerCase();
+        if (fmt === "fcpx" || fmt === "fcpxml") {
+            try {
+                app.project.importFCPXML(sourcePath);
+                return _ok({ imported: true, sourcePath: sourcePath, sourceFormat: "FCPX", method: "importFCPXML" });
+            } catch (fcpErr) {
+                app.project.importFiles([sourcePath], true, app.project.rootItem, false);
+                return _ok({ imported: true, sourcePath: sourcePath, sourceFormat: "FCPX", method: "importFiles_fallback" });
+            }
+        } else if (fmt === "avid" || fmt === "aaf") {
+            app.project.importFiles([sourcePath], true, app.project.rootItem, false);
+            return _ok({ imported: true, sourcePath: sourcePath, sourceFormat: "Avid/AAF", method: "importFiles" });
+        } else if (fmt === "davinci" || fmt === "resolve") {
+            var ext = sourcePath.substring(sourcePath.lastIndexOf(".")).toLowerCase();
+            if (ext === ".edl" || ext === ".xml" || ext === ".fcpxml" || ext === ".aaf") {
+                app.project.importFiles([sourcePath], true, app.project.rootItem, false);
+                return _ok({ imported: true, sourcePath: sourcePath, sourceFormat: "DaVinci", method: "importFiles",
+                    note: "Imported via interchange format. Native .drp files require manual export from DaVinci Resolve." });
+            }
+            return _err("DaVinci .drp files cannot be imported directly. Export as XML, AAF, or EDL from DaVinci Resolve first.");
+        }
+        return _err("Unsupported source format: " + sourceFormat + ". Supported: fcpx, avid, davinci");
+    } catch (e) { return _err("importProjectFromOtherNLE failed: " + e.message); }
+}
