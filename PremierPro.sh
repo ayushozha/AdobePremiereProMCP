@@ -54,13 +54,25 @@ if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$OPENAI_API_KEY" ]; then
 fi
 
 if [ ! -d "cli/node_modules" ]; then
-    echo "  Installing dependencies..."
+    echo "  Installing CLI dependencies..."
     cd cli && npm install --silent && cd ..
+fi
+
+if [ ! -d "ts-bridge/node_modules" ]; then
+    echo "  Installing bridge dependencies..."
+    cd ts-bridge && npm install --silent && cd ..
 fi
 
 if [ ! -f "go-orchestrator/bin/premierpro-mcp" ]; then
     echo "  Building MCP server..."
     cd go-orchestrator && go build -o bin/premierpro-mcp ./cmd/server/ && cd ..
+fi
+
+# Start backend services if not running
+if ! lsof -i :50054 &>/dev/null 2>&1; then
+    echo "  Starting backend services..."
+    ./scripts/start-all.sh
+    sleep 5
 fi
 
 exec npx --prefix cli tsx cli/src/index.ts

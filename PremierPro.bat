@@ -51,8 +51,14 @@ if "%choice%"=="2" (
 
 REM Ensure CLI dependencies
 if not exist "cli\node_modules" (
-    echo   Installing dependencies...
+    echo   Installing CLI dependencies...
     cd cli && call npm install --silent && cd ..
+)
+
+REM Ensure bridge dependencies
+if not exist "ts-bridge\node_modules" (
+    echo   Installing bridge dependencies...
+    cd ts-bridge && call npm install --silent && cd ..
 )
 
 REM Ensure MCP server binary
@@ -61,5 +67,6 @@ if not exist "go-orchestrator\bin\premierpro-mcp.exe" (
     cd go-orchestrator && go build -o bin\premierpro-mcp.exe .\cmd\server\ && cd ..
 )
 
+REM Launch the CLI
 npx --prefix cli tsx cli\src\index.ts
 pause

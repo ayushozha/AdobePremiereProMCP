@@ -89,7 +89,7 @@ interface PendingRequest {
 // Constants
 // ---------------------------------------------------------------------------
 
-const DEFAULT_WS_PORT = 8089;
+const DEFAULT_WS_PORT = 9801;
 const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RECONNECT_ATTEMPTS = 5;
 const DEFAULT_RECONNECT_INTERVAL_MS = 2_000;

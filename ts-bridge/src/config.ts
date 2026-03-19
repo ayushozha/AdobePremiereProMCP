@@ -77,7 +77,7 @@ export function loadConfig(): BridgeConfig {
       "/Applications/Adobe Premiere Pro 2025/Adobe Premiere Pro 2025.app",
     bridgeMode: rawMode as BridgeMode,
     logLevel: rawLogLevel as LogLevel,
-    cepWsPort: parsePort("BRIDGE_CEP_WS_PORT", 8089),
+    cepWsPort: parsePort("BRIDGE_CEP_WS_PORT", 9801),
   };
 }
 

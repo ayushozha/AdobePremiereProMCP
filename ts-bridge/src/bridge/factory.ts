@@ -108,7 +108,7 @@ export async function createBridgeAutoDetect(
  * `false` otherwise. The socket is closed immediately after probing.
  */
 function probeCepPanel(config: BridgeConfig, log: Logger): Promise<boolean> {
-  const port = config.cepWsPort || 8089;
+  const port = config.cepWsPort || 9801;
   const url = `ws://localhost:${port}`;
 
   return new Promise<boolean>((resolve) => {
