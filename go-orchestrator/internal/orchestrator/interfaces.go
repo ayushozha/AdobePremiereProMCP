@@ -552,4 +552,54 @@ type Orchestrator interface {
 	ApplyMirror(ctx context.Context, trackIndex, clipIndex int, angle float64, centerX, centerY float64) (*GenericResult, error)
 	ApplyCornerPin(ctx context.Context, trackIndex, clipIndex int, cornersJSON string) (*GenericResult, error)
 	ApplySpherize(ctx context.Context, trackIndex, clipIndex int, radius, centerX, centerY float64) (*GenericResult, error)
+
+	// --- Batch Import ---
+	BatchImportWithMetadata(ctx context.Context, itemsJSON string) (*GenericResult, error)
+	ImportImageSequence(ctx context.Context, folderPath string, fps float64, targetBin string) (*GenericResult, error)
+
+	// --- Batch Export ---
+	BatchExportSequences(ctx context.Context, sequenceIndices []int, outputDir, presetPath string) (*GenericResult, error)
+	ExportAllSequences(ctx context.Context, outputDir, presetPath string) (*GenericResult, error)
+
+	// --- Batch Effects ---
+	ApplyEffectToMultipleClips(ctx context.Context, trackType string, trackIndex int, clipIndices []int, effectName string) (*GenericResult, error)
+	RemoveAllEffects(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error)
+	ApplyTransitionToAllCuts(ctx context.Context, trackIndex int, transitionName string, duration float64) (*GenericResult, error)
+
+	// --- Batch Color ---
+	ApplyLUTToAllClips(ctx context.Context, trackIndex int, lutPath string) (*GenericResult, error)
+	ResetColorOnAllClips(ctx context.Context, trackIndex int) (*GenericResult, error)
+
+	// --- Batch Audio ---
+	NormalizeAllAudio(ctx context.Context, targetDB float64) (*GenericResult, error)
+	MuteAllAudioTracks(ctx context.Context) (*GenericResult, error)
+	UnmuteAllAudioTracks(ctx context.Context) (*GenericResult, error)
+
+	// --- Conforming ---
+	ConformSequenceToClip(ctx context.Context, projectItemIndex int) (*GenericResult, error)
+	ScaleAllClipsToFrame(ctx context.Context) (*GenericResult, error)
+
+	// --- Timeline Operations (Batch) ---
+	SelectAllClipsOnTrack(ctx context.Context, trackType string, trackIndex int) (*GenericResult, error)
+	SelectAllClipsBetween(ctx context.Context, startSeconds, endSeconds float64) (*GenericResult, error)
+	DeleteAllClipsBetween(ctx context.Context, trackType string, trackIndex int, startSeconds, endSeconds float64) (*GenericResult, error)
+	RippleDeleteAllGaps(ctx context.Context) (*GenericResult, error)
+
+	// --- Project Cleanup ---
+	RemoveUnusedMedia(ctx context.Context) (*GenericResult, error)
+	GetUnusedMedia(ctx context.Context) (*GenericResult, error)
+	FlattenAllBins(ctx context.Context) (*GenericResult, error)
+	AutoOrganizeBins(ctx context.Context) (*GenericResult, error)
+
+	// --- Markers Batch ---
+	ExportMarkersAsCSV(ctx context.Context, outputPath string) (*GenericResult, error)
+	ExportMarkersAsEDL(ctx context.Context, outputPath string) (*GenericResult, error)
+	ImportMarkersFromCSV(ctx context.Context, csvPath string) (*GenericResult, error)
+	DeleteAllMarkers(ctx context.Context) (*GenericResult, error)
+	ConvertMarkersToClips(ctx context.Context, markerColor string) (*GenericResult, error)
+
+	// --- Automation ---
+	RunExtendScript(ctx context.Context, script string) (*GenericResult, error)
+	GetSystemInfo(ctx context.Context) (*GenericResult, error)
+	GetRecentProjects(ctx context.Context) (*GenericResult, error)
 }
