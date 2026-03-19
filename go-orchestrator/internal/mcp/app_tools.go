@@ -119,13 +119,11 @@ func makeCloseHandler(logger *zap.Logger) server.ToolHandlerFunc {
 			cmd := exec.Command("pkill", "-9", "-f", "Adobe Premiere Pro")
 			_ = cmd.Run()
 		} else {
-			script := `tell application "Adobe Premiere Pro 2025" to quit`
+			name := premiereAppName()
+			script := fmt.Sprintf(`tell application "%s" to quit`, name)
 			cmd := exec.Command("osascript", "-e", script)
 			if _, err := cmd.CombinedOutput(); err != nil {
-				cmd2 := exec.Command("osascript", "-e", `tell application "Adobe Premiere Pro" to quit`)
-				if _, err2 := cmd2.CombinedOutput(); err2 != nil {
-					return gomcp.NewToolResultError(fmt.Sprintf("failed to quit Premiere Pro: %v", err2)), nil
-				}
+				return gomcp.NewToolResultError(fmt.Sprintf("failed to quit Premiere Pro: %v", err)), nil
 			}
 		}
 
@@ -173,22 +171,28 @@ func isPremiereRunning() bool {
 	return exec.Command("pgrep", "-f", "Adobe Premiere Pro").Run() == nil
 }
 
+// premiereAppName discovers the installed Premiere Pro application name.
+// Tries year-suffixed names from newest to oldest, then the bare name.
+func premiereAppName() string {
+	for _, year := range []string{"2026", "2025", "2024", "2023"} {
+		name := "Adobe Premiere Pro " + year
+		if err := exec.Command("open", "-Ra", name).Run(); err == nil {
+			return name
+		}
+	}
+	return "Adobe Premiere Pro"
+}
+
 func launchPremiere(projectPath string) error {
-	args := []string{"-a", "Adobe Premiere Pro 2025"}
+	name := premiereAppName()
+	args := []string{"-a", name}
 	if projectPath != "" {
 		args = append(args, projectPath)
 	}
-	if err := exec.Command("open", args...).Run(); err != nil {
-		// Try without year suffix.
-		args[1] = "Adobe Premiere Pro"
-		return exec.Command("open", args...).Run()
-	}
-	return nil
+	return exec.Command("open", args...).Run()
 }
 
 func openProjectFile(path string) error {
-	if err := exec.Command("open", "-a", "Adobe Premiere Pro 2025", path).Run(); err != nil {
-		return exec.Command("open", "-a", "Adobe Premiere Pro", path).Run()
-	}
-	return nil
+	name := premiereAppName()
+	return exec.Command("open", "-a", name, path).Run()
 }
