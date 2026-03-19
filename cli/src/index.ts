@@ -16,6 +16,7 @@ import {
   printAssistant,
   printError,
   printInfo,
+  printSuccess,
   createReadlineInterface,
   prompt,
   color,
@@ -24,6 +25,7 @@ import {
 // ── Main ──────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  // Show banner without tool count (we don't know yet)
   banner();
 
   // 1. Resolve authentication (Anthropic or OpenAI)
@@ -32,6 +34,13 @@ async function main(): Promise<void> {
   if (!authResult) {
     printError("No authentication found.");
     printAuthHelp(color);
+    console.log(
+      `  ${color.dim}For setup instructions, visit:${color.reset}`,
+    );
+    console.log(
+      `  ${color.cyan}https://github.com/ayushozha/AdobePremiereProMCP#setup${color.reset}`,
+    );
+    console.log();
     process.exit(1);
   }
 
@@ -44,9 +53,11 @@ async function main(): Promise<void> {
 
   const auth = authResult as AuthResult;
 
-  printInfo(
-    `  Authenticated with ${auth.provider === "anthropic" ? "Claude" : "OpenAI"} (model: ${auth.model})`,
-  );
+  // Show which auth method was detected
+  const providerName = auth.provider === "anthropic" ? "Anthropic (Claude)" : "OpenAI";
+  const authSource = getAuthSource(auth);
+  printSuccess(`  Authenticated via ${authSource}`);
+  printInfo(`  Provider: ${providerName}  |  Model: ${auth.model}`);
 
   // 2. Spawn and connect to the MCP server
   const mcpClient = new MCPClient();
@@ -59,14 +70,21 @@ async function main(): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err);
     printError(`Failed to start MCP server: ${msg}`);
     console.log();
-    console.log("  Make sure the server binary exists at:");
+    console.log(`  ${color.yellow}To fix this:${color.reset}`);
+    console.log();
+    console.log("  1. Make sure the server binary exists:");
     console.log(
-      `    ${color.cyan}go-orchestrator/bin/premierpro-mcp${color.reset}`,
+      `     ${color.cyan}go-orchestrator/bin/premierpro-mcp${color.reset}`,
     );
     console.log();
-    console.log("  Build it with:");
+    console.log("  2. Build it with:");
     console.log(
-      `    ${color.cyan}cd go-orchestrator && go build -o bin/premierpro-mcp ./cmd/server${color.reset}`,
+      `     ${color.cyan}cd go-orchestrator && go build -o bin/premierpro-mcp ./cmd/server${color.reset}`,
+    );
+    console.log();
+    console.log("  3. Or install Go if you haven't:");
+    console.log(
+      `     ${color.cyan}brew install go${color.reset}  (macOS)`,
     );
     console.log();
     process.exit(1);
@@ -80,13 +98,15 @@ async function main(): Promise<void> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     printError(`Failed to list MCP tools: ${msg}`);
+    printInfo("  The MCP server started but could not enumerate tools.");
+    printInfo("  Check the server logs for more details.");
     await mcpClient.disconnect();
     process.exit(1);
   }
 
-  printInfo(`  Connected. ${toolCount} tools available.`);
+  printSuccess(`  Connected. ${toolCount.toLocaleString()} tools available.`);
 
-  // 4. Auto-launch Premiere Pro if it is not already running
+  // 4. Check Premiere Pro status
   try {
     const statusResult = await mcpClient.callTool("premiere_is_running", {});
     const isRunning =
@@ -98,17 +118,19 @@ async function main(): Promise<void> {
       const launchResult = await mcpClient.callTool("premiere_open", {});
       if (launchResult.isError) {
         printError(`Failed to launch Premiere Pro: ${launchResult.content}`);
+        printInfo("  You can launch it manually and the CLI will still work.");
       } else {
-        printInfo("  Premiere Pro launched.");
+        printSuccess("  Premiere Pro launched.");
       }
     } else {
-      printInfo("  Premiere Pro is running.");
+      printSuccess("  Premiere Pro is running.");
     }
   } catch (err) {
     // Non-fatal: tools may not include premiere_is_running if the server
     // is a different version. Continue into the chat loop regardless.
     const msg = err instanceof Error ? err.message : String(err);
     printInfo(`  (Could not check Premiere Pro status: ${msg})`);
+    printInfo("  Continuing anyway -- Premiere Pro commands will work once it is running.");
   }
 
   console.log();
@@ -154,8 +176,24 @@ async function main(): Promise<void> {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       printError(`Chat error: ${msg}`);
+      if (msg.toLowerCase().includes("api key") || msg.toLowerCase().includes("unauthorized") || msg.toLowerCase().includes("401")) {
+        printInfo("  Your API key may be invalid or expired. Check your authentication.");
+      } else if (msg.toLowerCase().includes("rate limit") || msg.toLowerCase().includes("429")) {
+        printInfo("  You've hit a rate limit. Wait a moment and try again.");
+      }
     }
   }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────
+
+/** Infer how the user authenticated for display purposes. */
+function getAuthSource(auth: AuthResult): string {
+  if (process.env.ANTHROPIC_API_KEY) return "ANTHROPIC_API_KEY env var";
+  if (process.env.OPENAI_API_KEY) return "OPENAI_API_KEY env var";
+  if (auth.provider === "anthropic") return "Claude CLI (claude login)";
+  if (auth.provider === "openai") return "Codex CLI or config file";
+  return "config file";
 }
 
 // ── Entry ─────────────────────────────────────────────────────────────

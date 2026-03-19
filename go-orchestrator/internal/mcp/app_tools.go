@@ -18,24 +18,24 @@ import (
 func registerAppTools(s *server.MCPServer, logger *zap.Logger) {
 	s.AddTool(
 		gomcp.NewTool("premiere_open",
-			gomcp.WithDescription("Launch Adobe Premiere Pro. Optionally open a specific project file."),
-			gomcp.WithString("project_path", gomcp.Description("Path to a .prproj file to open (optional)")),
-			gomcp.WithBoolean("wait", gomcp.Description("Wait for Premiere Pro to finish launching (default: true)")),
+			gomcp.WithDescription("Launch Adobe Premiere Pro on macOS. If Premiere is already running and a project_path is provided, the project is opened in the existing instance. When wait is true (default), the call blocks until Premiere finishes launching (up to 60 seconds). Returns status ('launched', 'already_running', 'timeout') and timing information."),
+			gomcp.WithString("project_path", gomcp.Description("Absolute path to a .prproj file to open on launch (e.g. '/Users/me/Projects/MyEdit.prproj'). If omitted, Premiere opens with no project.")),
+			gomcp.WithBoolean("wait", gomcp.Description("If true (default), block until Premiere Pro is confirmed running or 60 seconds elapse. Set to false for fire-and-forget launch.")),
 		),
 		makeOpenHandler(logger),
 	)
 
 	s.AddTool(
 		gomcp.NewTool("premiere_close",
-			gomcp.WithDescription("Quit Adobe Premiere Pro gracefully. Prompts to save unsaved changes."),
-			gomcp.WithBoolean("force", gomcp.Description("Force quit without saving (default: false)")),
+			gomcp.WithDescription("Quit Adobe Premiere Pro. By default, sends a graceful quit via AppleScript, which may trigger a 'Save changes?' dialog. Use force=true to kill the process immediately without saving. Returns status ('closed', 'closing', 'not_running')."),
+			gomcp.WithBoolean("force", gomcp.Description("If true, force-kill the process (SIGKILL) without saving. If false (default), send a graceful quit that allows Premiere to prompt for unsaved changes.")),
 		),
 		makeCloseHandler(logger),
 	)
 
 	s.AddTool(
 		gomcp.NewTool("premiere_is_running",
-			gomcp.WithDescription("Check if Adobe Premiere Pro is currently running as a process."),
+			gomcp.WithDescription("Check whether Adobe Premiere Pro is currently running as a macOS process. Returns {running: true/false} and, when running, the process IDs. Use this before calling tools that require Premiere to be open."),
 		),
 		makeIsRunningHandler(logger),
 	)

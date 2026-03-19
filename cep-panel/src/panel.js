@@ -144,7 +144,7 @@
             e.preventDefault();
             // Open in default browser via CSInterface if possible
             if (csInterface && csInterface.openURLInDefaultBrowser) {
-                csInterface.openURLInDefaultBrowser("https://github.com/nicekid1/PremierProMCP");
+                csInterface.openURLInDefaultBrowser("https://github.com/ayushozha/AdobePremiereProMCP");
             }
         });
     }

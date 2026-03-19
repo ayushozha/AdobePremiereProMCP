@@ -17,10 +17,10 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_new_project",
-			gomcp.WithDescription("Create a new Premiere Pro project at the specified path. The path should end with .prproj."),
+			gomcp.WithDescription("Create a new, empty Premiere Pro project at the specified file path. The path must end with '.prproj'. Any intermediate directories must already exist. The new project becomes the active project. If another project is already open, it will be closed (you may want to save first with premiere_save_project)."),
 			gomcp.WithString("path",
 				gomcp.Required(),
-				gomcp.Description("Absolute file path for the new project (must end with .prproj)"),
+				gomcp.Description("Absolute file path for the new project, ending with .prproj (e.g. '/Users/me/Projects/NewEdit.prproj'). Parent directories must exist."),
 			),
 		),
 		makeNewProjectHandler(orch, logger),
@@ -31,10 +31,10 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_open_project",
-			gomcp.WithDescription("Open an existing Premiere Pro project file (.prproj)."),
+			gomcp.WithDescription("Open an existing Premiere Pro project file (.prproj). Closes any currently open project. If there are unsaved changes, Premiere may prompt to save. After opening, use premiere_get_project_info to inspect the project structure."),
 			gomcp.WithString("path",
 				gomcp.Required(),
-				gomcp.Description("Absolute path to the .prproj file to open"),
+				gomcp.Description("Absolute path to the .prproj file to open (e.g. '/Users/me/Projects/MyEdit.prproj'). The file must exist."),
 			),
 		),
 		makeOpenProjectHandler(orch, logger),
@@ -45,7 +45,7 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_save_project",
-			gomcp.WithDescription("Save the currently open Premiere Pro project."),
+			gomcp.WithDescription("Save the currently open Premiere Pro project to its existing file path. Equivalent to Cmd+S / Ctrl+S. No parameters required. To save to a different location, use premiere_save_project_as instead."),
 		),
 		makeSaveProjectHandler(orch, logger),
 	)
@@ -55,10 +55,10 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_save_project_as",
-			gomcp.WithDescription("Save the current Premiere Pro project to a new file path."),
+			gomcp.WithDescription("Save the current Premiere Pro project to a new file path (Save As). The project continues working from the new path. Useful for creating backups or versioned copies."),
 			gomcp.WithString("path",
 				gomcp.Required(),
-				gomcp.Description("Absolute file path for the saved copy (must end with .prproj)"),
+				gomcp.Description("Absolute file path for the saved copy, ending with .prproj (e.g. '/Users/me/Projects/MyEdit_v2.prproj'). Parent directories must exist."),
 			),
 		),
 		makeSaveProjectAsHandler(orch, logger),
@@ -69,9 +69,9 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_close_project",
-			gomcp.WithDescription("Close the currently open Premiere Pro project."),
+			gomcp.WithDescription("Close the currently open Premiere Pro project. Optionally save before closing. Premiere Pro remains running with no project open. Use premiere_open_project or premiere_new_project to work with a project afterward."),
 			gomcp.WithBoolean("save_first",
-				gomcp.Description("Whether to save the project before closing (default: false)"),
+				gomcp.Description("If true, save the project before closing. If false (default), close without saving and discard unsaved changes."),
 			),
 		),
 		makeCloseProjectHandler(orch, logger),
@@ -82,7 +82,7 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_get_project_info",
-			gomcp.WithDescription("Get detailed information about the current project including name, path, sequences, bins, and item counts."),
+			gomcp.WithDescription("Retrieve detailed information about the currently open project, including project name, file path, all sequences (with indices, names, and resolutions), bin structure, total item counts, and the active sequence. This is the best starting point for understanding a project's contents."),
 		),
 		makeGetProjectInfoHandler(orch, logger),
 	)
