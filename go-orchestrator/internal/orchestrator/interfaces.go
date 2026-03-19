@@ -87,6 +87,44 @@ type Orchestrator interface {
 	CreateSequence(ctx context.Context, params *CreateSequenceParams) (*SequenceResult, error)
 	GetTimeline(ctx context.Context, sequenceID string) (*TimelineState, error)
 
+	// --- Sequence Management ---
+	CreateSequenceFromClips(ctx context.Context, name string, clipIndices []int) (*SequenceResult, error)
+	DuplicateSequence(ctx context.Context, sequenceIndex int) (*SequenceResult, error)
+	DeleteSequence(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	RenameSequence(ctx context.Context, sequenceIndex int, newName string) (*GenericResult, error)
+	GetSequenceSettings(ctx context.Context, sequenceIndex int) (*SequenceSettings, error)
+	SetSequenceSettings(ctx context.Context, params *SetSequenceSettingsParams) (*GenericResult, error)
+	GetActiveSequence(ctx context.Context) (*SequenceSettings, error)
+	SetActiveSequence(ctx context.Context, sequenceIndex int) (*GenericResult, error)
+	GetSequenceList(ctx context.Context) (*SequenceListResult, error)
+
+	// --- Playhead & In/Out Points ---
+	GetPlayheadPosition(ctx context.Context) (*PlayheadResult, error)
+	SetPlayheadPosition(ctx context.Context, seconds float64) (*GenericResult, error)
+	SetInPoint(ctx context.Context, seconds float64) (*GenericResult, error)
+	SetOutPoint(ctx context.Context, seconds float64) (*GenericResult, error)
+	GetInOutPoints(ctx context.Context) (*InOutPointsResult, error)
+	ClearInOutPoints(ctx context.Context) (*GenericResult, error)
+
+	// --- Work Area & Preview ---
+	SetWorkArea(ctx context.Context, inSeconds, outSeconds float64) (*GenericResult, error)
+	RenderPreviewFiles(ctx context.Context, inSeconds, outSeconds float64) (*GenericResult, error)
+	DeletePreviewFiles(ctx context.Context) (*GenericResult, error)
+
+	// --- Nesting & Reframing ---
+	CreateNestedSequence(ctx context.Context, trackIndex int, clipIndices []int) (*GenericResult, error)
+	AutoReframeSequence(ctx context.Context, numerator, denominator int, motionPreset string) (*GenericResult, error)
+
+	// --- Generated Media ---
+	InsertBlackVideo(ctx context.Context, trackIndex int, startTime, duration float64) (*GenericResult, error)
+	InsertBarsAndTone(ctx context.Context, width, height int, duration float64) (*GenericResult, error)
+
+	// --- Markers ---
+	GetSequenceMarkers(ctx context.Context) (*MarkersResult, error)
+	AddSequenceMarker(ctx context.Context, params *AddMarkerParams) (*GenericResult, error)
+	DeleteSequenceMarker(ctx context.Context, markerIndex int) (*GenericResult, error)
+	NavigateToMarker(ctx context.Context, markerIndex int) (*GenericResult, error)
+
 	// --- Clip Operations ---
 	ImportMedia(ctx context.Context, filePath string, targetBin string) (*ImportResult, error)
 	PlaceClip(ctx context.Context, params *PlaceClipParams) (*ClipResult, error)
@@ -101,6 +139,22 @@ type Orchestrator interface {
 
 	// --- Export ---
 	Export(ctx context.Context, params *ExportParams) (*ExportResult, error)
+
+	// --- Export & Render (Extended) ---
+	ExportDirect(ctx context.Context, params *ExportDirectParams) (*GenericExportResult, error)
+	ExportViaAME(ctx context.Context, params *ExportViaAMEParams) (*GenericExportResult, error)
+	ExportFrame(ctx context.Context, params *ExportFrameParams) (*GenericExportResult, error)
+	ExportAAF(ctx context.Context, params *ExportAAFParams) (*GenericExportResult, error)
+	ExportOMF(ctx context.Context, params *ExportOMFParams) (*GenericExportResult, error)
+	ExportFCPXML(ctx context.Context, outputPath string) (*GenericExportResult, error)
+	ExportProjectAsXML(ctx context.Context, outputPath string) (*GenericExportResult, error)
+	GetExporters(ctx context.Context) (*ExporterListResult, error)
+	GetExportPresets(ctx context.Context, exporterIndex int) (*ExportPresetListResult, error)
+	StartAMEBatch(ctx context.Context) (*GenericExportResult, error)
+	LaunchAME(ctx context.Context) (*GenericExportResult, error)
+	ExportAudioOnly(ctx context.Context, params *ExportAudioOnlyParams) (*GenericExportResult, error)
+	GetExportProgress(ctx context.Context) (*ExportProgressResult, error)
+	RenderSequencePreview(ctx context.Context, params *RenderPreviewParams) (*GenericExportResult, error)
 
 	// --- Media Analysis (Rust engine) ---
 	ScanAssets(ctx context.Context, dir string, recursive bool, extensions []string) (*ScanResult, error)

@@ -594,11 +594,16 @@ func convertTimelineTracks(tracks []TimelineTrack) []*orch.TimelineTrack {
 	for i, t := range tracks {
 		clips := make([]*orch.TimelineClip, len(t.Clips))
 		for j, c := range t.Clips {
-			clips[j] = &orch.TimelineClip{
+			clip := &orch.TimelineClip{
 				ClipID:     c.ClipID,
 				SourcePath: c.SourcePath,
 				Speed:      c.Speed,
 			}
+			sr := convertGRPCTimeRangeToOrchestrator(&c.SourceRange)
+			clip.SourceRange = sr
+			tr := convertGRPCTimeRangeToOrchestrator(&c.TimelineRange)
+			clip.TimelineRange = tr
+			clips[j] = clip
 		}
 		out[i] = &orch.TimelineTrack{
 			Index:    t.Index,

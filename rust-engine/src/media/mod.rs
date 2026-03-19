@@ -24,6 +24,7 @@
 
 pub mod formats;
 pub mod probe;
+pub mod scenes;
 
 // Re-export the most commonly used types at the module level for convenience.
 pub use formats::{detect_mime_type, is_media_file};

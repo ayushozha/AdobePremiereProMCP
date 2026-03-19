@@ -44,4 +44,29 @@ type (
 	AutoEditParams       = orchestrator.AutoEditParams
 	AutoEditResult       = orchestrator.AutoEditResult
 	EDLSettings          = orchestrator.EDLSettings
+
+	// Sequence management types
+	SequenceSettings          = orchestrator.SequenceSettings
+	SetSequenceSettingsParams = orchestrator.SetSequenceSettingsParams
+	SequenceListResult        = orchestrator.SequenceListResult
+	SequenceListEntry         = orchestrator.SequenceListEntry
+	PlayheadResult            = orchestrator.PlayheadResult
+	InOutPointsResult         = orchestrator.InOutPointsResult
+	MarkerInfo                = orchestrator.MarkerInfo
+	MarkersResult             = orchestrator.MarkersResult
+	AddMarkerParams           = orchestrator.AddMarkerParams
+	GenericResult             = orchestrator.GenericResult
+
+	// Export & render extended types
+	ExportDirectParams     = orchestrator.ExportDirectParams
+	ExportViaAMEParams     = orchestrator.ExportViaAMEParams
+	ExportFrameParams      = orchestrator.ExportFrameParams
+	ExportAAFParams        = orchestrator.ExportAAFParams
+	ExportOMFParams        = orchestrator.ExportOMFParams
+	ExportAudioOnlyParams  = orchestrator.ExportAudioOnlyParams
+	RenderPreviewParams    = orchestrator.RenderPreviewParams
+	ExporterListResult     = orchestrator.ExporterListResult
+	ExportPresetListResult = orchestrator.ExportPresetListResult
+	ExportProgressResult   = orchestrator.ExportProgressResult
+	GenericExportResult    = orchestrator.GenericExportResult
 )

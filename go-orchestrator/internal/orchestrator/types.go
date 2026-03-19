@@ -442,6 +442,113 @@ type ExportResult struct {
 	OutputPath string `json:"output_path"`
 }
 
+// ---------------------------------------------------------------------------
+// Extended export parameter / result types
+// ---------------------------------------------------------------------------
+
+// ExportDirectParams defines how to perform a synchronous direct export.
+type ExportDirectParams struct {
+	SequenceIndex int    `json:"sequence_index"`
+	OutputPath    string `json:"output_path"`
+	PresetPath    string `json:"preset_path"`
+	WorkAreaType  int    `json:"work_area_type"` // 0=entire, 1=in-to-out, 2=work area
+}
+
+// ExportViaAMEParams defines how to queue an export through Adobe Media Encoder.
+type ExportViaAMEParams struct {
+	SequenceIndex int    `json:"sequence_index"`
+	OutputPath    string `json:"output_path"`
+	PresetPath    string `json:"preset_path"`
+	WorkAreaType  int    `json:"work_area_type"`
+	RemoveOnDone  bool   `json:"remove_on_done"`
+}
+
+// ExportFrameParams defines how to export a single frame.
+type ExportFrameParams struct {
+	OutputPath string `json:"output_path"`
+	Format     string `json:"format"` // "PNG" or "JPEG"
+}
+
+// ExportAAFParams defines how to export as AAF.
+type ExportAAFParams struct {
+	SequenceIndex int    `json:"sequence_index"`
+	OutputPath    string `json:"output_path"`
+	Mixdown       bool   `json:"mixdown"`
+	Explode       bool   `json:"explode"`
+	SampleRate    int    `json:"sample_rate"`
+	BitsPerSample int    `json:"bits_per_sample"`
+}
+
+// ExportOMFParams defines how to export as OMF.
+type ExportOMFParams struct {
+	SequenceIndex int    `json:"sequence_index"`
+	OutputPath    string `json:"output_path"`
+	SampleRate    int    `json:"sample_rate"`
+	BitsPerSample int    `json:"bits_per_sample"`
+	HandleFrames  int    `json:"handle_frames"`
+	Encapsulate   bool   `json:"encapsulate"`
+}
+
+// ExportAudioOnlyParams defines how to export audio only.
+type ExportAudioOnlyParams struct {
+	SequenceIndex int    `json:"sequence_index"`
+	OutputPath    string `json:"output_path"`
+	PresetPath    string `json:"preset_path"`
+}
+
+// RenderPreviewParams defines the range for preview rendering.
+type RenderPreviewParams struct {
+	InSeconds  float64 `json:"in_seconds"`
+	OutSeconds float64 `json:"out_seconds"`
+}
+
+// ExporterInfo describes a single available exporter.
+type ExporterInfo struct {
+	Index    int    `json:"index"`
+	Name     string `json:"name"`
+	ClassID  string `json:"class_id"`
+	FileType string `json:"file_type"`
+}
+
+// ExporterListResult is returned by getExporters.
+type ExporterListResult struct {
+	Exporters []ExporterInfo `json:"exporters"`
+	Count     int            `json:"count"`
+}
+
+// ExportPresetDetailInfo describes a single export preset.
+type ExportPresetDetailInfo struct {
+	Index     int    `json:"index"`
+	Name      string `json:"name"`
+	MatchName string `json:"match_name"`
+	Path      string `json:"path"`
+}
+
+// ExportPresetListResult is returned by getExportPresets.
+type ExportPresetListResult struct {
+	ExporterIndex int                      `json:"exporter_index"`
+	ExporterName  string                   `json:"exporter_name"`
+	Presets       []ExportPresetDetailInfo  `json:"presets"`
+	Count         int                      `json:"count"`
+}
+
+// ExportProgressResult is returned by getExportProgress.
+type ExportProgressResult struct {
+	EncoderAvailable   bool   `json:"encoder_available"`
+	ExportersAvailable bool   `json:"exporters_available"`
+	Status             string `json:"status"`
+	Note               string `json:"note"`
+}
+
+// GenericExportResult is a flexible result returned by various export operations.
+type GenericExportResult struct {
+	Status       string `json:"status"`
+	OutputPath   string `json:"output_path,omitempty"`
+	SequenceName string `json:"sequence_name,omitempty"`
+	ProjectName  string `json:"project_name,omitempty"`
+	JobID        string `json:"job_id,omitempty"`
+}
+
 // EDLExecutionResult is returned after executing a full EDL.
 type EDLExecutionResult struct {
 	SequenceID       string   `json:"sequence_id"`
@@ -450,6 +557,113 @@ type EDLExecutionResult struct {
 	TransitionsAdded uint32   `json:"transitions_added"`
 	Errors           []string `json:"errors,omitempty"`
 	Warnings         []string `json:"warnings,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Sequence management types
+// ---------------------------------------------------------------------------
+
+// SequenceSettings holds comprehensive settings for a sequence.
+type SequenceSettings struct {
+	Name                  string  `json:"name"`
+	SequenceID            string  `json:"sequence_id"`
+	FrameSizeHorizontal   int     `json:"frame_size_horizontal"`
+	FrameSizeVertical     int     `json:"frame_size_vertical"`
+	Timebase              string  `json:"timebase"`
+	VideoTrackCount       int     `json:"video_track_count"`
+	AudioTrackCount       int     `json:"audio_track_count"`
+	InPoint               float64 `json:"in_point"`
+	OutPoint              float64 `json:"out_point"`
+	EndSeconds            float64 `json:"end_seconds"`
+	AudioSampleRate       float64 `json:"audio_sample_rate,omitempty"`
+	AudioChannelCount     int     `json:"audio_channel_count,omitempty"`
+	VideoFieldType        int     `json:"video_field_type,omitempty"`
+	VideoPixelAspectRatio string  `json:"video_pixel_aspect_ratio,omitempty"`
+	CompositeLinearColor  bool    `json:"composite_linear_color,omitempty"`
+	MaximumBitDepth       bool    `json:"maximum_bit_depth,omitempty"`
+	MaximumRenderQuality  bool    `json:"maximum_render_quality,omitempty"`
+}
+
+// SetSequenceSettingsParams defines which settings to update.
+type SetSequenceSettingsParams struct {
+	SequenceIndex        int      `json:"sequence_index"`
+	Width                *int     `json:"width,omitempty"`
+	Height               *int     `json:"height,omitempty"`
+	AudioSampleRate      *float64 `json:"audio_sample_rate,omitempty"`
+	VideoFieldType       *int     `json:"video_field_type,omitempty"`
+	CompositeLinearColor *bool    `json:"composite_linear_color,omitempty"`
+	MaximumBitDepth      *bool    `json:"maximum_bit_depth,omitempty"`
+	MaximumRenderQuality *bool    `json:"maximum_render_quality,omitempty"`
+}
+
+// SequenceListResult contains a list of all sequences in the project.
+type SequenceListResult struct {
+	Count             int                  `json:"count"`
+	Sequences         []*SequenceListEntry `json:"sequences"`
+	ActiveSequenceID  string               `json:"active_sequence_id"`
+}
+
+// SequenceListEntry is a summary of a single sequence in the project list.
+type SequenceListEntry struct {
+	Index               int    `json:"index"`
+	Name                string `json:"name"`
+	SequenceID          string `json:"sequence_id"`
+	FrameSizeHorizontal int    `json:"frame_size_horizontal"`
+	FrameSizeVertical   int    `json:"frame_size_vertical"`
+	Timebase            string `json:"timebase"`
+	VideoTrackCount     int    `json:"video_track_count"`
+	AudioTrackCount     int    `json:"audio_track_count"`
+	IsActive            bool   `json:"is_active"`
+}
+
+// PlayheadResult describes the current playhead position.
+type PlayheadResult struct {
+	Seconds      float64 `json:"seconds"`
+	Ticks        string  `json:"ticks"`
+	SequenceName string  `json:"sequence_name"`
+	SequenceID   string  `json:"sequence_id"`
+}
+
+// InOutPointsResult describes the in/out points of a sequence.
+type InOutPointsResult struct {
+	InPoint      float64 `json:"in_point"`
+	OutPoint     float64 `json:"out_point"`
+	SequenceName string  `json:"sequence_name"`
+	SequenceID   string  `json:"sequence_id"`
+}
+
+// MarkerInfo describes a single sequence marker.
+type MarkerInfo struct {
+	Index      int     `json:"index"`
+	Name       string  `json:"name"`
+	Comment    string  `json:"comment"`
+	Start      float64 `json:"start"`
+	End        float64 `json:"end"`
+	Type       string  `json:"type"`
+	ColorIndex int     `json:"color_index"`
+}
+
+// MarkersResult contains all markers on a sequence.
+type MarkersResult struct {
+	Count        int           `json:"count"`
+	Markers      []*MarkerInfo `json:"markers"`
+	SequenceName string        `json:"sequence_name"`
+	SequenceID   string        `json:"sequence_id"`
+}
+
+// AddMarkerParams defines how to add a marker to a sequence.
+type AddMarkerParams struct {
+	Time     float64 `json:"time"`
+	Name     string  `json:"name"`
+	Comment  string  `json:"comment"`
+	Color    int     `json:"color"`
+	Duration float64 `json:"duration"`
+}
+
+// GenericResult is a simple result for operations that return basic status info.
+type GenericResult struct {
+	Status  string `json:"status"`
+	Message string `json:"message,omitempty"`
 }
 
 // ---------------------------------------------------------------------------

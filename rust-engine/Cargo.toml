@@ -44,5 +44,8 @@ anyhow = "1"
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
 
+[dev-dependencies]
+tokio-stream = "0.1"
+
 [build-dependencies]
 tonic-build = "0.12"

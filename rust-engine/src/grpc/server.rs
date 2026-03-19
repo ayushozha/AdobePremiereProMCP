@@ -5,6 +5,7 @@ use tracing::{info, instrument, warn};
 
 use crate::assets::scanner::{AssetScanner, ScanOptions};
 use crate::media::probe::{self as probe_types, MediaProber};
+use crate::media::scenes::{SceneDetectionOptions, SceneDetector};
 use crate::thumbnails::generator::{ThumbnailGenerator, ThumbnailOptions};
 use crate::waveform::analyzer::{WaveformAnalyzer, WaveformOptions};
 
@@ -306,31 +307,52 @@ impl MediaEngineService for MediaEngineServiceImpl {
             "Detecting scenes"
         );
 
-        // TODO: Implement real scene detection.
-        //
-        // Scene detection requires frame-by-frame analysis (e.g. histogram
-        // comparison, optical flow, or ML-based methods).  This is
-        // significantly more complex than the other operations and is left
-        // as a stub until a dedicated `media::scenes` module is built.
-        //
-        // A possible approach:
-        //   1. Decode video frames via ffmpeg at a reduced resolution/fps.
-        //   2. Compute per-frame histograms or perceptual hashes.
-        //   3. Flag frames where the difference exceeds `req.threshold`.
-        //   4. Convert frame indices to Timecode messages.
-        let response = DetectScenesResponse {
-            scenes: vec![SceneChange {
-                timecode: Some(Timecode {
-                    hours: 0,
-                    minutes: 0,
-                    seconds: 0,
-                    frames: 0,
-                    frame_rate: 24.0,
-                }),
-                confidence: 0.0,
-            }],
+        let threshold = if req.threshold == 0.0 {
+            0.3 // sensible default when the client sends the zero-value
+        } else {
+            req.threshold
         };
 
+        let options = SceneDetectionOptions { threshold };
+
+        let file_path = req.file_path.clone();
+        let result =
+            tokio::task::spawn_blocking(move || SceneDetector::detect(&file_path, &options))
+                .await
+                .map_err(|e| Status::internal(format!("scene detection task panicked: {e}")))?
+                .map_err(|e| {
+                    Status::internal(format!(
+                        "scene detection failed (requires ffmpeg on PATH): {e}"
+                    ))
+                })?;
+
+        // Convert internal SceneChangePoint to proto SceneChange.
+        let scenes = result
+            .scenes
+            .iter()
+            .map(|sc| {
+                let total_secs = sc.timestamp_seconds;
+                let hours = (total_secs / 3600.0) as u32;
+                let minutes = ((total_secs % 3600.0) / 60.0) as u32;
+                let seconds = (total_secs % 60.0) as u32;
+                let frac = total_secs - total_secs.floor();
+                // Assume 24 fps for frame calculation.
+                let frames = (frac * 24.0) as u32;
+
+                SceneChange {
+                    timecode: Some(Timecode {
+                        hours,
+                        minutes,
+                        seconds,
+                        frames,
+                        frame_rate: 24.0,
+                    }),
+                    confidence: sc.confidence,
+                }
+            })
+            .collect();
+
+        let response = DetectScenesResponse { scenes };
         Ok(Response::new(response))
     }
 }
