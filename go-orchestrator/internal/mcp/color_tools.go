@@ -13,9 +13,9 @@ import (
 func registerColorTools(s *server.MCPServer, orch Orchestrator, logger *zap.Logger) {
 	// 1. premiere_lumetri_get_all — Get all Lumetri Color values
 	s.AddTool(gomcp.NewTool("premiere_lumetri_get_all",
-		gomcp.WithDescription("Get all Lumetri Color parameter values for a clip. Returns exposure, contrast, highlights, shadows, whites, blacks, temperature, tint, saturation, vibrance, and more."),
-		gomcp.WithNumber("track_index", gomcp.Required(), gomcp.Description("Zero-based video track index")),
-		gomcp.WithNumber("clip_index", gomcp.Required(), gomcp.Description("Zero-based clip index on the track")),
+		gomcp.WithDescription("Get all Lumetri Color parameter values for a clip in a single call. Returns every adjustable parameter across all Lumetri sections: Basic Correction (exposure, contrast, highlights, shadows, whites, blacks, temperature, tint, saturation, vibrance), Creative (faded film, sharpen, LUT), Color Wheels, Curves, and Vignette settings. Returns null/default values if Lumetri is not yet applied. Use this for a complete color snapshot before or after grading."),
+		gomcp.WithNumber("track_index", gomcp.Required(), gomcp.Description("Zero-based video track index (0 = bottom track). Use premiere_get_video_tracks to list tracks.")),
+		gomcp.WithNumber("clip_index", gomcp.Required(), gomcp.Description("Zero-based clip index on the video track. Use premiere_get_clips_on_track to find indices.")),
 	), colorH(orch, logger, "lumetri_get_all", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
 		result, err := orch.LumetriGetAll(ctx, gomcp.ParseInt(req, "track_index", 0), gomcp.ParseInt(req, "clip_index", 0))
 		if err != nil {
@@ -110,10 +110,10 @@ func registerColorTools(s *server.MCPServer, orch Orchestrator, logger *zap.Logg
 
 	// 8. premiere_lumetri_set_temperature — Set white balance temperature
 	s.AddTool(gomcp.NewTool("premiere_lumetri_set_temperature",
-		gomcp.WithDescription("Set Lumetri Color white balance temperature. Auto-applies the Lumetri effect if not present."),
-		gomcp.WithNumber("track_index", gomcp.Required(), gomcp.Description("Zero-based video track index")),
-		gomcp.WithNumber("clip_index", gomcp.Required(), gomcp.Description("Zero-based clip index on the track")),
-		gomcp.WithNumber("value", gomcp.Required(), gomcp.Description("Temperature value")),
+		gomcp.WithDescription("Set Lumetri Color white balance temperature. Auto-applies the Lumetri effect if not present. Shifts the image along the blue-orange axis. Use to correct color casts from lighting (e.g., fluorescent = too green/blue, tungsten = too orange). Negative = cooler/bluer, positive = warmer/more orange."),
+		gomcp.WithNumber("track_index", gomcp.Required(), gomcp.Description("Zero-based video track index (0 = bottom track).")),
+		gomcp.WithNumber("clip_index", gomcp.Required(), gomcp.Description("Zero-based clip index on the video track.")),
+		gomcp.WithNumber("value", gomcp.Required(), gomcp.Description("Temperature value. 0 = no shift (neutral), negative = cooler/bluer, positive = warmer/more orange. Typical correction range: -30 to +30.")),
 	), colorH(orch, logger, "lumetri_set_temperature", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
 		result, err := orch.LumetriSetTemperature2(ctx, gomcp.ParseInt(req, "track_index", 0), gomcp.ParseInt(req, "clip_index", 0), gomcp.ParseFloat64(req, "value", 0))
 		if err != nil {
@@ -124,10 +124,10 @@ func registerColorTools(s *server.MCPServer, orch Orchestrator, logger *zap.Logg
 
 	// 9. premiere_lumetri_set_tint — Set white balance tint
 	s.AddTool(gomcp.NewTool("premiere_lumetri_set_tint",
-		gomcp.WithDescription("Set Lumetri Color white balance tint. Auto-applies the Lumetri effect if not present."),
-		gomcp.WithNumber("track_index", gomcp.Required(), gomcp.Description("Zero-based video track index")),
-		gomcp.WithNumber("clip_index", gomcp.Required(), gomcp.Description("Zero-based clip index on the track")),
-		gomcp.WithNumber("value", gomcp.Required(), gomcp.Description("Tint value")),
+		gomcp.WithDescription("Set Lumetri Color white balance tint. Auto-applies the Lumetri effect if not present. Shifts the image along the green-magenta axis. Use with temperature for complete white balance correction. Negative = greener, positive = more magenta."),
+		gomcp.WithNumber("track_index", gomcp.Required(), gomcp.Description("Zero-based video track index (0 = bottom track).")),
+		gomcp.WithNumber("clip_index", gomcp.Required(), gomcp.Description("Zero-based clip index on the video track.")),
+		gomcp.WithNumber("value", gomcp.Required(), gomcp.Description("Tint value. 0 = no shift (neutral), negative = greener, positive = more magenta. Typical correction range: -30 to +30.")),
 	), colorH(orch, logger, "lumetri_set_tint", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
 		result, err := orch.LumetriSetTint2(ctx, gomcp.ParseInt(req, "track_index", 0), gomcp.ParseInt(req, "clip_index", 0), gomcp.ParseFloat64(req, "value", 0))
 		if err != nil {
@@ -314,10 +314,10 @@ func registerColorTools(s *server.MCPServer, orch Orchestrator, logger *zap.Logg
 
 	// 22. premiere_lumetri_apply_lut — Apply a LUT file (.cube, .3dl)
 	s.AddTool(gomcp.NewTool("premiere_lumetri_apply_lut",
-		gomcp.WithDescription("Apply a LUT (Look Up Table) file to the Lumetri Color effect on a clip. Supports .cube and .3dl formats."),
-		gomcp.WithNumber("track_index", gomcp.Required(), gomcp.Description("Zero-based video track index")),
-		gomcp.WithNumber("clip_index", gomcp.Required(), gomcp.Description("Zero-based clip index on the track")),
-		gomcp.WithString("lut_path", gomcp.Required(), gomcp.Description("Absolute path to the LUT file (.cube or .3dl)")),
+		gomcp.WithDescription("Apply a LUT (Look Up Table) file to a clip via Lumetri Color. LUTs are pre-built color transformations used for creative looks (e.g. film emulation) or technical conversions (e.g. LOG to Rec.709). The LUT is applied in Lumetri's Creative section. Auto-applies the Lumetri effect if not present. To remove an applied LUT, use premiere_lumetri_remove_lut."),
+		gomcp.WithNumber("track_index", gomcp.Required(), gomcp.Description("Zero-based video track index (0 = bottom track).")),
+		gomcp.WithNumber("clip_index", gomcp.Required(), gomcp.Description("Zero-based clip index on the video track.")),
+		gomcp.WithString("lut_path", gomcp.Required(), gomcp.Description("Absolute path to the LUT file on disk. Supported formats: .cube (most common), .3dl (legacy). Example: '/Users/me/LUTs/FilmLook.cube'.")),
 	), colorH(orch, logger, "lumetri_apply_lut", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
 		lutPath := gomcp.ParseString(req, "lut_path", "")
 		if lutPath == "" {
