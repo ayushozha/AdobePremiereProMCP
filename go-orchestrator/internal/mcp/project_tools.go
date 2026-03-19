@@ -92,14 +92,14 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_import_files",
-			gomcp.WithDescription("Import multiple media files into the Premiere Pro project. Optionally specify a target bin."),
+			gomcp.WithDescription("Import multiple media files into the Premiere Pro project in a single operation. Faster than calling premiere_import_media repeatedly. The files appear in the Project panel and can then be placed on timelines. Optionally import into a specific bin (created automatically if it does not exist)."),
 			gomcp.WithArray("file_paths",
 				gomcp.Required(),
-				gomcp.Description("Array of absolute file paths to import"),
+				gomcp.Description("Array of absolute file paths to import (e.g. ['/Users/me/footage/clip01.mp4', '/Users/me/audio/narration.wav']). All paths must be absolute and the files must exist."),
 				gomcp.WithStringItems(),
 			),
 			gomcp.WithString("target_bin",
-				gomcp.Description("Slash-separated bin path to import into (e.g. 'Footage/Raw'). Created if it does not exist."),
+				gomcp.Description("Slash-separated bin path to import into (e.g. 'Footage/Raw' or 'Audio/SFX'). The bin hierarchy is created automatically if it does not exist. If omitted, files are imported into the project root."),
 			),
 		),
 		makeImportFilesHandler(orch, logger),
@@ -110,13 +110,13 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_import_folder",
-			gomcp.WithDescription("Import all media files from a folder recursively into the project."),
+			gomcp.WithDescription("Import all supported media files from a folder (and its subfolders) into the project. Premiere auto-detects supported formats. Useful for bulk-importing an entire shoot or asset directory. For selective imports, use premiere_import_files instead."),
 			gomcp.WithString("folder_path",
 				gomcp.Required(),
-				gomcp.Description("Absolute path to the folder to import"),
+				gomcp.Description("Absolute path to the folder to import recursively (e.g. '/Users/me/footage/Day1'). All supported media files in the folder and subfolders will be imported."),
 			),
 			gomcp.WithString("target_bin",
-				gomcp.Description("Slash-separated bin path to import into (e.g. 'Footage/Raw'). Created if it does not exist."),
+				gomcp.Description("Slash-separated bin path to import into (e.g. 'Footage/Day1'). The bin hierarchy is created automatically if it does not exist. If omitted, files are imported into the project root."),
 			),
 		),
 		makeImportFolderHandler(orch, logger),
@@ -127,13 +127,13 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_create_bin",
-			gomcp.WithDescription("Create a new bin (folder) in the Premiere Pro project panel."),
+			gomcp.WithDescription("Create a new bin (folder) in the Premiere Pro project panel for organizing media. Bins can be nested. If the parent bin does not exist, the operation fails -- create parent bins first or use premiere_import_files with a target_bin (which auto-creates hierarchy)."),
 			gomcp.WithString("name",
 				gomcp.Required(),
-				gomcp.Description("Name for the new bin"),
+				gomcp.Description("Name for the new bin (e.g. 'B-Roll', 'Interview Footage', 'Music'). Must be unique within the parent bin."),
 			),
 			gomcp.WithString("parent_bin",
-				gomcp.Description("Slash-separated path to the parent bin (default: project root)"),
+				gomcp.Description("Slash-separated path to the parent bin (e.g. 'Footage/Day1'). If omitted, the bin is created at the project root."),
 			),
 		),
 		makeCreateBinHandler(orch, logger),
@@ -144,14 +144,14 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_rename_bin",
-			gomcp.WithDescription("Rename a bin in the project panel."),
+			gomcp.WithDescription("Rename an existing bin in the project panel. The bin keeps its contents and location, only the display name changes."),
 			gomcp.WithString("bin_path",
 				gomcp.Required(),
-				gomcp.Description("Slash-separated path to the bin to rename (e.g. 'Footage/Raw')"),
+				gomcp.Description("Slash-separated path to the bin to rename (e.g. 'Footage/Raw'). Use premiere_get_project_items to find bin paths."),
 			),
 			gomcp.WithString("new_name",
 				gomcp.Required(),
-				gomcp.Description("New name for the bin"),
+				gomcp.Description("New display name for the bin (e.g. 'Selects'). Must be unique within the parent bin."),
 			),
 		),
 		makeRenameBinHandler(orch, logger),
@@ -162,10 +162,10 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_delete_bin",
-			gomcp.WithDescription("Delete a bin and all its contents from the project."),
+			gomcp.WithDescription("Delete a bin and all its contents (clips, nested bins) from the project panel. WARNING: This is destructive and cannot be undone via the MCP. Clips in the deleted bin that are used on timelines will go offline."),
 			gomcp.WithString("bin_path",
 				gomcp.Required(),
-				gomcp.Description("Slash-separated path to the bin to delete"),
+				gomcp.Description("Slash-separated path to the bin to delete (e.g. 'Footage/Unused'). Use premiere_get_project_items to find bin paths."),
 			),
 		),
 		makeDeleteBinHandler(orch, logger),
@@ -176,13 +176,13 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_move_bin_item",
-			gomcp.WithDescription("Move a project item (clip or bin) to a different bin."),
+			gomcp.WithDescription("Move a project item (clip, nested sequence, or bin) from one bin to another. The item retains all its properties and timeline references. Useful for reorganizing the project panel."),
 			gomcp.WithString("item_path",
 				gomcp.Required(),
-				gomcp.Description("Slash-separated path to the item to move"),
+				gomcp.Description("Slash-separated path to the item to move (e.g. 'Footage/Raw/clip01.mp4'). Use premiere_get_project_items to find item paths."),
 			),
 			gomcp.WithString("dest_bin",
-				gomcp.Description("Slash-separated path to the destination bin (default: project root)"),
+				gomcp.Description("Slash-separated path to the destination bin (e.g. 'Footage/Selects'). If omitted, moves to the project root."),
 			),
 		),
 		makeMoveBinItemHandler(orch, logger),
@@ -193,10 +193,10 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_find_project_items",
-			gomcp.WithDescription("Search for project items by name. Searches recursively through all bins."),
+			gomcp.WithDescription("Search for project items by name across all bins in the project (recursive). Returns matching items with their bin paths, types, and metadata. Useful for finding specific clips or media before placing them on the timeline."),
 			gomcp.WithString("query",
 				gomcp.Required(),
-				gomcp.Description("Search query (case-insensitive substring match)"),
+				gomcp.Description("Search query string (case-insensitive substring match). Examples: 'interview', '.mp4', 'B-roll'. Matches against item names."),
 			),
 		),
 		makeFindProjectItemsHandler(orch, logger),
@@ -207,9 +207,9 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_get_project_items",
-			gomcp.WithDescription("List all items in a specific bin of the project panel."),
+			gomcp.WithDescription("List all items (clips, sequences, bins) in a specific bin of the project panel. Returns item names, types, indices, and metadata. Use this to browse the project structure and find items for editing operations."),
 			gomcp.WithString("bin_path",
-				gomcp.Description("Slash-separated path to the bin (default: project root)"),
+				gomcp.Description("Slash-separated path to the bin to list (e.g. 'Footage/Interviews'). If omitted, lists items at the project root."),
 			),
 		),
 		makeGetProjectItemsHandler(orch, logger),
@@ -220,14 +220,14 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_set_item_label",
-			gomcp.WithDescription("Set the label color on a project item. Colors are indexed 0-15."),
+			gomcp.WithDescription("Set the label color on a project item for visual organization. Colors appear as colored bars in the Project panel and on timeline clips. Common colors: 0=Violet, 1=Iris, 2=Caribbean, 3=Lavender, 4=Cerulean, 5=Forest, 6=Rose, 7=Mango, 8=Purple, 9=Blue, 10=Teal, 11=Magenta, 12=Tan, 13=Green, 14=Brown, 15=Yellow."),
 			gomcp.WithString("item_path",
 				gomcp.Required(),
-				gomcp.Description("Slash-separated path to the project item"),
+				gomcp.Description("Slash-separated path to the project item (e.g. 'Footage/clip01.mp4'). Use premiere_get_project_items to find item paths."),
 			),
 			gomcp.WithNumber("color_index",
 				gomcp.Required(),
-				gomcp.Description("Label color index (0-15)"),
+				gomcp.Description("Label color index (0-15). Each index corresponds to a color in Premiere Pro's label color preferences."),
 			),
 		),
 		makeSetItemLabelHandler(orch, logger),
@@ -238,10 +238,10 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_get_item_metadata",
-			gomcp.WithDescription("Get XMP metadata and properties for a project item."),
+			gomcp.WithDescription("Retrieve XMP metadata and properties for a project item, including format details, duration, frame rate, codec, and custom metadata fields. Useful for inspecting media properties before editing."),
 			gomcp.WithString("item_path",
 				gomcp.Required(),
-				gomcp.Description("Slash-separated path to the project item"),
+				gomcp.Description("Slash-separated path to the project item (e.g. 'Footage/clip01.mp4'). Use premiere_get_project_items to find item paths."),
 			),
 		),
 		makeGetItemMetadataHandler(orch, logger),
@@ -252,18 +252,18 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_set_item_metadata",
-			gomcp.WithDescription("Set XMP metadata on a project item. Use namespace:property format for the key (e.g. 'dc:description')."),
+			gomcp.WithDescription("Set an XMP metadata field on a project item. Uses the standard namespace:property format for keys. Useful for adding descriptions, ratings, scene/shot numbers, or custom tags."),
 			gomcp.WithString("item_path",
 				gomcp.Required(),
-				gomcp.Description("Slash-separated path to the project item"),
+				gomcp.Description("Slash-separated path to the project item (e.g. 'Footage/clip01.mp4'). Use premiere_get_project_items to find item paths."),
 			),
 			gomcp.WithString("key",
 				gomcp.Required(),
-				gomcp.Description("Metadata key (e.g. 'dc:description', 'xmp:Rating')"),
+				gomcp.Description("Metadata key in namespace:property format. Common keys: 'dc:description' (description), 'dc:title' (title), 'xmp:Rating' (1-5 star rating), 'premiere:Scene' (scene number), 'premiere:Shot' (shot name)."),
 			),
 			gomcp.WithString("value",
 				gomcp.Required(),
-				gomcp.Description("Metadata value to set"),
+				gomcp.Description("Metadata value to set as a string. For numeric fields like Rating, pass the number as a string (e.g. '4')."),
 			),
 		),
 		makeSetItemMetadataHandler(orch, logger),
@@ -274,14 +274,14 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_relink_media",
-			gomcp.WithDescription("Relink an offline or missing media file to a new path on disk."),
+			gomcp.WithDescription("Relink an offline or missing media file to a new file path on disk. Use this when media files have been moved, renamed, or when restoring a project on a different machine. The project item keeps its timeline references. Use premiere_get_offline_items first to find items that need relinking."),
 			gomcp.WithString("item_path",
 				gomcp.Required(),
-				gomcp.Description("Slash-separated path to the project item to relink"),
+				gomcp.Description("Slash-separated path to the project item to relink (e.g. 'Footage/clip01.mp4'). Use premiere_get_offline_items to find offline items."),
 			),
 			gomcp.WithString("new_media_path",
 				gomcp.Required(),
-				gomcp.Description("Absolute path to the new media file on disk"),
+				gomcp.Description("Absolute path to the new media file on disk (e.g. '/Volumes/External/footage/clip01.mp4'). The file must exist and be a compatible format."),
 			),
 		),
 		makeRelinkMediaHandler(orch, logger),
@@ -292,10 +292,10 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_make_offline",
-			gomcp.WithDescription("Make a project item offline, disconnecting it from its media file."),
+			gomcp.WithDescription("Make a project item offline, disconnecting it from its media file on disk. The item remains in the project panel and on timelines but shows as offline (red 'Media Offline' screen). Use premiere_relink_media to reconnect it later."),
 			gomcp.WithString("item_path",
 				gomcp.Required(),
-				gomcp.Description("Slash-separated path to the project item"),
+				gomcp.Description("Slash-separated path to the project item to take offline (e.g. 'Footage/clip01.mp4'). Use premiere_get_project_items to find item paths."),
 			),
 		),
 		makeMakeOfflineHandler(orch, logger),
@@ -306,7 +306,7 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_get_offline_items",
-			gomcp.WithDescription("List all offline (missing/disconnected) items in the project."),
+			gomcp.WithDescription("List all offline (missing or disconnected) items in the project. Returns item paths, names, and expected media locations. Use this to identify items that need relinking with premiere_relink_media."),
 		),
 		makeGetOfflineItemsHandler(orch, logger),
 	)
@@ -316,15 +316,15 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_set_scratch_disk",
-			gomcp.WithDescription("Set a scratch disk path for the project (video capture, audio capture, previews, etc.)."),
+			gomcp.WithDescription("Set a scratch disk path for a specific type of temporary/cache data. Scratch disks control where Premiere stores captured media, preview renders, and auto-save files. Setting this to a fast SSD can improve performance."),
 			gomcp.WithString("type",
 				gomcp.Required(),
-				gomcp.Description("Scratch disk type"),
+				gomcp.Description("Scratch disk type to configure. 'capturedVideo'/'capturedAudio' = tape capture destination, 'videoPreview'/'audioPreview' = rendered preview files, 'autoSave' = auto-save backup location, 'cclibrary' = Creative Cloud Libraries cache."),
 				gomcp.Enum("capturedVideo", "capturedAudio", "videoPreview", "audioPreview", "autoSave", "cclibrary"),
 			),
 			gomcp.WithString("path",
 				gomcp.Required(),
-				gomcp.Description("Absolute path to the scratch disk directory"),
+				gomcp.Description("Absolute path to the scratch disk directory (e.g. '/Volumes/FastSSD/Premiere_Cache'). The directory must exist and be writable."),
 			),
 		),
 		makeSetScratchDiskHandler(orch, logger),
@@ -335,7 +335,7 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_consolidate_duplicates",
-			gomcp.WithDescription("Find and remove duplicate project items that reference the same media file."),
+			gomcp.WithDescription("Find and remove duplicate project items that reference the same underlying media file. Keeps the first instance and removes subsequent duplicates. Useful for cleaning up projects after multiple imports of the same footage. Returns a count of removed duplicates."),
 		),
 		makeConsolidateDuplicatesHandler(orch, logger),
 	)
@@ -345,7 +345,7 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_get_project_settings",
-			gomcp.WithDescription("Get project-level settings including renderer, item counts, and active sequence information."),
+			gomcp.WithDescription("Get project-level settings including the video rendering engine (Mercury GPU/Software), total item and sequence counts, scratch disk paths, and active sequence information. Useful for diagnosing performance issues or verifying project configuration."),
 		),
 		makeGetProjectSettingsHandler(orch, logger),
 	)

@@ -18,14 +18,14 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_create_sequence_from_clips
 	s.AddTool(
 		gomcp.NewTool("premiere_create_sequence_from_clips",
-			gomcp.WithDescription("Create a new sequence from project items, auto-detecting settings from the first clip."),
+			gomcp.WithDescription("Create a new sequence by dragging project items onto a new timeline, automatically matching sequence settings (resolution, frame rate, codec) to the first clip. This is the recommended way to create a sequence when you have footage -- it avoids mismatched settings. The new sequence becomes the active sequence."),
 			gomcp.WithString("name",
 				gomcp.Required(),
-				gomcp.Description("Name for the new sequence"),
+				gomcp.Description("Display name for the new sequence (e.g. 'Interview Edit', 'Rough Cut')."),
 			),
 			gomcp.WithArray("clip_indices",
 				gomcp.Required(),
-				gomcp.Description("Array of zero-based project item indices to include"),
+				gomcp.Description("Array of zero-based project item indices to include, in the order they should appear on the timeline. Use premiere_get_project_items to find indices. Example: [0, 2, 5] places items 0, 2, and 5 sequentially."),
 				gomcp.WithNumberItems(),
 			),
 		),
@@ -35,10 +35,10 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_duplicate_sequence
 	s.AddTool(
 		gomcp.NewTool("premiere_duplicate_sequence",
-			gomcp.WithDescription("Duplicate an existing sequence in the project."),
+			gomcp.WithDescription("Create an exact copy of an existing sequence, including all clips, effects, transitions, and settings. The duplicate appears in the project panel with ' Copy' appended to the name. Useful for creating alternate versions of an edit without modifying the original."),
 			gomcp.WithNumber("sequence_index",
 				gomcp.Required(),
-				gomcp.Description("Zero-based index of the sequence to duplicate"),
+				gomcp.Description("Zero-based index of the sequence to duplicate. Use premiere_get_sequence_list to find sequence indices."),
 			),
 		),
 		makeDuplicateSequenceHandler(orch, logger),
@@ -47,10 +47,10 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_delete_sequence
 	s.AddTool(
 		gomcp.NewTool("premiere_delete_sequence",
-			gomcp.WithDescription("Delete a sequence from the project."),
+			gomcp.WithDescription("Permanently delete a sequence from the project. WARNING: This is destructive and cannot be undone via the MCP. The sequence and all its timeline edits are removed. Consider using premiere_duplicate_sequence to create a backup first."),
 			gomcp.WithNumber("sequence_index",
 				gomcp.Required(),
-				gomcp.Description("Zero-based index of the sequence to delete"),
+				gomcp.Description("Zero-based index of the sequence to delete. Use premiere_get_sequence_list to find sequence indices. Cannot delete the last remaining sequence."),
 			),
 		),
 		makeDeleteSequenceHandler(orch, logger),
@@ -59,14 +59,14 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_rename_sequence
 	s.AddTool(
 		gomcp.NewTool("premiere_rename_sequence",
-			gomcp.WithDescription("Rename an existing sequence."),
+			gomcp.WithDescription("Change the display name of an existing sequence. The sequence keeps all its contents, settings, and timeline position."),
 			gomcp.WithNumber("sequence_index",
 				gomcp.Required(),
-				gomcp.Description("Zero-based index of the sequence to rename"),
+				gomcp.Description("Zero-based index of the sequence to rename. Use premiere_get_sequence_list to find sequence indices."),
 			),
 			gomcp.WithString("new_name",
 				gomcp.Required(),
-				gomcp.Description("New name for the sequence"),
+				gomcp.Description("New display name for the sequence (e.g. 'Final Cut v3', 'Social Media 9x16')."),
 			),
 		),
 		makeRenameSequenceHandler(orch, logger),
@@ -79,10 +79,10 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_get_sequence_settings
 	s.AddTool(
 		gomcp.NewTool("premiere_get_sequence_settings",
-			gomcp.WithDescription("Get the full settings of a sequence including resolution, frame rate, pixel aspect ratio, fields, and audio sample rate."),
+			gomcp.WithDescription("Retrieve the full technical settings of a sequence, including resolution (width/height), frame rate, pixel aspect ratio, field order, audio sample rate, and render quality flags. Use this to verify settings before export or when troubleshooting playback issues."),
 			gomcp.WithNumber("sequence_index",
 				gomcp.Required(),
-				gomcp.Description("Zero-based index of the sequence"),
+				gomcp.Description("Zero-based index of the sequence to inspect. Use premiere_get_sequence_list to find sequence indices."),
 			),
 		),
 		makeGetSequenceSettingsHandler(orch, logger),
@@ -91,31 +91,31 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_set_sequence_settings
 	s.AddTool(
 		gomcp.NewTool("premiere_set_sequence_settings",
-			gomcp.WithDescription("Update sequence settings such as resolution, audio sample rate, and render quality."),
+			gomcp.WithDescription("Update one or more technical settings on a sequence. Only provide the parameters you want to change -- omitted parameters remain unchanged. WARNING: Changing resolution mid-edit may cause mismatched clip framing. Use premiere_get_sequence_settings first to see current values."),
 			gomcp.WithNumber("sequence_index",
 				gomcp.Required(),
-				gomcp.Description("Zero-based index of the sequence to update"),
+				gomcp.Description("Zero-based index of the sequence to update. Use premiere_get_sequence_list to find sequence indices."),
 			),
 			gomcp.WithNumber("width",
-				gomcp.Description("New frame width in pixels"),
+				gomcp.Description("New frame width in pixels. Common values: 1920 (1080p), 3840 (4K UHD), 1080 (vertical 9:16). Must be a positive even number."),
 			),
 			gomcp.WithNumber("height",
-				gomcp.Description("New frame height in pixels"),
+				gomcp.Description("New frame height in pixels. Common values: 1080 (1080p/vertical), 2160 (4K UHD), 1920 (vertical 9:16). Must be a positive even number."),
 			),
 			gomcp.WithNumber("audio_sample_rate",
-				gomcp.Description("Audio sample rate in Hz (e.g. 48000)"),
+				gomcp.Description("Audio sample rate in Hz. Standard values: 44100 (CD quality), 48000 (video standard, most common), 96000 (high-resolution audio)."),
 			),
 			gomcp.WithNumber("video_field_type",
-				gomcp.Description("Video field type (0=progressive, 1=upper first, 2=lower first)"),
+				gomcp.Description("Video field order: 0 = progressive (modern default, no interlacing), 1 = upper field first, 2 = lower field first. Use 0 unless working with interlaced broadcast footage."),
 			),
 			gomcp.WithBoolean("composite_linear_color",
-				gomcp.Description("Enable linear color compositing"),
+				gomcp.Description("Enable linear color compositing for more accurate color blending between layers. Recommended for VFX work. May slightly increase render time."),
 			),
 			gomcp.WithBoolean("maximum_bit_depth",
-				gomcp.Description("Enable maximum bit depth rendering"),
+				gomcp.Description("Enable maximum bit depth (32-bit float) for effects processing. Reduces banding in gradients and color grading. Recommended for high-end color work."),
 			),
 			gomcp.WithBoolean("maximum_render_quality",
-				gomcp.Description("Enable maximum render quality"),
+				gomcp.Description("Enable maximum render quality for scaling operations. Produces sharper results when resizing clips but significantly increases render time. Recommended only for final output."),
 			),
 		),
 		makeSetSequenceSettingsHandler(orch, logger),
@@ -128,7 +128,7 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_get_active_sequence
 	s.AddTool(
 		gomcp.NewTool("premiere_get_active_sequence",
-			gomcp.WithDescription("Get details of the currently active sequence including resolution, track counts, and in/out points."),
+			gomcp.WithDescription("Get detailed information about the currently active (open in Timeline panel) sequence, including name, resolution, frame rate, video/audio track counts, in/out points, and duration. Most editing tools operate on the active sequence by default, so call this to understand what you are editing."),
 		),
 		makeGetActiveSequenceHandler(orch, logger),
 	)
@@ -136,10 +136,10 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_set_active_sequence
 	s.AddTool(
 		gomcp.NewTool("premiere_set_active_sequence",
-			gomcp.WithDescription("Make a specific sequence the active one in the Premiere Pro timeline."),
+			gomcp.WithDescription("Switch the active sequence in the Premiere Pro Timeline panel. All subsequent editing operations (clip placement, effects, markers) will apply to this sequence. The sequence opens in the Timeline panel."),
 			gomcp.WithNumber("sequence_index",
 				gomcp.Required(),
-				gomcp.Description("Zero-based index of the sequence to activate"),
+				gomcp.Description("Zero-based index of the sequence to activate. Use premiere_get_sequence_list to see all available sequences and their indices."),
 			),
 		),
 		makeSetActiveSequenceHandler(orch, logger),
@@ -148,7 +148,7 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_get_sequence_list
 	s.AddTool(
 		gomcp.NewTool("premiere_get_sequence_list",
-			gomcp.WithDescription("List all sequences in the project with basic info (name, resolution, track counts, active status)."),
+			gomcp.WithDescription("List all sequences in the project with summary information for each: name, index, resolution, frame rate, video/audio track counts, and whether it is the currently active sequence. Use this to find sequence indices for other sequence operations."),
 		),
 		makeGetSequenceListHandler(orch, logger),
 	)
@@ -160,7 +160,7 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_get_playhead_position
 	s.AddTool(
 		gomcp.NewTool("premiere_get_playhead_position",
-			gomcp.WithDescription("Get the current playhead position as timecode and seconds."),
+			gomcp.WithDescription("Get the current playhead (CTI - Current Time Indicator) position on the active sequence, returned as both timecode (HH:MM:SS:FF) and seconds. Useful for determining where to insert clips or markers relative to the current viewing position."),
 		),
 		makeGetPlayheadPositionHandler(orch, logger),
 	)
@@ -168,10 +168,10 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_set_playhead_position
 	s.AddTool(
 		gomcp.NewTool("premiere_set_playhead_position",
-			gomcp.WithDescription("Move the playhead to a specific position in seconds."),
+			gomcp.WithDescription("Move the playhead (CTI) to a specific position on the active sequence. This updates the Program Monitor to show the frame at the specified time. Also useful as a prerequisite for premiere_export_frame (which captures at the playhead position)."),
 			gomcp.WithNumber("seconds",
 				gomcp.Required(),
-				gomcp.Description("Position in seconds to move the playhead to"),
+				gomcp.Description("Position in seconds to move the playhead to. Must be >= 0. For example, 30.5 moves to the 30.5-second mark. Use premiere_get_active_sequence to check the sequence duration."),
 			),
 		),
 		makeSetPlayheadPositionHandler(orch, logger),
@@ -184,10 +184,10 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_set_in_point
 	s.AddTool(
 		gomcp.NewTool("premiere_set_in_point",
-			gomcp.WithDescription("Set the sequence in point at a specific time in seconds."),
+			gomcp.WithDescription("Set the sequence in point (mark in) at a specific time. The in point defines the start of the region for export, rendering, or clip insertion. Must be less than the current out point."),
 			gomcp.WithNumber("seconds",
 				gomcp.Required(),
-				gomcp.Description("Position in seconds for the in point"),
+				gomcp.Description("Position in seconds for the in point. Must be >= 0 and less than the out point. For example, 5.0 marks 5 seconds into the sequence."),
 			),
 		),
 		makeSetInPointHandler(orch, logger),
@@ -196,10 +196,10 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_set_out_point
 	s.AddTool(
 		gomcp.NewTool("premiere_set_out_point",
-			gomcp.WithDescription("Set the sequence out point at a specific time in seconds."),
+			gomcp.WithDescription("Set the sequence out point (mark out) at a specific time. The out point defines the end of the region for export, rendering, or clip insertion. Must be greater than the current in point."),
 			gomcp.WithNumber("seconds",
 				gomcp.Required(),
-				gomcp.Description("Position in seconds for the out point"),
+				gomcp.Description("Position in seconds for the out point. Must be >= 0 and greater than the in point. For example, 60.0 marks 1 minute into the sequence."),
 			),
 		),
 		makeSetOutPointHandler(orch, logger),
@@ -208,7 +208,7 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_get_in_out_points
 	s.AddTool(
 		gomcp.NewTool("premiere_get_in_out_points",
-			gomcp.WithDescription("Get the current in and out points of the active sequence."),
+			gomcp.WithDescription("Get the current in and out points of the active sequence, returned as both timecode and seconds. Also indicates whether they have been explicitly set or are at the sequence boundaries (cleared state)."),
 		),
 		makeGetInOutPointsHandler(orch, logger),
 	)
@@ -216,7 +216,7 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_clear_in_out_points
 	s.AddTool(
 		gomcp.NewTool("premiere_clear_in_out_points",
-			gomcp.WithDescription("Clear the in and out points, resetting them to the sequence boundaries."),
+			gomcp.WithDescription("Clear (reset) both the in and out points on the active sequence, restoring them to the full sequence boundaries. Equivalent to pressing Alt+X / Option+X in Premiere Pro."),
 		),
 		makeClearInOutPointsHandler(orch, logger),
 	)
@@ -228,14 +228,14 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_set_work_area
 	s.AddTool(
 		gomcp.NewTool("premiere_set_work_area",
-			gomcp.WithDescription("Set the work area (in/out region) for rendering and export."),
+			gomcp.WithDescription("Set the work area bar (gray bar above the timeline ruler) for rendering and export scope. The work area defines which portion of the sequence is rendered when using 'Render Work Area' or exported with work_area_type=2. The out must be greater than in."),
 			gomcp.WithNumber("in_seconds",
 				gomcp.Required(),
-				gomcp.Description("Start of the work area in seconds"),
+				gomcp.Description("Start of the work area in seconds. Must be >= 0 and less than out_seconds."),
 			),
 			gomcp.WithNumber("out_seconds",
 				gomcp.Required(),
-				gomcp.Description("End of the work area in seconds"),
+				gomcp.Description("End of the work area in seconds. Must be greater than in_seconds."),
 			),
 		),
 		makeSetWorkAreaHandler(orch, logger),
@@ -244,14 +244,14 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_render_preview
 	s.AddTool(
 		gomcp.NewTool("premiere_render_preview",
-			gomcp.WithDescription("Render preview files for a specific time range on the active sequence."),
+			gomcp.WithDescription("Render preview files for a specific time range on the active sequence. Preview files enable real-time playback of effects-heavy sections. The render bar above the timeline turns green for rendered sections. For clearing rendered previews, use premiere_delete_preview_files."),
 			gomcp.WithNumber("in_seconds",
 				gomcp.Required(),
-				gomcp.Description("Start of the render range in seconds"),
+				gomcp.Description("Start of the render range in seconds. Must be >= 0."),
 			),
 			gomcp.WithNumber("out_seconds",
 				gomcp.Required(),
-				gomcp.Description("End of the render range in seconds"),
+				gomcp.Description("End of the render range in seconds. Must be greater than in_seconds."),
 			),
 		),
 		makeRenderPreviewHandler(orch, logger),
@@ -260,7 +260,7 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_delete_preview_files
 	s.AddTool(
 		gomcp.NewTool("premiere_delete_preview_files",
-			gomcp.WithDescription("Delete all preview/render files for the active sequence to free disk space."),
+			gomcp.WithDescription("Delete all rendered preview files for the active sequence to free disk space. After deletion, the render bar reverts to yellow/red (unrendered) and effects-heavy sections may not play in real time until re-rendered. Useful when disk space is low."),
 		),
 		makeDeletePreviewFilesHandler(orch, logger),
 	)
