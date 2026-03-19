@@ -30,6 +30,7 @@
     var DEFAULT_PORT = 9801;
     var RECONNECT_DELAY_MS = 3000;
     var HEARTBEAT_INTERVAL_MS = 15000;
+    var VERSION = "1.0.0";
 
     // ---------------------------------------------------------------------------
     // State
@@ -39,37 +40,196 @@
     var activeConnections = new Set();
     var heartbeatTimer = null;
     var serverPort = DEFAULT_PORT;
+    var autoScroll = true;
+
+    // Stats tracking
+    var stats = {
+        commandsExecuted: 0,
+        errorsCount: 0,
+        lastCommand: "",
+        totalResponseTime: 0,
+        responseCount: 0,
+        startTime: Date.now(),
+    };
+
+    // In-flight command timers: requestId -> start timestamp
+    var commandTimers = {};
+
+    // ---------------------------------------------------------------------------
+    // UI element references
+    // ---------------------------------------------------------------------------
+    var logArea = document.getElementById("log-area");
+    var statusDot = document.getElementById("status-dot");
+    var statusLabel = document.getElementById("status-label");
+    var portDisplay = document.getElementById("port-display");
+    var clientCount = document.getElementById("client-count");
+    var uptimeDisplay = document.getElementById("uptime-display");
+    var statCommands = document.getElementById("stat-commands");
+    var statAvgTime = document.getElementById("stat-avg-time");
+    var statLastCmd = document.getElementById("stat-last-cmd");
+    var statErrors = document.getElementById("stat-errors");
+    var statUptimeShort = document.getElementById("stat-uptime-short");
+    var themeSwitch = document.getElementById("theme-switch");
+    var themeIconLabel = document.getElementById("theme-icon-label");
+    var btnAutoscroll = document.getElementById("btn-autoscroll");
+    var btnClearLog = document.getElementById("btn-clear-log");
+    var headerVersion = document.getElementById("header-version");
+    var footerVersion = document.getElementById("footer-version");
+    var githubLink = document.getElementById("github-link");
+
+    // ---------------------------------------------------------------------------
+    // Version display
+    // ---------------------------------------------------------------------------
+    if (headerVersion) headerVersion.textContent = "v" + VERSION;
+    if (footerVersion) footerVersion.textContent = "v" + VERSION;
+
+    // ---------------------------------------------------------------------------
+    // Theme management
+    // ---------------------------------------------------------------------------
+    function setTheme(theme) {
+        document.documentElement.setAttribute("data-theme", theme);
+        if (themeSwitch) themeSwitch.checked = (theme === "light");
+        if (themeIconLabel) {
+            // Moon for dark, sun for light
+            themeIconLabel.innerHTML = theme === "dark" ? "&#9790;" : "&#9788;";
+        }
+        try {
+            localStorage.setItem("mcp-bridge-theme", theme);
+        } catch (e) { /* storage may not be available */ }
+    }
+
+    function loadTheme() {
+        var saved = null;
+        try {
+            saved = localStorage.getItem("mcp-bridge-theme");
+        } catch (e) { /* ignore */ }
+        setTheme(saved || "dark");
+    }
+
+    if (themeSwitch) {
+        themeSwitch.addEventListener("change", function () {
+            setTheme(this.checked ? "light" : "dark");
+        });
+    }
+
+    loadTheme();
+
+    // ---------------------------------------------------------------------------
+    // Auto-scroll toggle
+    // ---------------------------------------------------------------------------
+    if (btnAutoscroll) {
+        btnAutoscroll.addEventListener("click", function () {
+            autoScroll = !autoScroll;
+            this.classList.toggle("active", autoScroll);
+        });
+    }
+
+    // ---------------------------------------------------------------------------
+    // Clear log
+    // ---------------------------------------------------------------------------
+    if (btnClearLog) {
+        btnClearLog.addEventListener("click", function () {
+            while (logArea.firstChild) {
+                logArea.removeChild(logArea.firstChild);
+            }
+            log("Log cleared", "info");
+        });
+    }
+
+    // ---------------------------------------------------------------------------
+    // GitHub link
+    // ---------------------------------------------------------------------------
+    if (githubLink) {
+        githubLink.addEventListener("click", function (e) {
+            e.preventDefault();
+            // Open in default browser via CSInterface if possible
+            if (csInterface && csInterface.openURLInDefaultBrowser) {
+                csInterface.openURLInDefaultBrowser("https://github.com/nicekid1/PremierProMCP");
+            }
+        });
+    }
+
+    // ---------------------------------------------------------------------------
+    // Uptime tracking
+    // ---------------------------------------------------------------------------
+    var uptimeTimer = setInterval(function () {
+        var elapsed = Math.floor((Date.now() - stats.startTime) / 1000);
+        var h = Math.floor(elapsed / 3600);
+        var m = Math.floor((elapsed % 3600) / 60);
+        var s = elapsed % 60;
+
+        var hh = h < 10 ? "0" + h : "" + h;
+        var mm = m < 10 ? "0" + m : "" + m;
+        var ss = s < 10 ? "0" + s : "" + s;
+
+        if (uptimeDisplay) uptimeDisplay.textContent = hh + ":" + mm + ":" + ss;
+
+        // Short uptime for stats card
+        if (statUptimeShort) {
+            if (h > 0) {
+                statUptimeShort.textContent = h + "h" + m + "m";
+            } else if (m > 0) {
+                statUptimeShort.textContent = m + "m";
+            } else {
+                statUptimeShort.textContent = s + "s";
+            }
+        }
+    }, 1000);
 
     // ---------------------------------------------------------------------------
     // UI helpers
     // ---------------------------------------------------------------------------
-    var logArea = document.getElementById("log-area");
-    var statusIndicator = document.getElementById("status-indicator");
-    var statusText = document.getElementById("status-text");
-    var portDisplay = document.getElementById("port-display");
-
     function log(message, level) {
         level = level || "info";
         var timestamp = new Date().toLocaleTimeString();
         var entry = document.createElement("div");
         entry.className = "log-entry " + level;
-        entry.textContent = "[" + timestamp + "] " + message;
+
+        var tsSpan = document.createElement("span");
+        tsSpan.className = "log-ts";
+        tsSpan.textContent = "[" + timestamp + "]";
+        entry.appendChild(tsSpan);
+
+        entry.appendChild(document.createTextNode(" " + message));
         logArea.appendChild(entry);
-        // Keep log area scrolled to bottom
-        logArea.scrollTop = logArea.scrollHeight;
+
+        // Scroll to bottom if auto-scroll is on
+        if (autoScroll) {
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+
         // Limit log entries to prevent memory bloat
         while (logArea.children.length > 500) {
             logArea.removeChild(logArea.firstChild);
         }
     }
 
-    function updateStatus(connected, clientCount) {
+    function updateStatus(connected, count) {
+        count = count || 0;
         if (connected) {
-            statusIndicator.className = "connected";
-            statusText.textContent = "Connected (" + clientCount + " client" + (clientCount !== 1 ? "s" : "") + ")";
+            statusDot.className = "status-dot connected";
+            statusLabel.textContent = "Connected";
         } else {
-            statusIndicator.className = "";
-            statusText.textContent = "Waiting for connection...";
+            statusDot.className = "status-dot";
+            statusLabel.textContent = "Disconnected";
+        }
+        if (clientCount) clientCount.textContent = "" + count;
+    }
+
+    function updateStatsUI() {
+        if (statCommands) statCommands.textContent = "" + stats.commandsExecuted;
+        if (statErrors) statErrors.textContent = "" + stats.errorsCount;
+        if (statLastCmd) {
+            statLastCmd.textContent = stats.lastCommand || "No commands yet";
+            statLastCmd.title = stats.lastCommand || "";
+        }
+        if (statAvgTime) {
+            if (stats.responseCount > 0) {
+                var avg = Math.round(stats.totalResponseTime / stats.responseCount);
+                statAvgTime.textContent = avg + "ms";
+            } else {
+                statAvgTime.textContent = "--";
+            }
         }
     }
 
@@ -95,7 +255,7 @@
             serverPort = parseInt(process.env.MCP_CEP_PORT, 10);
         }
 
-        portDisplay.textContent = "Port: " + serverPort;
+        if (portDisplay) portDisplay.textContent = "" + serverPort;
         return serverPort;
     }
 
@@ -140,10 +300,18 @@
     // Command execution
     // ---------------------------------------------------------------------------
     function executeCommand(action, params, requestId, ws) {
-        log("Exec: " + action + " [" + requestId + "]");
+        log("Exec: " + action + " [" + requestId.substring(0, 8) + "]");
+
+        // Track stats
+        stats.commandsExecuted++;
+        stats.lastCommand = action;
+        commandTimers[requestId] = Date.now();
+        updateStatsUI();
 
         var builder = ACTION_MAP[action];
         if (!builder) {
+            stats.errorsCount++;
+            updateStatsUI();
             sendResponse(ws, requestId, false, null, "Unknown action: " + action);
             return;
         }
@@ -152,14 +320,26 @@
         try {
             script = builder(params || {});
         } catch (buildErr) {
+            stats.errorsCount++;
+            updateStatsUI();
             sendResponse(ws, requestId, false, null, "Failed to build script: " + buildErr.message);
             return;
         }
 
         csInterface.evalScript(script, function (rawResult) {
+            // Measure response time
+            if (commandTimers[requestId]) {
+                var elapsed = Date.now() - commandTimers[requestId];
+                stats.totalResponseTime += elapsed;
+                stats.responseCount++;
+                delete commandTimers[requestId];
+            }
+
             // ExtendScript returns "EvalScript error." on failure
             if (rawResult === "EvalScript error.") {
                 log("ExtendScript error for " + action, "error");
+                stats.errorsCount++;
+                updateStatsUI();
                 sendResponse(ws, requestId, false, null, "ExtendScript evaluation error for action: " + action);
                 return;
             }
@@ -173,7 +353,8 @@
                 result = rawResult;
             }
 
-            log("Done: " + action + " [" + requestId + "]", "success");
+            log("Done: " + action + " [" + requestId.substring(0, 8) + "]", "success");
+            updateStatsUI();
             sendResponse(ws, requestId, true, result, null);
         });
     }
@@ -208,16 +389,24 @@
     function startServer() {
         var port = loadPort();
 
+        // Show connecting state
+        statusDot.className = "status-dot connecting";
+        statusLabel.textContent = "Starting...";
+
         try {
             wss = new WebSocketServer({ port: port });
         } catch (err) {
             log("Failed to start WebSocket server on port " + port + ": " + err.message, "error");
+            statusDot.className = "status-dot";
+            statusLabel.textContent = "Failed";
             // Retry after delay
             setTimeout(startServer, RECONNECT_DELAY_MS);
             return;
         }
 
         log("WebSocket server listening on port " + port, "success");
+        statusDot.className = "status-dot";
+        statusLabel.textContent = "Waiting for clients...";
 
         wss.on("connection", function (ws, req) {
             var clientAddr = req.socket.remoteAddress || "unknown";
@@ -237,6 +426,8 @@
                     message = JSON.parse(data.toString());
                 } catch (parseErr) {
                     log("Invalid JSON received: " + parseErr.message, "error");
+                    stats.errorsCount++;
+                    updateStatsUI();
                     sendResponse(ws, null, false, null, "Invalid JSON message");
                     return;
                 }
@@ -246,6 +437,8 @@
                 var requestId = message.requestId || "no-id";
 
                 if (!action) {
+                    stats.errorsCount++;
+                    updateStatsUI();
                     sendResponse(ws, requestId, false, null, "Missing 'action' field");
                     return;
                 }
@@ -269,7 +462,7 @@
         wss.on("error", function (err) {
             log("WebSocket server error: " + err.message, "error");
             if (err.code === "EADDRINUSE") {
-                log("Port " + port + " in use. Retrying in " + (RECONNECT_DELAY_MS / 1000) + "s...", "error");
+                log("Port " + port + " in use. Retrying in " + (RECONNECT_DELAY_MS / 1000) + "s...", "warning");
                 wss.close();
                 setTimeout(startServer, RECONNECT_DELAY_MS);
             }
@@ -307,6 +500,10 @@
     // ---------------------------------------------------------------------------
     function shutdown() {
         log("Shutting down...", "info");
+        if (uptimeTimer) {
+            clearInterval(uptimeTimer);
+            uptimeTimer = null;
+        }
         if (heartbeatTimer) {
             clearInterval(heartbeatTimer);
             heartbeatTimer = null;
@@ -329,7 +526,7 @@
         log("Loading ExtendScript: " + jsxPath);
         csInterface.evalScript('$.evalFile("' + jsxPath + '")', function (result) {
             if (result === "EvalScript error.") {
-                log("Failed to load premiere.jsx — ExtendScript error", "error");
+                log("Failed to load premiere.jsx -- ExtendScript error", "error");
             } else {
                 log("ExtendScript host loaded successfully", "success");
             }
@@ -375,7 +572,7 @@
     // Initialization
     // ---------------------------------------------------------------------------
     function init() {
-        log("PremierPro MCP Bridge v1.0.0 initializing...", "info");
+        log("PremierPro MCP Bridge v" + VERSION + " initializing...", "info");
         log("CEP Engine: " + JSON.stringify(csInterface.getCurrentApiVersion()), "info");
 
         // Verify we're running in Premiere Pro

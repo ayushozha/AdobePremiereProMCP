@@ -1,85 +1,619 @@
 <!DOCTYPE html>
-<html>
+<html data-theme="dark">
 <head>
     <meta charset="utf-8">
     <title>PremierPro MCP Bridge</title>
     <style>
-        * {
+        /* ================================================================
+           DESIGN TOKENS
+           ================================================================ */
+        :root,
+        [data-theme="dark"] {
+            --bg-primary: #1e1e1e;
+            --bg-secondary: #2d2d2d;
+            --bg-tertiary: #3d3d3d;
+            --text-primary: #e0e0e0;
+            --text-secondary: #a0a0a0;
+            --accent: #9999FF;
+            --accent-dim: rgba(153, 153, 255, 0.12);
+            --accent-hover: #b3b3ff;
+            --success: #4CAF50;
+            --success-dim: rgba(76, 175, 80, 0.12);
+            --error: #f44336;
+            --error-dim: rgba(244, 67, 54, 0.12);
+            --warning: #ff9800;
+            --warning-dim: rgba(255, 152, 0, 0.12);
+            --border: #404040;
+            --shadow: rgba(0, 0, 0, 0.35);
+            --scrollbar-thumb: #555;
+            --scrollbar-track: #2a2a2a;
+        }
+
+        [data-theme="light"] {
+            --bg-primary: #f5f5f5;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #e8e8e8;
+            --text-primary: #1a1a1a;
+            --text-secondary: #666666;
+            --accent: #7B68EE;
+            --accent-dim: rgba(123, 104, 238, 0.1);
+            --accent-hover: #6a56d6;
+            --success: #2E7D32;
+            --success-dim: rgba(46, 125, 50, 0.1);
+            --error: #C62828;
+            --error-dim: rgba(198, 40, 40, 0.1);
+            --warning: #E65100;
+            --warning-dim: rgba(230, 81, 0, 0.1);
+            --border: #d0d0d0;
+            --shadow: rgba(0, 0, 0, 0.1);
+            --scrollbar-thumb: #bbb;
+            --scrollbar-track: #e0e0e0;
+        }
+
+        /* ================================================================
+           RESET & BASE
+           ================================================================ */
+        *, *::before, *::after {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        body {
-            font-family: "Segoe UI", "San Francisco", "Helvetica Neue", Arial, sans-serif;
-            font-size: 11px;
-            background-color: #232323;
-            color: #d0d0d0;
-            padding: 8px;
+
+        html, body {
+            height: 100%;
             overflow: hidden;
         }
-        #status-bar {
+
+        body {
+            font-family: system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+            font-size: 11px;
+            line-height: 1.5;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            transition: background-color 0.3s ease, color 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ================================================================
+           SCROLLBAR
+           ================================================================ */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--scrollbar-track);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--scrollbar-thumb);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--accent);
+        }
+
+        /* ================================================================
+           HEADER
+           ================================================================ */
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            transition: background-color 0.3s ease, border-color 0.3s ease;
+            flex-shrink: 0;
+        }
+
+        .header-logo {
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+        }
+
+        .header-logo svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .header-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-primary);
+            white-space: nowrap;
+            letter-spacing: -0.2px;
+            transition: color 0.3s ease;
+        }
+
+        .header-version {
+            font-size: 9px;
+            color: var(--text-secondary);
+            background: var(--accent-dim);
+            padding: 1px 5px;
+            border-radius: 4px;
+            font-weight: 600;
+            transition: color 0.3s ease, background-color 0.3s ease;
+        }
+
+        .header-spacer {
+            flex: 1;
+        }
+
+        /* Theme toggle */
+        .theme-toggle {
+            position: relative;
+            width: 32px;
+            height: 18px;
+            flex-shrink: 0;
+            cursor: pointer;
+        }
+
+        .theme-toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .theme-slider {
+            position: absolute;
+            inset: 0;
+            background-color: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            transition: background-color 0.3s ease, border-color 0.3s ease;
+        }
+
+        .theme-slider::before {
+            content: "";
+            position: absolute;
+            height: 12px;
+            width: 12px;
+            left: 2px;
+            top: 50%;
+            transform: translateY(-50%);
+            background-color: var(--accent);
+            border-radius: 50%;
+            transition: transform 0.3s ease, background-color 0.3s ease;
+        }
+
+        .theme-toggle input:checked + .theme-slider::before {
+            transform: translateY(-50%) translateX(14px);
+        }
+
+        .theme-icon {
+            font-size: 10px;
+            color: var(--text-secondary);
+            line-height: 1;
+            flex-shrink: 0;
+            transition: color 0.3s ease;
+        }
+
+        /* ================================================================
+           STATUS SECTION
+           ================================================================ */
+        .status-section {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            transition: background-color 0.3s ease, border-color 0.3s ease;
+        }
+
+        .status-dot-wrap {
+            position: relative;
+            width: 10px;
+            height: 10px;
+            flex-shrink: 0;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: var(--error);
+            transition: background-color 0.4s ease;
+        }
+
+        .status-dot.connected {
+            background-color: var(--success);
+        }
+
+        .status-dot.connecting {
+            background-color: var(--warning);
+        }
+
+        /* Pulse animation for connected state */
+        .status-dot.connected::after {
+            content: "";
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--success);
+            opacity: 0;
+            animation: pulse 2s ease-out infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.5; transform: scale(1); }
+            100% { opacity: 0; transform: scale(1.8); }
+        }
+
+        .status-label {
+            font-weight: 600;
+            font-size: 11px;
+            color: var(--text-primary);
+            transition: color 0.3s ease;
+        }
+
+        .status-meta {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-left: auto;
+            flex-shrink: 0;
+        }
+
+        .meta-item {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            font-size: 10px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            transition: color 0.3s ease;
+        }
+
+        .meta-item .meta-value {
+            font-weight: 600;
+            color: var(--text-primary);
+            font-variant-numeric: tabular-nums;
+            transition: color 0.3s ease;
+        }
+
+        .meta-sep {
+            width: 1px;
+            height: 12px;
+            background: var(--border);
+            flex-shrink: 0;
+            transition: background-color 0.3s ease;
+        }
+
+        /* ================================================================
+           STATS SECTION
+           ================================================================ */
+        .stats-section {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+            padding: 8px 12px;
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            transition: background-color 0.3s ease, border-color 0.3s ease;
+        }
+
+        .stat-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 6px 8px;
+            text-align: center;
+            transition: background-color 0.3s ease, border-color 0.3s ease,
+                        box-shadow 0.2s ease;
+        }
+
+        .stat-card:hover {
+            box-shadow: 0 2px 8px var(--shadow);
+        }
+
+        .stat-value {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--accent);
+            font-variant-numeric: tabular-nums;
+            line-height: 1.2;
+            transition: color 0.3s ease;
+        }
+
+        .stat-card.error-card .stat-value {
+            color: var(--error);
+        }
+
+        .stat-label {
+            font-size: 9px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+            margin-top: 1px;
+            transition: color 0.3s ease;
+        }
+
+        .stat-detail {
+            font-size: 9px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+            transition: color 0.3s ease;
+        }
+
+        /* ================================================================
+           LOG AREA
+           ================================================================ */
+        .log-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .log-toolbar {
             display: flex;
             align-items: center;
             gap: 6px;
-            padding: 4px 8px;
-            margin-bottom: 6px;
-            background-color: #1a1a1a;
-            border-radius: 3px;
-            border: 1px solid #333;
+            padding: 4px 12px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            transition: background-color 0.3s ease, border-color 0.3s ease;
         }
-        #status-indicator {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background-color: #ff4444;
-            transition: background-color 0.3s;
-        }
-        #status-indicator.connected {
-            background-color: #44cc44;
-        }
-        #status-text {
-            flex: 1;
+
+        .log-toolbar-title {
+            font-size: 10px;
             font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: color 0.3s ease;
         }
-        #port-display {
-            color: #888;
-            font-size: 10px;
+
+        .log-toolbar-spacer {
+            flex: 1;
         }
-        #log-area {
-            width: 100%;
-            height: calc(100vh - 60px);
-            background-color: #1a1a1a;
-            border: 1px solid #333;
-            border-radius: 3px;
-            padding: 6px;
-            overflow-y: auto;
-            font-family: "Menlo", "Consolas", "Courier New", monospace;
-            font-size: 10px;
+
+        .log-btn {
+            font-size: 9px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 2px 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
             line-height: 1.4;
-            color: #999;
         }
+
+        .log-btn:hover {
+            color: var(--text-primary);
+            border-color: var(--accent);
+            background: var(--accent-dim);
+        }
+
+        .log-btn.active {
+            color: var(--accent);
+            border-color: var(--accent);
+            background: var(--accent-dim);
+        }
+
+        .log-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 6px 12px;
+            background: var(--bg-primary);
+            font-family: "SF Mono", "Menlo", "Consolas", "Courier New", monospace;
+            font-size: 10px;
+            line-height: 1.6;
+            transition: background-color 0.3s ease;
+        }
+
         .log-entry {
-            margin-bottom: 2px;
+            padding: 1px 0;
             word-wrap: break-word;
+            color: var(--text-secondary);
+            transition: color 0.3s ease;
         }
-        .log-entry.error {
-            color: #ff6b6b;
+
+        .log-entry .log-ts {
+            color: var(--text-secondary);
+            opacity: 0.6;
+            margin-right: 4px;
+            font-size: 9px;
+            transition: color 0.3s ease;
         }
-        .log-entry.success {
-            color: #69db7c;
-        }
+
         .log-entry.info {
-            color: #74c0fc;
+            color: var(--text-secondary);
+        }
+
+        .log-entry.success {
+            color: var(--success);
+        }
+
+        .log-entry.error {
+            color: var(--error);
+        }
+
+        .log-entry.warning {
+            color: var(--warning);
+        }
+
+        /* ================================================================
+           FOOTER
+           ================================================================ */
+        .footer {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 12px;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+            flex-shrink: 0;
+            transition: background-color 0.3s ease, border-color 0.3s ease;
+        }
+
+        .footer-tools {
+            font-size: 9px;
+            color: var(--accent);
+            font-weight: 600;
+            transition: color 0.3s ease;
+        }
+
+        .footer-spacer {
+            flex: 1;
+        }
+
+        .footer-link {
+            font-size: 9px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            transition: color 0.2s ease;
+            cursor: pointer;
+        }
+
+        .footer-link:hover {
+            color: var(--accent);
+        }
+
+        .footer-version {
+            font-size: 9px;
+            color: var(--text-secondary);
+            transition: color 0.3s ease;
+        }
+
+        /* ================================================================
+           RESPONSIVE - minimum 300x200
+           ================================================================ */
+        @media (max-width: 350px) {
+            .stats-section {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 4px;
+                padding: 6px 8px;
+            }
+            .header, .status-section, .log-toolbar, .footer {
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            .log-area {
+                padding: 4px 8px;
+            }
+        }
+
+        @media (max-height: 300px) {
+            .stats-section {
+                padding: 4px 8px;
+                gap: 4px;
+            }
+            .stat-card {
+                padding: 4px 6px;
+            }
+            .stat-value {
+                font-size: 13px;
+            }
+        }
+
+        /* very small panel - hide stats */
+        @media (max-height: 220px) {
+            .stats-section {
+                display: none;
+            }
         }
     </style>
 </head>
 <body>
-    <div id="status-bar">
-        <div id="status-indicator"></div>
-        <span id="status-text">Disconnected</span>
-        <span id="port-display">Port: --</span>
+
+    <!-- HEADER -->
+    <div class="header">
+        <div class="header-logo">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="2" y="2" width="20" height="20" rx="4" fill="var(--accent)" opacity="0.9"/>
+                <path d="M7 16V8.5L11.5 14H7Z" fill="var(--bg-primary)" opacity="0.95"/>
+                <path d="M13 8H17V10.5C17 12.5 15.5 14 13.5 14H13V16H10.5L13 12.5V8Z" fill="var(--bg-primary)" opacity="0.95"/>
+            </svg>
+        </div>
+        <span class="header-title">PremierPro MCP Bridge</span>
+        <span class="header-version" id="header-version">v1.0.0</span>
+        <div class="header-spacer"></div>
+        <span class="theme-icon" id="theme-icon-label">&#9790;</span>
+        <label class="theme-toggle" title="Toggle light/dark mode">
+            <input type="checkbox" id="theme-switch">
+            <span class="theme-slider"></span>
+        </label>
     </div>
-    <div id="log-area"></div>
+
+    <!-- STATUS -->
+    <div class="status-section">
+        <div class="status-dot-wrap">
+            <div class="status-dot" id="status-dot"></div>
+        </div>
+        <span class="status-label" id="status-label">Disconnected</span>
+        <div class="status-meta">
+            <div class="meta-item">
+                Port <span class="meta-value" id="port-display">--</span>
+            </div>
+            <div class="meta-sep"></div>
+            <div class="meta-item">
+                Clients <span class="meta-value" id="client-count">0</span>
+            </div>
+            <div class="meta-sep"></div>
+            <div class="meta-item">
+                Uptime <span class="meta-value" id="uptime-display">00:00:00</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- STATS -->
+    <div class="stats-section">
+        <div class="stat-card">
+            <div class="stat-value" id="stat-commands">0</div>
+            <div class="stat-label">Commands</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="stat-avg-time">--</div>
+            <div class="stat-label">Avg Time</div>
+            <div class="stat-detail" id="stat-last-cmd">No commands yet</div>
+        </div>
+        <div class="stat-card error-card">
+            <div class="stat-value" id="stat-errors">0</div>
+            <div class="stat-label">Errors</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="stat-uptime-short">0m</div>
+            <div class="stat-label">Session</div>
+        </div>
+    </div>
+
+    <!-- LOG -->
+    <div class="log-section">
+        <div class="log-toolbar">
+            <span class="log-toolbar-title">Activity Log</span>
+            <div class="log-toolbar-spacer"></div>
+            <button class="log-btn active" id="btn-autoscroll" title="Toggle auto-scroll">Auto-scroll</button>
+            <button class="log-btn" id="btn-clear-log" title="Clear log">Clear</button>
+        </div>
+        <div class="log-area" id="log-area"></div>
+    </div>
+
+    <!-- FOOTER -->
+    <div class="footer">
+        <span class="footer-tools" id="footer-tools">1,057 MCP Tools Available</span>
+        <div class="footer-spacer"></div>
+        <a class="footer-link" id="github-link" title="Open GitHub repository">GitHub</a>
+        <span class="footer-version" id="footer-version">v1.0.0</span>
+    </div>
 
     <script src="CSInterface.js"></script>
     <script src="panel.js"></script>
