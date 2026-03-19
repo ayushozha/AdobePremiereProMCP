@@ -1,6 +1,6 @@
 # PremierPro MCP -- Phase Completion Log
 
-**Total registered MCP tools: 596**
+**Total registered MCP tools: 757** (across 28 Go source files)
 
 Every phase is listed with its exact features, commit hash, and tool count.
 
@@ -8,6 +8,7 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ## Phase 0: Foundation (17 tools)
 **Commit:** `ca27793` -- Initial project setup
+**Source files:** `tools.go` (14), `app_tools.go` (3)
 **Tools:**
 1. `premiere_ping` -- Check if Premiere Pro is running and responsive
 2. `premiere_get_project` -- Get current project state (name, sequences, bins)
@@ -29,9 +30,10 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ---
 
-## Phase 1a: gRPC Pipeline + Sequence Foundation (28 tools added, 45 total)
+## Phase 1a: gRPC Pipeline + Sequence Foundation (26 tools added, 43 total)
 **Commit:** `c1a5f92`
-**Features:**
+**Source file:** `sequence_tools.go` (26)
+**Tools:**
 1. `premiere_create_sequence_from_clips` -- Create sequence from project items, auto-detecting settings
 2. `premiere_duplicate_sequence` -- Duplicate an existing sequence
 3. `premiere_delete_sequence` -- Delete a sequence
@@ -58,8 +60,8 @@ Every phase is listed with its exact features, commit hash, and tool count.
 24. `premiere_add_sequence_marker` -- Add a marker to sequence
 25. `premiere_delete_sequence_marker` -- Delete a marker
 26. `premiere_navigate_to_marker` -- Move playhead to marker
-27. Rust scene detection (ffmpeg scene filter, real implementation)
-28. Rust gRPC integration tests (5 tests)
+
+*Also delivered: Rust scene detection (ffmpeg scene filter) and Rust gRPC integration tests (5 tests)*
 
 ---
 
@@ -95,8 +97,9 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ---
 
-## Phase 1d: Clip Operations (30 tools added, 75 total)
+## Phase 1d: Clip Operations (29 tools added, 72 total)
 **Commit:** `504ff3b`
+**Source file:** `clip_tools.go` (29)
 **Tools:**
 1. `premiere_insert_clip` -- Insert clip at time (ripple insert)
 2. `premiere_overwrite_clip` -- Overwrite clip at time (replace)
@@ -127,12 +130,12 @@ Every phase is listed with its exact features, commit hash, and tool count.
 27. `premiere_link_clips` -- Link video and audio clips
 28. `premiere_unlink_clips` -- Unlink a clip's video/audio
 29. `premiere_get_linked_clips` -- Get linked clips
-30. ExtendScript helpers: `_getTrack`, `_getClip`, `_buildClipInfo`
 
 ---
 
-## Phase 1e: Export & Render (14 tools added, 89 total)
+## Phase 1e: Export & Render (14 tools added, 86 total)
 **Commit:** `3f984f4`
+**Source file:** `export_tools.go` (14)
 **Tools:**
 1. `premiere_export_direct` -- Synchronous export via exportAsMediaDirect
 2. `premiere_export_via_ame` -- Export via Adobe Media Encoder (async)
@@ -151,8 +154,9 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ---
 
-## Phase 1f: Project Management (23 tools added, 112 total)
+## Phase 1f: Project Management (23 tools added, 109 total)
 **Commit:** `3f984f4` (same batch as 1e)
+**Source file:** `project_tools.go` (23)
 **Tools:**
 1. `premiere_new_project` -- Create new project
 2. `premiere_open_project` -- Open existing .prproj
@@ -180,8 +184,9 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ---
 
-## Phase 1g: Audio & Track Management (33 tools added, 145 total)
+## Phase 1g: Audio & Track Management (32 tools added, 141 total)
 **Commit:** `489c588`
+**Source file:** `audio_tools.go` (32)
 **Tools:**
 1. `premiere_set_audio_level_keyframe` -- Audio level at time with keyframe
 2. `premiere_get_audio_level` -- Get current audio level
@@ -215,12 +220,12 @@ Every phase is listed with its exact features, commit hash, and tool count.
 30. `premiere_lock_video_track` -- Lock/unlock video track
 31. `premiere_mute_video_track` -- Mute/unmute video track
 32. `premiere_set_video_track_target` -- Set video track targeting
-33. `premiere_set_track_height` -- Set track height in timeline
 
 ---
 
-## Phase 1h: Titles, Graphics & Captions (24 tools added, 169 total)
+## Phase 1h: Titles, Graphics & Captions (21 tools added, 162 total)
 **Commit:** `489c588` (same batch as 1g)
+**Source file:** `graphics_tools.go` (21)
 **Tools:**
 1. `premiere_import_mogrt` -- Import Motion Graphics Template
 2. `premiere_get_mogrt_properties` -- Get MOGRT editable properties
@@ -243,14 +248,12 @@ Every phase is listed with its exact features, commit hash, and tool count.
 19. `premiere_add_time_remap_keyframe` -- Add time remap keyframe
 20. `premiere_freeze_frame` -- Create freeze frame
 21. `premiere_detect_scene_edits` -- Scene edit detection
-22. `premiere_set_clip_speed_time` -- Set clip speed (extended)
-23. `premiere_reverse_clip_ext` -- Reverse clip
-24. `premiere_add_text_layer` -- Add styled text layer
 
 ---
 
-## Phase 1j: Effects, Transitions, Motion & Keyframing (36 tools added, 205 total)
+## Phase 1j: Effects, Transitions, Motion & Keyframing (36 tools added, 198 total)
 **Commit:** `ef02c03`
+**Source file:** `effects_tools.go` (36)
 **Tools:**
 1. `premiere_add_video_transition` -- Add video transition (QE DOM)
 2. `premiere_add_audio_transition` -- Add audio transition
@@ -291,8 +294,9 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ---
 
-## Phase 2a: Multicam, Proxy, Workspace, Source Monitor (25 tools added, 230 total)
+## Phase 2a: Multicam, Proxy, Workspace, Source Monitor (25 tools added, 223 total)
 **Commit:** `2a4e1c4`
+**Source file:** `workspace_tools.go` (25)
 **Tools:**
 1. `premiere_create_multicam_sequence` -- Create multicam from clips
 2. `premiere_switch_multicam_angle` -- Switch camera angle at time
@@ -322,8 +326,9 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ---
 
-## Phase 2b: Advanced Editing (31 tools added, 261 total)
+## Phase 2b: Advanced Editing (31 tools added, 254 total)
 **Commit:** `1222016`
+**Source file:** `advanced_edit_tools.go` (31)
 **Tools:**
 1. `premiere_ripple_trim` -- Ripple trim a clip edge, shifting subsequent clips
 2. `premiere_roll_trim` -- Roll trim: move edit point between adjacent clips
@@ -359,8 +364,9 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ---
 
-## Phase 2c: Color Correction / Lumetri (30 tools added, 291 total)
+## Phase 2c: Color Correction / Lumetri (30 tools added, 284 total)
 **Commit:** `567e2d8`
+**Source file:** `color_tools.go` (30)
 **Tools:**
 1. `premiere_lumetri_get_all` -- Get all Lumetri Color parameter values
 2. `premiere_lumetri_set_exposure` -- Set Lumetri exposure (-4.0 to 4.0)
@@ -395,8 +401,9 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ---
 
-## Phase 3a: Batch Operations & Automation (30 tools added, 321 total)
+## Phase 3a: Batch Operations & Automation (30 tools added, 314 total)
 **Commit:** `3dfdeff`
+**Source file:** `batch_tools.go` (30)
 **Tools:**
 1. `premiere_batch_import_with_metadata` -- Import multiple files with metadata assignment
 2. `premiere_import_image_sequence` -- Import image sequence from folder
@@ -431,8 +438,9 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ---
 
-## Phase 3b: AI-Powered Intelligent Editing (25 tools added, 346 total)
+## Phase 3b: AI-Powered Intelligent Editing (25 tools added, 339 total)
 **Commit:** `0412925`
+**Source file:** `ai_tools.go` (25)
 **Tools:**
 1. `premiere_smart_cut` -- Analyze audio for silence and auto-cut dead air
 2. `premiere_smart_trim` -- Trim clip to remove leading/trailing silence
@@ -462,8 +470,9 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ---
 
-## Phase 3c: Playback, Monitoring & Navigation (30 tools added, 376 total)
+## Phase 3c: Playback, Monitoring & Navigation (30 tools added, 369 total)
 **Commit:** `c10ff5d`
+**Source file:** `playback_tools.go` (30)
 **Tools:**
 1. `premiere_play` -- Play active sequence at specified speed
 2. `premiere_pause` -- Pause playback
@@ -498,8 +507,9 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ---
 
-## Phase 4a: Masking, Cropping, Stabilization, Blur & Distortion (30 tools added, 406 total)
+## Phase 4a: Masking, Cropping, Stabilization, Blur & Distortion (30 tools added, 399 total)
 **Commit:** `d847f7e`
+**Source file:** `transform_tools.go` (30)
 **Tools:**
 1. `premiere_set_crop` -- Set crop values (percentage per edge)
 2. `premiere_get_crop` -- Get current crop values
@@ -534,8 +544,9 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ---
 
-## Phase 4b: Metadata, Labels, Footage Interpretation & Media Management (30 tools added, 436 total)
+## Phase 4b: Metadata, Labels, Footage Interpretation & Media Management (30 tools added, 429 total)
 **Commit:** `fb895d5`
+**Source file:** `metadata_tools.go` (30)
 **Tools:**
 1. `premiere_get_clip_metadata` -- Get all metadata (XMP + project) for item
 2. `premiere_set_clip_metadata` -- Set a metadata field on a project item
@@ -570,8 +581,9 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ---
 
-## Phase 4c: Advanced Audio Processing & Mixing (30 tools added, 466 total)
+## Phase 4c: Advanced Audio Processing & Mixing (30 tools added, 459 total)
 **Commit:** `c0edd04`
+**Source file:** `audio_advanced_tools.go` (30)
 **Tools:**
 1. `premiere_get_audio_mixer_state` -- Get all track volumes/panning/mute/solo states
 2. `premiere_set_track_panning` -- Set track panning (-100 to 100)
@@ -606,8 +618,9 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ---
 
-## Phase 5a: Preferences & Settings (30 tools added, 496 total)
+## Phase 5a: Preferences & Settings (30 tools added, 489 total)
 **Commit:** `521c90f`
+**Source file:** `preferences_tools.go` (30)
 **Tools:**
 1. `premiere_get_general_preferences` -- Get general preferences (durations, auto-scroll)
 2. `premiere_set_default_still_duration` -- Set default still image duration
@@ -642,8 +655,9 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ---
 
-## Phase 5b: Templates, Presets & Workflow Automation (30 tools added, 526 total)
+## Phase 5b: Templates, Presets & Workflow Automation (30 tools added, 519 total)
 **Commit:** `5066fd9`
+**Source file:** `template_tools.go` (30)
 **Tools:**
 1. `premiere_list_sequence_presets` -- List available .sqpreset files
 2. `premiere_create_sequence_from_preset` -- Create sequence from .sqpreset file
@@ -676,10 +690,13 @@ Every phase is listed with its exact features, commit hash, and tool count.
 29. `premiere_stop_macro_recording` -- Stop recording and save macro
 30. `premiere_play_macro` -- Play back a recorded macro
 
+*Also bundled in this commit: `immersive_tools.go` (30), `collaboration_tools.go` (30), `motion_graphics_tools.go` (30) -- see Phases 6a, 6b, 7a below.*
+
 ---
 
-## Phase 6a: Advanced Motion Graphics & Subtitling (30 tools added, 556 total)
+## Phase 6a: Advanced Motion Graphics & Subtitling (30 tools added, 549 total)
 **Commit:** `52f0304`
+**Source file:** `motion_graphics_tools.go` (30)
 **Tools:**
 1. `premiere_get_essential_graphics_components` -- Get all EGP component properties
 2. `premiere_set_essential_graphics_property` -- Set EGP clip property value
@@ -712,10 +729,13 @@ Every phase is listed with its exact features, commit hash, and tool count.
 29. `premiere_burn_in_subtitles` -- Burn subtitles into video
 30. `premiere_adjust_subtitle_timing` -- Shift all subtitle timing by offset
 
+*Also bundled in this commit: `integration_tools.go` (28) -- see Phase 7b below.*
+
 ---
 
-## Phase 6b: Collaboration, Review & Delivery Checklist (30 tools added, 586 total)
+## Phase 6b: Collaboration, Review & Delivery Checklist (30 tools added, 579 total)
 **Commit:** `14caeca`
+**Source file:** `collaboration_tools.go` (30)
 **Tools:**
 1. `premiere_add_review_comment` -- Add review comment as marker with author metadata
 2. `premiere_get_review_comments` -- Get all review comments from sequence
@@ -750,8 +770,9 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ---
 
-## Phase 7a: VR/Immersive, HDR, Frame Rates & Captions (30 tools added, 616 total)
-**Commit:** (included in immersive_tools.go)
+## Phase 7a: VR/Immersive, HDR, Frame Rates & Captions (30 tools added, 609 total)
+**Commit:** `5066fd9` (bundled with Phase 5b)
+**Source file:** `immersive_tools.go` (30)
 **Tools:**
 1. `premiere_set_vr_projection` -- Set VR projection type (equirectangular, cubemap)
 2. `premiere_get_vr_projection` -- Get current VR projection type
@@ -786,8 +807,9 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ---
 
-## Phase 7b: Interop & Integration (28 tools added, 644 total)
-**Commit:** (included in integration_tools.go)
+## Phase 7b: Interop & Integration (28 tools added, 637 total)
+**Commit:** `52f0304` (bundled with Phase 6a)
+**Source file:** `integration_tools.go` (28)
 **Tools:**
 1. `premiere_send_to_after_effects` -- Replace item with Dynamic Link AE comp
 2. `premiere_import_ae_comp` -- Import AE composition via Dynamic Link
@@ -820,8 +842,9 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ---
 
-## Phase 8: Diagnostics & Performance (30 tools added, 674 total)
+## Phase 8: Diagnostics & Performance (30 tools added, 667 total)
 **Commit:** `5ebd8b5`
+**Source file:** `diagnostics_tools.go` (30)
 **Tools:**
 1. `premiere_get_performance_metrics` -- Get CPU, memory, GPU usage
 2. `premiere_get_project_memory_usage` -- Get project memory usage
@@ -856,9 +879,11 @@ Every phase is listed with its exact features, commit hash, and tool count.
 
 ---
 
-## Phase 3c+: Event Monitoring & State Tracking (30 tools, registered in monitoring_tools.go)
-**Commit:** `c10ff5d` (bundled with Phase 3c playback tools)
-**Tools:**
+## Phase 9: Event Monitoring, State Tracking, UI & Compound Operations (90 tools added, 757 total)
+**Commit:** `d5de1f5`
+**Source files:** `monitoring_tools.go` (30), `ui_tools.go` (30), `compound_tools.go` (30)
+
+### Monitoring & State Tracking (30 tools)
 1. `premiere_register_event_listener` -- Register for Premiere Pro event
 2. `premiere_unregister_event_listener` -- Unregister event listener
 3. `premiere_get_registered_events` -- List active event registrations
@@ -889,3 +914,67 @@ Every phase is listed with its exact features, commit hash, and tool count.
 28. `premiere_show_progress_bar` -- Show progress bar notification
 29. `premiere_hide_progress_bar` -- Hide progress bar
 30. `premiere_show_dialog` -- Show dialog with custom buttons
+
+### UI & Panel Management (30 tools)
+1. `premiere_open_panel` -- Open a Premiere Pro panel by name
+2. `premiere_close_panel` -- Close a panel by name
+3. `premiere_get_open_panels` -- List all currently open panels
+4. `premiere_reset_panel_layout` -- Reset workspace to default panel layout
+5. `premiere_maximize_panel` -- Maximize a panel to fill window
+6. `premiere_get_window_info` -- Get window size, position, display info
+7. `premiere_set_window_size` -- Set main window size in pixels
+8. `premiere_minimize_window` -- Minimize application window
+9. `premiere_bring_to_front` -- Bring Premiere Pro to front
+10. `premiere_enter_fullscreen` -- Enter fullscreen mode
+11. `premiere_set_track_height` -- Set track display height
+12. `premiere_collapse_track` -- Collapse a track to minimum height
+13. `premiere_expand_track` -- Expand a track to full detail
+14. `premiere_collapse_all_tracks` -- Collapse all tracks
+15. `premiere_expand_all_tracks` -- Expand all tracks
+16. `premiere_set_label_preferences` -- Set all label color names
+17. `premiere_get_active_label_filter` -- Get active label color filter
+18. `premiere_set_label_filter` -- Filter project panel by label color
+19. `premiere_clear_label_filter` -- Clear label color filter
+20. `premiere_set_time_display_format_ui` -- Set timecode display format on timeline
+21. `premiere_set_audio_waveform_display` -- Show/hide audio waveforms
+22. `premiere_set_video_thumbnail_display` -- Show/hide video thumbnails
+23. `premiere_set_track_name_display` -- Show/hide track name labels
+24. `premiere_show_alert` -- Show alert dialog with title and message
+25. `premiere_show_confirm_dialog` -- Show yes/no confirmation dialog
+26. `premiere_show_input_dialog` -- Show text input prompt dialog
+27. `premiere_show_progress_dialog` -- Show progress dialog with percentage
+28. `premiere_write_to_console` -- Write to ExtendScript console
+29. `premiere_get_ui_scaling` -- Get current UI scaling factor
+30. `premiere_set_high_contrast_mode` -- Enable/disable high contrast mode
+
+### Compound Operations (30 tools)
+1. `premiere_create_montage` -- Auto-assemble clips into montage with transitions
+2. `premiere_create_slideshow` -- Create slideshow from images with transitions
+3. `premiere_create_highlight_reel` -- Extract marker-tagged sections into highlight reel
+4. `premiere_ripple_delete_empty_spaces` -- Remove all gaps across all tracks
+5. `premiere_align_all_clips_to_track` -- Align clips on source track to destination track
+6. `premiere_sync_all_audio_to_video` -- Auto-sync all audio clips to nearest video
+7. `premiere_replace_audio` -- Replace video clip audio with new audio file
+8. `premiere_add_music_bed` -- Add background music with fade-in/out and volume
+9. `premiere_duck_music_under_dialogue` -- Auto-duck music under dialogue track
+10. `premiere_add_sound_effect` -- Place sound effect at specific time
+11. `premiere_match_color_between_clips` -- Copy Lumetri settings between clips
+12. `premiere_apply_color_preset` -- Apply named color preset (Warm, Cool, Cinematic, etc.)
+13. `premiere_create_color_gradient` -- Apply gradual color change across clips
+14. `premiere_auto_correct_all_clips` -- Auto color correct all clips on track
+15. `premiere_add_subtitles_from_srt` -- Import and place SRT subtitles on timeline
+16. `premiere_add_end_credits` -- Add scrolling end credits
+17. `premiere_add_chapter_markers` -- Add chapter markers from JSON array
+18. `premiere_generate_chapters_from_markers` -- Export markers as YouTube chapters
+19. `premiere_export_for_youtube` -- Export with YouTube-optimized settings
+20. `premiere_export_for_instagram` -- Export for Instagram (1:1, 4:5, 9:16)
+21. `premiere_export_for_tiktok` -- Export for TikTok (9:16, 1080x1920)
+22. `premiere_export_for_twitter` -- Export for Twitter (16:9, 1920x1080)
+23. `premiere_export_multiple_formats` -- Export in multiple platform formats at once
+24. `premiere_setup_new_project` -- Full project setup (resolution, fps, sample rate)
+25. `premiere_setup_editing_workspace` -- Complete workspace setup with import and layout
+26. `premiere_import_and_organize` -- Import folder and auto-organize into typed bins
+27. `premiere_prepare_for_delivery` -- Check project against delivery specs
+28. `premiere_archive_project` -- Archive project with media and render files
+29. `premiere_trim_project` -- Analyze and remove unused media
+30. `premiere_consolidate_and_transcode` -- Consolidate media and prepare for transcoding
