@@ -20,14 +20,19 @@ func NewMCPServer(orchestrator Orchestrator, version string, logger *zap.Logger)
 		"premierpro-mcp",
 		version,
 		server.WithToolCapabilities(true),
+		server.WithResourceCapabilities(false, true),
+		server.WithPromptCapabilities(true),
 		server.WithRecovery(),
 		server.WithLogging(),
 		server.WithInstructions("PremierPro MCP orchestrator — controls Adobe Premiere Pro through natural language. "+
 			"Available tool categories: project inspection, media scanning, timeline editing, "+
-			"script-to-edit pipeline, and export."),
+			"script-to-edit pipeline, and export. "+
+			"Read config://premiere-instructions for detailed usage guidance."),
 	)
 
 	registerTools(s, orchestrator, logger)
+	registerResources(s)
+	registerPrompts(s)
 
 	logger.Info("MCP server initialized",
 		zap.String("name", "premierpro-mcp"),

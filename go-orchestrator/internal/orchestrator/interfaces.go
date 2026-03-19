@@ -1421,6 +1421,13 @@ type Orchestrator interface {
 	SetMultiCameraFollowsNestSetting(ctx context.Context, enabled bool) (*GenericResult, error)
 	SetRectifiedAudioWaveforms(ctx context.Context, enabled bool) (*GenericResult, error)
 
+	// --- Frame Capture ---
+	CaptureFrameAsBase64(ctx context.Context) (*FrameCaptureResult, error)
+
+	// --- Secure ExtendScript Execution ---
+	ExecuteSecureScript(ctx context.Context, script string, validate bool) (*GenericResult, error)
+	ExecuteQEScript(ctx context.Context, script string) (*GenericResult, error)
+
 	// --- Panel Docking (macOS Accessibility / AppleScript) ---
 	UndockPanel(ctx context.Context, panelName string) (*GenericResult, error)
 	CloseOtherPanelsInGroup(ctx context.Context, panelName string) (*GenericResult, error)

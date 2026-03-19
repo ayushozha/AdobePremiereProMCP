@@ -584,6 +584,106 @@ function setRectifiedAudioWaveforms(argsJson) {
 // These use System Events to simulate clicking Premiere Pro's UI menus
 // since Adobe doesn't expose panel docking via ExtendScript.
 
+// ── Frame Capture ─────────────────────────────────────────────────────
+
+function captureFrameAsBase64(argsJson) {
+    try {
+        var args = argsJson ? JSON.parse(argsJson) : {};
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+
+        // Export current frame to temp file
+        var tempDir = Folder.temp.fsName;
+        var tempFile = tempDir + "/mcp_frame_" + Date.now() + ".png";
+
+        // Use QE DOM to export frame
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        qeSeq.exportFramePNG(seq.getPlayerPosition().ticks, tempFile);
+
+        // Read file and convert to base64
+        var file = new File(tempFile);
+        if (!file.exists) return _err("Failed to capture frame");
+
+        file.open("r");
+        file.encoding = "BINARY";
+        var binary = file.read();
+        file.close();
+
+        // Convert to base64 using ExtendScript binary encoder
+        var base64 = _binaryToBase64(binary);
+
+        // Clean up temp file
+        file.remove();
+
+        return _ok({
+            image_base64: base64,
+            format: "png",
+            width: seq.frameSizeHorizontal,
+            height: seq.frameSizeVertical,
+            timecode: seq.getPlayerPosition().seconds
+        });
+    } catch(e) { return _err(e.message); }
+}
+
+// Base64 encoder for binary data
+function _binaryToBase64(data) {
+    var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    var result = "";
+    var i = 0;
+    while (i < data.length) {
+        var a = data.charCodeAt(i++) || 0;
+        var b = data.charCodeAt(i++) || 0;
+        var c = data.charCodeAt(i++) || 0;
+        result += chars.charAt(a >> 2);
+        result += chars.charAt(((a & 3) << 4) | (b >> 4));
+        result += chars.charAt(((b & 15) << 2) | (c >> 6));
+        result += chars.charAt(c & 63);
+    }
+    // Add padding
+    var pad = data.length % 3;
+    if (pad === 1) result = result.slice(0, -2) + "==";
+    else if (pad === 2) result = result.slice(0, -1) + "=";
+    return result;
+}
+
+// ── Secure Script Execution ───────────────────────────────────────────
+
+function executeSecureScript(argsJson) {
+    try {
+        var args = JSON.parse(argsJson);
+        var script = args.script || "";
+        var validate = args.validate !== false;
+
+        if (validate) {
+            // Security validation - block dangerous operations
+            var blocked = ["System.callSystem", "$.system", "app.quit", "File.remove",
+                           "Folder.remove", "$.sleep(9", "while(true)", "for(;;)"];
+            for (var i = 0; i < blocked.length; i++) {
+                if (script.indexOf(blocked[i]) >= 0) {
+                    return _err("Blocked: script contains forbidden operation: " + blocked[i]);
+                }
+            }
+        }
+
+        var result = eval(script);
+        return _ok({ result: String(result) });
+    } catch(e) { return _err(e.message); }
+}
+
+function executeQEScript(argsJson) {
+    try {
+        var args = JSON.parse(argsJson);
+        app.enableQE();
+        var result = eval(args.script);
+        return _ok({ result: String(result) });
+    } catch(e) { return _err(e.message); }
+}
+
+// ── Panel Docking via macOS Accessibility (AppleScript) ───────────────
+// These use System Events to simulate clicking Premiere Pro's UI menus
+// since Adobe doesn't expose panel docking via ExtendScript.
+
 function simulateMenuClick(argsJson) {
     try {
         var args = JSON.parse(argsJson);

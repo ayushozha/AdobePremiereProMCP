@@ -666,6 +666,15 @@ type GenericResult struct {
 	Message string `json:"message,omitempty"`
 }
 
+// FrameCaptureResult holds the base64-encoded frame capture and metadata.
+type FrameCaptureResult struct {
+	ImageBase64 string  `json:"image_base64"`
+	Format      string  `json:"format"`
+	Width       int     `json:"width"`
+	Height      int     `json:"height"`
+	Timecode    float64 `json:"timecode"`
+}
+
 // ---------------------------------------------------------------------------
 // Project Management types
 // ---------------------------------------------------------------------------
