@@ -3,26 +3,30 @@
 
 cd "$(dirname "$0")"
 
-# Check for API key
+# Check for API key from env or shell profile
 if [ -z "$ANTHROPIC_API_KEY" ]; then
-    # Try loading from shell profile
     [ -f ~/.zshrc ] && source ~/.zshrc 2>/dev/null
-    [ -f ~/.bashrc ] && source ~/.bashrc 2>/dev/null
     [ -f ~/.zprofile ] && source ~/.zprofile 2>/dev/null
+    [ -f ~/.bashrc ] && source ~/.bashrc 2>/dev/null
     [ -f ~/.bash_profile ] && source ~/.bash_profile 2>/dev/null
 fi
 
-if [ -z "$ANTHROPIC_API_KEY" ]; then
-    echo ""
-    echo "  ❌ ANTHROPIC_API_KEY not found."
-    echo ""
-    echo "  Set it in your shell profile:"
-    echo "    export ANTHROPIC_API_KEY=\"sk-ant-...\""
-    echo ""
-    echo "  Or paste it now:"
-    read -rp "  API Key: " ANTHROPIC_API_KEY
+# If still no key, try Claude Code auth
+if [ -z "$ANTHROPIC_API_KEY" ] && command -v claude &>/dev/null; then
+    ANTHROPIC_API_KEY=$(claude auth print-api-key 2>/dev/null || true)
     export ANTHROPIC_API_KEY
-    echo ""
+fi
+
+# If still no key, offer to login via Claude Code
+if [ -z "$ANTHROPIC_API_KEY" ]; then
+    if command -v claude &>/dev/null; then
+        echo ""
+        echo "  No API key found. Launching Claude login..."
+        echo ""
+        claude login
+        ANTHROPIC_API_KEY=$(claude auth print-api-key 2>/dev/null || true)
+        export ANTHROPIC_API_KEY
+    fi
 fi
 
 # Ensure CLI dependencies are installed
@@ -37,5 +41,5 @@ if [ ! -f "go-orchestrator/bin/premierpro-mcp" ]; then
     cd go-orchestrator && go build -o bin/premierpro-mcp ./cmd/server/ && cd ..
 fi
 
-# Launch the CLI
+# Launch the CLI (it will handle missing auth with helpful messages)
 exec npx --prefix cli tsx cli/src/index.ts

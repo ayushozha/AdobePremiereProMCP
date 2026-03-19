@@ -5,14 +5,23 @@ cd /d "%~dp0"
 
 REM Check for API key
 if not defined ANTHROPIC_API_KEY (
-    echo.
-    echo   ANTHROPIC_API_KEY not found.
-    echo.
-    echo   Set it with:
-    echo     set ANTHROPIC_API_KEY=sk-ant-...
-    echo.
-    set /p ANTHROPIC_API_KEY="  API Key: "
-    echo.
+    REM Try Claude Code auth
+    where claude >nul 2>&1
+    if %ERRORLEVEL% equ 0 (
+        for /f "tokens=*" %%i in ('claude auth print-api-key 2^>nul') do set "ANTHROPIC_API_KEY=%%i"
+    )
+)
+
+REM If still no key, offer to login via Claude Code
+if not defined ANTHROPIC_API_KEY (
+    where claude >nul 2>&1
+    if %ERRORLEVEL% equ 0 (
+        echo.
+        echo   No API key found. Launching Claude login...
+        echo.
+        call claude login
+        for /f "tokens=*" %%i in ('claude auth print-api-key 2^>nul') do set "ANTHROPIC_API_KEY=%%i"
+    )
 )
 
 REM Ensure CLI dependencies are installed
