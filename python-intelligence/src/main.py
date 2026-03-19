@@ -9,8 +9,18 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import os
 import signal
+import sys
+from pathlib import Path
 from types import FrameType
+
+# Ensure the generated proto stubs are importable.
+# Resolve the gen/python directory relative to this file's location:
+#   python-intelligence/src/main.py  ->  ../../gen/python
+_GEN_PYTHON_DIR = str(Path(__file__).resolve().parent.parent.parent / "gen" / "python")
+if _GEN_PYTHON_DIR not in sys.path:
+    sys.path.insert(0, _GEN_PYTHON_DIR)
 
 import structlog
 

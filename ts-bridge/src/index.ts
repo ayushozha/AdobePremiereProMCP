@@ -37,9 +37,12 @@ async function main(): Promise<void> {
   });
 
   // ── Bridge ─────────────────────────────────────────────────────────────
+  // connect() is non-fatal: the bridge starts in disconnected mode if
+  // Premiere Pro (or the CEP panel) is unreachable.  The gRPC server
+  // still starts; health-check (Ping) will report premiereRunning=false.
   const bridge = createBridge(config);
   await bridge.connect();
-  logger.info(`Bridge connected in "${config.bridgeMode}" mode`);
+  logger.info(`Bridge initialized in "${config.bridgeMode}" mode`);
 
   // ── gRPC server ────────────────────────────────────────────────────────
   const grpcServer = await createGrpcServer(config, bridge, logger);

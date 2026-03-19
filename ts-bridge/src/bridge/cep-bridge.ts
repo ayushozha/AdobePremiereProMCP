@@ -144,27 +144,31 @@ export class CepBridge implements PremiereBridge {
     this.intentionalClose = false;
     this.reconnectAttempts = 0;
 
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<void>((resolve) => {
       this.log.info(`Connecting to CEP panel at ${this.wsUrl}...`);
 
       const ws = new WebSocket(this.wsUrl);
       let settled = false;
+      // Track whether the socket ever successfully opened so we only
+      // auto-reconnect on connections that were previously established.
+      let wasOpen = false;
 
       const connectionTimeout = setTimeout(() => {
         if (!settled) {
           settled = true;
           ws.terminate();
-          reject(
-            new CepConnectionError(
-              `Connection to ${this.wsUrl} timed out after ${this.commandTimeoutMs}ms`,
-            ),
+          this.log.warn(
+            `Connection to CEP panel at ${this.wsUrl} timed out. ` +
+              "Bridge will operate in disconnected mode.",
           );
+          resolve();
         }
       }, this.commandTimeoutMs);
 
       ws.on("open", () => {
         if (settled) return;
         settled = true;
+        wasOpen = true;
         clearTimeout(connectionTimeout);
 
         this.ws = ws;
@@ -183,21 +187,31 @@ export class CepBridge implements PremiereBridge {
       ws.on("close", (code: number, reason: Buffer) => {
         this._isConnected = false;
         this.stopHeartbeat();
-        this.log.warn(
-          `WebSocket closed: code=${code} reason=${reason.toString("utf-8")}`,
-        );
-        this.rejectAllPending("WebSocket connection closed");
 
-        if (!this.intentionalClose) {
-          this.attemptReconnect();
+        if (wasOpen) {
+          // Only log and reconnect if the socket was previously established
+          this.log.warn(
+            `WebSocket closed: code=${code} reason=${reason.toString("utf-8")}`,
+          );
+          this.rejectAllPending("WebSocket connection closed");
+
+          if (!this.intentionalClose) {
+            this.attemptReconnect();
+          }
         }
+        // If the socket was never opened (initial connection failure),
+        // the error handler already resolved the promise.
       });
 
       ws.on("error", (err: Error) => {
         if (!settled) {
           settled = true;
           clearTimeout(connectionTimeout);
-          reject(new CepConnectionError(`WebSocket error: ${err.message}`, err));
+          this.log.warn(
+            `Could not connect to CEP panel: ${err.message}. ` +
+              "Bridge will operate in disconnected mode.",
+          );
+          resolve();
         } else {
           this.log.error(`WebSocket error: ${err.message}`);
         }

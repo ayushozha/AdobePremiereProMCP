@@ -119,6 +119,24 @@ clean:
     rm -rf cep-panel/dist/ cep-panel/build/ cep-panel/node_modules/
     @echo "Cleaned."
 
+# ─── Services ───
+
+# Start all backend services
+start:
+    ./scripts/start-all.sh
+
+# Stop all backend services
+stop:
+    ./scripts/stop-all.sh
+
+# Check status of all backend services
+status:
+    ./scripts/status.sh
+
+# Install CEP panel into Premiere Pro
+install-panel:
+    ./scripts/install-cep-panel.sh
+
 # ─── Dev ───
 
 # Start all services in dev mode

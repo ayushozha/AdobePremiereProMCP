@@ -1,11 +1,5 @@
-// premiere_client.go wraps the TypeScript PremiereBridgeService gRPC RPCs.
-//
-// PROTO STUB NOTE: Once proto stubs are generated, replace the placeholder
-// grpcStub field with the real generated client:
-//
-//   import prempb "github.com/anthropics/premierpro-mcp/gen/go/premierpro/premiere/v1"
-//
-// and swap the method bodies to convert between Go-native types and proto types.
+// premiere_client.go wraps the TypeScript PremiereBridgeService gRPC RPCs using
+// the real generated proto stubs.
 package grpc
 
 import (
@@ -13,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	commonpb "github.com/anthropics/premierpro-mcp/gen/go/premierpro/common/v1"
+	premierepb "github.com/anthropics/premierpro-mcp/gen/go/premierpro/premiere/v1"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -22,6 +18,7 @@ import (
 // PremiereBridgeClient provides Go-native access to the TypeScript Premiere bridge.
 type PremiereBridgeClient struct {
 	conn        *grpc.ClientConn
+	client      premierepb.PremiereBridgeServiceClient
 	callTimeout time.Duration
 	logger      *zap.Logger
 }
@@ -46,6 +43,7 @@ func newPremiereBridgeClient(addr string, dialTimeout, callTimeout time.Duration
 	logger.Info("connected to premiere bridge service")
 	return &PremiereBridgeClient{
 		conn:        conn,
+		client:      premierepb.NewPremiereBridgeServiceClient(conn),
 		callTimeout: callTimeout,
 		logger:      logger,
 	}, nil
@@ -76,21 +74,17 @@ func (c *PremiereBridgeClient) Ping(ctx context.Context) (*PingResult, error) {
 
 	c.logger.Debug("Ping")
 
-	// TODO: Replace with real proto call once stubs are generated.
-	//
-	// resp, err := c.stub.Ping(ctx, &prempb.PingRequest{})
-	// if err != nil {
-	//     return nil, fmt.Errorf("Ping rpc: %w", err)
-	// }
-	// return &PingResult{
-	//     PremiereRunning: resp.PremiereRunning,
-	//     PremiereVersion: resp.PremiereVersion,
-	//     ProjectOpen:     resp.ProjectOpen,
-	//     BridgeMode:      resp.BridgeMode,
-	// }, nil
+	resp, err := c.client.Ping(ctx, &premierepb.PingRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("Ping rpc: %w", err)
+	}
 
-	_ = ctx
-	return nil, fmt.Errorf("Ping: proto stubs not yet generated")
+	return &PingResult{
+		PremiereRunning: resp.GetPremiereRunning(),
+		PremiereVersion: resp.GetPremiereVersion(),
+		ProjectOpen:     resp.GetProjectOpen(),
+		BridgeMode:      resp.GetBridgeMode(),
+	}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -104,16 +98,31 @@ func (c *PremiereBridgeClient) GetProjectState(ctx context.Context) (*GetProject
 
 	c.logger.Debug("GetProjectState")
 
-	// TODO: Replace with real proto call once stubs are generated.
-	//
-	// resp, err := c.stub.GetProjectState(ctx, &prempb.GetProjectStateRequest{})
-	// if err != nil {
-	//     return nil, fmt.Errorf("GetProjectState rpc: %w", err)
-	// }
-	// return convertProjectStateResponse(resp), nil
+	resp, err := c.client.GetProjectState(ctx, &premierepb.GetProjectStateRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("GetProjectState rpc: %w", err)
+	}
 
-	_ = ctx
-	return nil, fmt.Errorf("GetProjectState: proto stubs not yet generated")
+	seqs := make([]SequenceInfo, len(resp.GetSequences()))
+	for i, s := range resp.GetSequences() {
+		seqs[i] = SequenceInfo{
+			ID:              s.GetId(),
+			Name:            s.GetName(),
+			Resolution:      protoResolutionToNative(s.GetResolution()),
+			FrameRate:       s.GetFrameRate(),
+			DurationSeconds: s.GetDurationSeconds(),
+			VideoTrackCount: s.GetVideoTrackCount(),
+			AudioTrackCount: s.GetAudioTrackCount(),
+		}
+	}
+
+	return &GetProjectStateResult{
+		ProjectName: resp.GetProjectName(),
+		ProjectPath: resp.GetProjectPath(),
+		Sequences:   seqs,
+		BinCount:    resp.GetBinCount(),
+		IsSaved:     resp.GetIsSaved(),
+	}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -132,23 +141,22 @@ func (c *PremiereBridgeClient) CreateSequence(ctx context.Context, params Create
 		zap.Float64("frame_rate", params.FrameRate),
 	)
 
-	// TODO: Replace with real proto call once stubs are generated.
-	//
-	// req := &prempb.CreateSequenceRequest{
-	//     Name:        params.Name,
-	//     Resolution:  toProtoResolution(params.Resolution),
-	//     FrameRate:   params.FrameRate,
-	//     VideoTracks: params.VideoTracks,
-	//     AudioTracks: params.AudioTracks,
-	// }
-	// resp, err := c.stub.CreateSequence(ctx, req)
-	// if err != nil {
-	//     return nil, fmt.Errorf("CreateSequence rpc: %w", err)
-	// }
-	// return &CreateSequenceResult{SequenceID: resp.SequenceId, Name: resp.Name}, nil
+	req := &premierepb.CreateSequenceRequest{
+		Name:        params.Name,
+		Resolution:  nativeResolutionToProto(params.Resolution),
+		FrameRate:   params.FrameRate,
+		VideoTracks: params.VideoTracks,
+		AudioTracks: params.AudioTracks,
+	}
+	resp, err := c.client.CreateSequence(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("CreateSequence rpc: %w", err)
+	}
 
-	_ = ctx
-	return nil, fmt.Errorf("CreateSequence: proto stubs not yet generated")
+	return &CreateSequenceResult{
+		SequenceID: resp.GetSequenceId(),
+		Name:       resp.GetName(),
+	}, nil
 }
 
 // GetTimelineState retrieves the current timeline state of a sequence.
@@ -158,17 +166,18 @@ func (c *PremiereBridgeClient) GetTimelineState(ctx context.Context, params GetT
 
 	c.logger.Debug("GetTimelineState", zap.String("sequence_id", params.SequenceID))
 
-	// TODO: Replace with real proto call once stubs are generated.
-	//
-	// req := &prempb.GetTimelineStateRequest{SequenceId: params.SequenceID}
-	// resp, err := c.stub.GetTimelineState(ctx, req)
-	// if err != nil {
-	//     return nil, fmt.Errorf("GetTimelineState rpc: %w", err)
-	// }
-	// return convertTimelineStateResponse(resp), nil
+	req := &premierepb.GetTimelineStateRequest{SequenceId: params.SequenceID}
+	resp, err := c.client.GetTimelineState(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("GetTimelineState rpc: %w", err)
+	}
 
-	_ = ctx
-	return nil, fmt.Errorf("GetTimelineState: proto stubs not yet generated")
+	return &GetTimelineStateResult{
+		SequenceID:           resp.GetSequenceId(),
+		VideoTracks:          protoTimelineTracksToNative(resp.GetVideoTracks()),
+		AudioTracks:          protoTimelineTracksToNative(resp.GetAudioTracks()),
+		TotalDurationSeconds: resp.GetTotalDurationSeconds(),
+	}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -185,20 +194,19 @@ func (c *PremiereBridgeClient) ImportMedia(ctx context.Context, params ImportMed
 		zap.String("target_bin", params.TargetBin),
 	)
 
-	// TODO: Replace with real proto call once stubs are generated.
-	//
-	// req := &prempb.ImportMediaRequest{
-	//     FilePath:  params.FilePath,
-	//     TargetBin: params.TargetBin,
-	// }
-	// resp, err := c.stub.ImportMedia(ctx, req)
-	// if err != nil {
-	//     return nil, fmt.Errorf("ImportMedia rpc: %w", err)
-	// }
-	// return &ImportMediaResult{ProjectItemID: resp.ProjectItemId, Name: resp.Name}, nil
+	req := &premierepb.ImportMediaRequest{
+		FilePath:  params.FilePath,
+		TargetBin: params.TargetBin,
+	}
+	resp, err := c.client.ImportMedia(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("ImportMedia rpc: %w", err)
+	}
 
-	_ = ctx
-	return nil, fmt.Errorf("ImportMedia: proto stubs not yet generated")
+	return &ImportMediaResult{
+		ProjectItemID: resp.GetProjectItemId(),
+		Name:          resp.GetName(),
+	}, nil
 }
 
 // PlaceClip places a clip on the Premiere Pro timeline.
@@ -212,23 +220,22 @@ func (c *PremiereBridgeClient) PlaceClip(ctx context.Context, params PlaceClipPa
 		zap.Float64("speed", params.Speed),
 	)
 
-	// TODO: Replace with real proto call once stubs are generated.
-	//
-	// req := &prempb.PlaceClipRequest{
-	//     SourcePath:  params.SourcePath,
-	//     Track:       toProtoTrackTarget(params.Track),
-	//     Position:    toProtoTimecode(params.Position),
-	//     SourceRange: toProtoTimeRange(params.SourceRange),
-	//     Speed:       params.Speed,
-	// }
-	// resp, err := c.stub.PlaceClip(ctx, req)
-	// if err != nil {
-	//     return nil, fmt.Errorf("PlaceClip rpc: %w", err)
-	// }
-	// return &PlaceClipResult{ClipID: resp.ClipId}, nil
+	req := &premierepb.PlaceClipRequest{
+		SourcePath: params.SourcePath,
+		Track:      nativeTrackTargetToProto(params.Track),
+		Position:   nativeTimecodeToProto(params.Position),
+		Speed:      params.Speed,
+	}
+	if params.SourceRange != nil {
+		req.SourceRange = nativeTimeRangeToProto(params.SourceRange)
+	}
 
-	_ = ctx
-	return nil, fmt.Errorf("PlaceClip: proto stubs not yet generated")
+	resp, err := c.client.PlaceClip(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("PlaceClip rpc: %w", err)
+	}
+
+	return &PlaceClipResult{ClipID: resp.GetClipId()}, nil
 }
 
 // RemoveClip removes a clip from the timeline.
@@ -241,20 +248,15 @@ func (c *PremiereBridgeClient) RemoveClip(ctx context.Context, params RemoveClip
 		zap.String("sequence_id", params.SequenceID),
 	)
 
-	// TODO: Replace with real proto call once stubs are generated.
-	//
-	// req := &prempb.RemoveClipRequest{
-	//     ClipId:     params.ClipID,
-	//     SequenceId: params.SequenceID,
-	// }
-	// _, err := c.stub.RemoveClip(ctx, req)
-	// if err != nil {
-	//     return fmt.Errorf("RemoveClip rpc: %w", err)
-	// }
-	// return nil
-
-	_ = ctx
-	return fmt.Errorf("RemoveClip: proto stubs not yet generated")
+	req := &premierepb.RemoveClipRequest{
+		ClipId:     params.ClipID,
+		SequenceId: params.SequenceID,
+	}
+	_, err := c.client.RemoveClip(ctx, req)
+	if err != nil {
+		return fmt.Errorf("RemoveClip rpc: %w", err)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -272,23 +274,19 @@ func (c *PremiereBridgeClient) AddTransition(ctx context.Context, params AddTran
 		zap.Float64("duration", params.DurationSeconds),
 	)
 
-	// TODO: Replace with real proto call once stubs are generated.
-	//
-	// req := &prempb.AddTransitionRequest{
-	//     SequenceId:     params.SequenceID,
-	//     Track:          toProtoTrackTarget(params.Track),
-	//     Position:       toProtoTimecode(params.Position),
-	//     TransitionType: params.TransitionType,
-	//     DurationSeconds: params.DurationSeconds,
-	// }
-	// resp, err := c.stub.AddTransition(ctx, req)
-	// if err != nil {
-	//     return nil, fmt.Errorf("AddTransition rpc: %w", err)
-	// }
-	// return &AddTransitionResult{TransitionID: resp.TransitionId}, nil
+	req := &premierepb.AddTransitionRequest{
+		SequenceId:      params.SequenceID,
+		Track:           nativeTrackTargetToProto(params.Track),
+		Position:        nativeTimecodeToProto(params.Position),
+		TransitionType:  params.TransitionType,
+		DurationSeconds: params.DurationSeconds,
+	}
+	resp, err := c.client.AddTransition(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("AddTransition rpc: %w", err)
+	}
 
-	_ = ctx
-	return nil, fmt.Errorf("AddTransition: proto stubs not yet generated")
+	return &AddTransitionResult{TransitionID: resp.GetTransitionId()}, nil
 }
 
 // AddText adds a text overlay to the timeline.
@@ -302,24 +300,31 @@ func (c *PremiereBridgeClient) AddText(ctx context.Context, params AddTextParams
 		zap.Float64("duration", params.DurationSeconds),
 	)
 
-	// TODO: Replace with real proto call once stubs are generated.
-	//
-	// req := &prempb.AddTextRequest{
-	//     SequenceId:      params.SequenceID,
-	//     Text:            params.Text,
-	//     Style:           toProtoTextStyle(params.Style),
-	//     Track:           toProtoTrackTarget(params.Track),
-	//     Position:        toProtoTimecode(params.Position),
-	//     DurationSeconds: params.DurationSeconds,
-	// }
-	// resp, err := c.stub.AddText(ctx, req)
-	// if err != nil {
-	//     return nil, fmt.Errorf("AddText rpc: %w", err)
-	// }
-	// return &AddTextResult{ClipID: resp.ClipId}, nil
+	req := &premierepb.AddTextRequest{
+		SequenceId: params.SequenceID,
+		Text:       params.Text,
+		Style: &commonpb.TextStyle{
+			FontFamily:         params.Style.FontFamily,
+			FontSize:           params.Style.FontSize,
+			ColorHex:           params.Style.ColorHex,
+			Alignment:          params.Style.Alignment,
+			BackgroundColorHex: params.Style.BackgroundColorHex,
+			BackgroundOpacity:  params.Style.BackgroundOpacity,
+			Position: &commonpb.Position{
+				X: params.Style.Position.X,
+				Y: params.Style.Position.Y,
+			},
+		},
+		Track:           nativeTrackTargetToProto(params.Track),
+		Position:        nativeTimecodeToProto(params.Position),
+		DurationSeconds: params.DurationSeconds,
+	}
+	resp, err := c.client.AddText(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("AddText rpc: %w", err)
+	}
 
-	_ = ctx
-	return nil, fmt.Errorf("AddText: proto stubs not yet generated")
+	return &AddTextResult{ClipID: resp.GetClipId()}, nil
 }
 
 // ApplyEffect applies a visual/audio effect to a clip.
@@ -333,21 +338,19 @@ func (c *PremiereBridgeClient) ApplyEffect(ctx context.Context, params ApplyEffe
 		zap.String("effect", params.Effect.Name),
 	)
 
-	// TODO: Replace with real proto call once stubs are generated.
-	//
-	// req := &prempb.ApplyEffectRequest{
-	//     ClipId:     params.ClipID,
-	//     SequenceId: params.SequenceID,
-	//     Effect:     toProtoEffectInfo(params.Effect),
-	// }
-	// _, err := c.stub.ApplyEffect(ctx, req)
-	// if err != nil {
-	//     return fmt.Errorf("ApplyEffect rpc: %w", err)
-	// }
-	// return nil
-
-	_ = ctx
-	return fmt.Errorf("ApplyEffect: proto stubs not yet generated")
+	req := &premierepb.ApplyEffectRequest{
+		ClipId:     params.ClipID,
+		SequenceId: params.SequenceID,
+		Effect: &commonpb.EffectInfo{
+			Name:       params.Effect.Name,
+			Parameters: params.Effect.Parameters,
+		},
+	}
+	_, err := c.client.ApplyEffect(ctx, req)
+	if err != nil {
+		return fmt.Errorf("ApplyEffect rpc: %w", err)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -365,21 +368,16 @@ func (c *PremiereBridgeClient) SetAudioLevel(ctx context.Context, params SetAudi
 		zap.Float64("level_db", params.LevelDB),
 	)
 
-	// TODO: Replace with real proto call once stubs are generated.
-	//
-	// req := &prempb.SetAudioLevelRequest{
-	//     ClipId:     params.ClipID,
-	//     SequenceId: params.SequenceID,
-	//     LevelDb:    params.LevelDB,
-	// }
-	// _, err := c.stub.SetAudioLevel(ctx, req)
-	// if err != nil {
-	//     return fmt.Errorf("SetAudioLevel rpc: %w", err)
-	// }
-	// return nil
-
-	_ = ctx
-	return fmt.Errorf("SetAudioLevel: proto stubs not yet generated")
+	req := &premierepb.SetAudioLevelRequest{
+		ClipId:     params.ClipID,
+		SequenceId: params.SequenceID,
+		LevelDb:    params.LevelDB,
+	}
+	_, err := c.client.SetAudioLevel(ctx, req)
+	if err != nil {
+		return fmt.Errorf("SetAudioLevel rpc: %w", err)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -397,25 +395,21 @@ func (c *PremiereBridgeClient) ExportSequence(ctx context.Context, params Export
 		zap.Int("preset", int(params.Preset)),
 	)
 
-	// TODO: Replace with real proto call once stubs are generated.
-	//
-	// req := &prempb.ExportSequenceRequest{
-	//     SequenceId: params.SequenceID,
-	//     OutputPath: params.OutputPath,
-	//     Preset:     prempb.ExportPreset(params.Preset),
-	// }
-	// resp, err := c.stub.ExportSequence(ctx, req)
-	// if err != nil {
-	//     return nil, fmt.Errorf("ExportSequence rpc: %w", err)
-	// }
-	// return &ExportSequenceResult{
-	//     JobID:      resp.JobId,
-	//     Status:     OperationStatus(resp.Status),
-	//     OutputPath: resp.OutputPath,
-	// }, nil
+	req := &premierepb.ExportSequenceRequest{
+		SequenceId: params.SequenceID,
+		OutputPath: params.OutputPath,
+		Preset:     premierepb.ExportPreset(params.Preset),
+	}
+	resp, err := c.client.ExportSequence(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("ExportSequence rpc: %w", err)
+	}
 
-	_ = ctx
-	return nil, fmt.Errorf("ExportSequence: proto stubs not yet generated")
+	return &ExportSequenceResult{
+		JobID:      resp.GetJobId(),
+		Status:     OperationStatus(resp.GetStatus()),
+		OutputPath: resp.GetOutputPath(),
+	}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -436,26 +430,57 @@ func (c *PremiereBridgeClient) ExecuteEDL(ctx context.Context, params ExecuteEDL
 		zap.Bool("auto_create_sequence", params.AutoCreateSequence),
 	)
 
-	// TODO: Replace with real proto call once stubs are generated.
-	//
-	// req := &prempb.ExecuteEDLRequest{
-	//     Edl:                toProtoEDL(params.EDL),
-	//     AutoImport:         params.AutoImport,
-	//     AutoCreateSequence: params.AutoCreateSequence,
-	// }
-	// resp, err := c.stub.ExecuteEDL(ctx, req)
-	// if err != nil {
-	//     return nil, fmt.Errorf("ExecuteEDL rpc: %w", err)
-	// }
-	// return &ExecuteEDLResult{
-	//     SequenceID:       resp.SequenceId,
-	//     Status:           OperationStatus(resp.Status),
-	//     ClipsPlaced:      resp.ClipsPlaced,
-	//     TransitionsAdded: resp.TransitionsAdded,
-	//     Errors:           resp.Errors,
-	//     Warnings:         resp.Warnings,
-	// }, nil
+	req := &premierepb.ExecuteEDLRequest{
+		Edl:                nativeEDLToProto(params.EDL),
+		AutoImport:         params.AutoImport,
+		AutoCreateSequence: params.AutoCreateSequence,
+	}
+	resp, err := c.client.ExecuteEDL(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("ExecuteEDL rpc: %w", err)
+	}
 
-	_ = ctx
-	return nil, fmt.Errorf("ExecuteEDL: proto stubs not yet generated")
+	return &ExecuteEDLResult{
+		SequenceID:       resp.GetSequenceId(),
+		Status:           OperationStatus(resp.GetStatus()),
+		ClipsPlaced:      resp.GetClipsPlaced(),
+		TransitionsAdded: resp.GetTransitionsAdded(),
+		Errors:           resp.GetErrors(),
+		Warnings:         resp.GetWarnings(),
+	}, nil
+}
+
+// ---------------------------------------------------------------------------
+// Premiere-specific proto -> native converters
+// ---------------------------------------------------------------------------
+
+func protoTimelineTracksToNative(tracks []*premierepb.TimelineTrack) []TimelineTrack {
+	result := make([]TimelineTrack, len(tracks))
+	for i, t := range tracks {
+		clips := make([]TimelineClip, len(t.GetClips()))
+		for j, c := range t.GetClips() {
+			clip := TimelineClip{
+				ClipID:     c.GetClipId(),
+				SourcePath: c.GetSourcePath(),
+				Speed:      c.GetSpeed(),
+			}
+			if c.GetSourceRange() != nil {
+				sr := protoTimeRangeToNative(c.GetSourceRange())
+				clip.SourceRange = *sr
+			}
+			if c.GetTimelineRange() != nil {
+				tr := protoTimeRangeToNative(c.GetTimelineRange())
+				clip.TimelineRange = *tr
+			}
+			clips[j] = clip
+		}
+		result[i] = TimelineTrack{
+			Index:    t.GetIndex(),
+			Type:     TrackType(t.GetType()),
+			Clips:    clips,
+			IsMuted:  t.GetIsMuted(),
+			IsLocked: t.GetIsLocked(),
+		}
+	}
+	return result
 }

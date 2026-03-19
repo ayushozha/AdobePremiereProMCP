@@ -3,11 +3,14 @@ module github.com/anthropics/premierpro-mcp/go-orchestrator
 go 1.26.1
 
 require (
+	github.com/anthropics/premierpro-mcp/gen/go v0.0.0
 	github.com/mark3labs/mcp-go v0.45.0
 	go.uber.org/zap v1.27.1
 	golang.org/x/sync v0.20.0
 	google.golang.org/grpc v1.79.3
 )
+
+replace github.com/anthropics/premierpro-mcp/gen/go => ../gen/go
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect

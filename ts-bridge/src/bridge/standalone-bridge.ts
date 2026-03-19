@@ -106,7 +106,11 @@ export class StandaloneBridge implements PremiereBridge {
     try {
       const result = await this.ping();
       if (!result.premiereRunning) {
-        throw new PremiereNotRunningError();
+        this.connected = false;
+        this.log.warn(
+          "Premiere Pro is not running. Bridge will operate in disconnected mode.",
+        );
+        return;
       }
       this.connected = true;
       this.log.info(
@@ -114,7 +118,10 @@ export class StandaloneBridge implements PremiereBridge {
       );
     } catch (err) {
       this.connected = false;
-      throw new PremiereNotRunningError(err);
+      const detail = err instanceof Error ? err.message : String(err);
+      this.log.warn(
+        `Could not reach Premiere Pro: ${detail}. Bridge will operate in disconnected mode.`,
+      );
     }
   }
 
