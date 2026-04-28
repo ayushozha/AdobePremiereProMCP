@@ -419,6 +419,17 @@ func (e *Engine) GetSequenceMarkers(ctx context.Context) (*MarkersResult, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sequence markers — make sure a sequence is active (try premiere_set_active_sequence): %w", err)
 	}
+	// ExtendScript returns _ok() => {"success":true,"data":{...}} ; unwrap data for Go structs.
+	type extendScriptEnvelope struct {
+		Data *MarkersResult `json:"data"`
+	}
+	var env extendScriptEnvelope
+	if err := json.Unmarshal([]byte(result), &env); err != nil {
+		return nil, fmt.Errorf("GetSequenceMarkers: could not parse response from Premiere Pro: %w", err)
+	}
+	if env.Data != nil {
+		return env.Data, nil
+	}
 	var out MarkersResult
 	if err := json.Unmarshal([]byte(result), &out); err != nil {
 		return nil, fmt.Errorf("GetSequenceMarkers: could not parse response from Premiere Pro: %w", err)

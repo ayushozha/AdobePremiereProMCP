@@ -1233,3 +1233,109 @@ function simulateMenuClick(argsJson) {
         return _ok({ message: "Menu clicked: " + menuPath });
     } catch (e) { return _err("Failed to simulate menu click '" + (args && args.menu_path ? args.menu_path : "unknown") + "': " + e.message); }
 }
+
+// ---------------------------------------------------------------------------
+// Sequence markers (in core so EvalCommand works even if premiere.jsx fails to load)
+// ---------------------------------------------------------------------------
+
+function _mcpMarkerCommentCore(m) {
+    try {
+        if (m.comments !== undefined && m.comments !== null) return String(m.comments);
+    } catch (e0) {}
+    try {
+        if (m.comment !== undefined && m.comment !== null) return String(m.comment);
+    } catch (e1) {}
+    return "";
+}
+function _mcpMarkerTypeCore(m) {
+    try {
+        return String(m.type !== undefined && m.type !== null ? m.type : "");
+    } catch (e) {
+        return "";
+    }
+}
+function _mcpMarkerColorIndexCore(m) {
+    try {
+        var c = m.colorIndex;
+        if (c === undefined || c === null) return -1;
+        var n = parseInt(c, 10);
+        return isNaN(n) ? -1 : n;
+    } catch (e2) {
+        return -1;
+    }
+}
+function _mcpTimeToSecondsCore(timeObj) {
+    if (!timeObj) return 0;
+    try {
+        return parseFloat(timeObj.seconds);
+    } catch (e) {
+        return 0;
+    }
+}
+
+function getSequenceMarkers() {
+    try {
+        if (!app.project) {
+            return _err("No project is open");
+        }
+        var seq = app.project.activeSequence;
+        if (!seq) {
+            return _err("No active sequence");
+        }
+        var markers = [];
+        var mc = seq.markers;
+        if (mc) {
+            var max = 0;
+            try {
+                max = parseInt(mc.numMarkers, 10) || 0;
+            } catch (eCt) {
+                max = 0;
+            }
+            var vm;
+            for (vm = 0; vm < max; vm++) {
+                try {
+                    var marker = mc[vm];
+                    if (!marker) {
+                        continue;
+                    }
+                    var mname = "";
+                    try {
+                        mname = String(marker.name !== undefined && marker.name !== null ? marker.name : "");
+                    } catch (en) {
+                        mname = "";
+                    }
+                    markers.push({
+                        index: vm,
+                        name: mname,
+                        comment: _mcpMarkerCommentCore(marker),
+                        start: _mcpTimeToSecondsCore(marker.start),
+                        end: _mcpTimeToSecondsCore(marker.end),
+                        type: _mcpMarkerTypeCore(marker),
+                        color_index: _mcpMarkerColorIndexCore(marker)
+                    });
+                } catch (one) {
+                }
+            }
+        }
+        var sn = "";
+        var sid = "";
+        try {
+            sn = String(seq.name || "");
+        } catch (esn) {
+            sn = "";
+        }
+        try {
+            sid = String(seq.sequenceID || "");
+        } catch (esi) {
+            sid = "";
+        }
+        return _ok({
+            count: markers.length,
+            markers: markers,
+            sequence_name: sn,
+            sequence_id: sid
+        });
+    } catch (e) {
+        return _err("getSequenceMarkers failed: " + e.message);
+    }
+}

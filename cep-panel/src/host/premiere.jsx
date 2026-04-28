@@ -2251,49 +2251,7 @@ function insertBarsAndTone(paramsJson) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// getSequenceMarkers() - Get all markers on the active sequence
-// ---------------------------------------------------------------------------
-function getSequenceMarkers() {
-    try {
-        if (!app.project) {
-            return _err("No project is open");
-        }
-
-        var seq = app.project.activeSequence;
-        if (!seq) {
-            return _err("No active sequence");
-        }
-
-        var markers = [];
-        if (seq.markers) {
-            var marker = seq.markers.getFirstMarker();
-            var idx = 0;
-            while (marker) {
-                markers.push({
-                    index: idx,
-                    name: marker.name || "",
-                    comment: marker.comments || "",
-                    start: _timeToSeconds(marker.start),
-                    end: _timeToSeconds(marker.end),
-                    type: marker.type || "",
-                    colorIndex: marker.colorIndex !== undefined ? marker.colorIndex : -1
-                });
-                idx++;
-                marker = seq.markers.getNextMarker(marker);
-            }
-        }
-
-        return _ok({
-            count: markers.length,
-            markers: markers,
-            sequenceName: seq.name || "",
-            sequenceID: seq.sequenceID || ""
-        });
-    } catch (e) {
-        return _err("getSequenceMarkers failed: " + e.message);
-    }
-}
+// getSequenceMarkers — implemented in core.jsx (always loaded); keeps EvalCommand working if premiere.jsx fails to $.evalFile.
 
 // ---------------------------------------------------------------------------
 // addSequenceMarker(paramsJson) - Add a marker to the active sequence
