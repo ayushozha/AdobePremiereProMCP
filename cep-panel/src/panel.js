@@ -44,7 +44,7 @@
 
     // Lazy-loading state for the full premiere.jsx ExtendScript library
     var premiereJsxLoaded = false;
-    var premiereJsxPath = path.join(__dirname, "host", "premiere.jsx").replace(/\\/g, "/");
+    var premiereJsxPath = resolveHostScriptPath("premiere.jsx");
 
     // Stats tracking
     var stats = {
@@ -58,6 +58,19 @@
 
     // In-flight command timers: requestId -> start timestamp
     var commandTimers = {};
+
+    function resolveHostScriptPath(fileName) {
+        var candidates = [
+            path.join(__dirname, "host", fileName),
+            path.join(__dirname, "src", "host", fileName),
+        ];
+        for (var i = 0; i < candidates.length; i++) {
+            if (fs.existsSync(candidates[i])) {
+                return candidates[i].replace(/\\/g, "/");
+            }
+        }
+        return candidates[0].replace(/\\/g, "/");
+    }
 
     // ---------------------------------------------------------------------------
     // UI element references
@@ -546,20 +559,40 @@
     // Load ExtendScript host functions
     // ---------------------------------------------------------------------------
     function loadHostScript() {
-        var corePath = path.join(__dirname, "host", "core.jsx").replace(/\\/g, "/");
+        var corePath = resolveHostScriptPath("core.jsx");
+        var coreEval = [
+            "(function(){",
+            "try {",
+            "  $.evalFile(\"" + corePath + "\");",
+            "  return \"OK\";",
+            "} catch (e) {",
+            "  return \"ERROR: \" + e.name + \": \" + e.message + \" @ line \" + e.line;",
+            "}",
+            "}())",
+        ].join("");
+        var premiereEval = [
+            "(function(){",
+            "try {",
+            "  $.evalFile(\"" + premiereJsxPath + "\");",
+            "  return \"OK\";",
+            "} catch (e) {",
+            "  return \"ERROR: \" + e.name + \": \" + e.message + \" @ line \" + e.line;",
+            "}",
+            "}())",
+        ].join("");
         log("Loading core ExtendScript: " + corePath);
-        csInterface.evalScript('$.evalFile("' + corePath + '")', function (result) {
-            if (result === "EvalScript error.") {
-                log("Failed to load core.jsx -- ExtendScript error", "error");
+        csInterface.evalScript(coreEval, function (result) {
+            if (result !== "OK") {
+                log("Failed to load core.jsx -- " + result, "error");
             } else {
                 log("Core ExtendScript loaded", "success");
                 // Eagerly attempt to load the full premiere.jsx in the background.
                 // If it fails (too large for $.evalFile), functions will be
                 // lazy-loaded on the first evalCommand call instead.
                 log("Loading extended functions from premiere.jsx...");
-                csInterface.evalScript('$.evalFile("' + premiereJsxPath + '")', function (result2) {
-                    if (result2 === "EvalScript error.") {
-                        log("Extended functions will be loaded on first use (lazy)", "info");
+                csInterface.evalScript(premiereEval, function (result2) {
+                    if (result2 !== "OK") {
+                        log("Extended functions will be loaded on first use (lazy): " + result2, "info");
                     } else {
                         premiereJsxLoaded = true;
                         log("All ExtendScript functions loaded", "success");
