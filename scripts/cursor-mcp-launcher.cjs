@@ -1,12 +1,15 @@
 /**
  * MCP stdio root: owns ts-bridge (child) and go-orchestrator server.exe (child).
  * stdin/stdout stay on server.exe via inherit → Cursor JSON-RPC unchanged.
- * On server exit OR launcher signal, bridge is terminated so Premiere/CEP sees disconnect.
+ *
+ * On Windows, Cursor often stops MCP by terminating the root process; children
+ * can survive (orphans). We use taskkill /T on shutdown paths and spawnSync on
+ * process 'exit' so the bridge is reliably torn down.
  */
 
 "use strict";
 
-const { spawn } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
@@ -15,6 +18,10 @@ const repoRoot = path.resolve(scriptsDir, "..");
 const bridgeCwd = path.join(repoRoot, "ts-bridge");
 const bridgeEntry = path.join(bridgeCwd, "dist", "index.js");
 const serverExe = path.join(repoRoot, "go-orchestrator", "bin", "server.exe");
+const isWin = process.platform === "win32";
+const taskkillExe = isWin
+  ? path.join(process.env.SystemRoot || "C:\\Windows", "System32", "taskkill.exe")
+  : null;
 
 function err(msg) {
   console.error("[cursor-mcp-launcher]", msg);
@@ -35,11 +42,47 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function killBridge(bridge) {
+/** Windows: kill pid and all descendants. No-op elsewhere. */
+function killProcessTreeWin(pid, sync) {
+  if (!isWin || !pid || !taskkillExe || !fs.existsSync(taskkillExe)) return;
+  const args = ["/PID", String(pid), "/T", "/F"];
   try {
-    if (bridge && bridge.pid && !bridge.killed) {
-      bridge.kill();
+    if (sync) {
+      spawnSync(taskkillExe, args, { stdio: "ignore", windowsHide: true });
+    } else {
+      const t = spawn(taskkillExe, args, {
+        stdio: "ignore",
+        windowsHide: true,
+        detached: true,
+      });
+      t.unref();
     }
+  } catch {
+    /* ignore */
+  }
+}
+
+function killBridge(bridge) {
+  if (!bridge || !bridge.pid) return;
+  if (isWin) {
+    killProcessTreeWin(bridge.pid, false);
+    return;
+  }
+  try {
+    if (!bridge.killed) bridge.kill();
+  } catch {
+    /* ignore */
+  }
+}
+
+function killServer(server) {
+  if (!server || !server.pid) return;
+  if (isWin) {
+    killProcessTreeWin(server.pid, false);
+    return;
+  }
+  try {
+    if (!server.killed) server.kill();
   } catch {
     /* ignore */
   }
@@ -68,14 +111,28 @@ function killBridge(bridge) {
     env: process.env,
   });
 
-  function shutdownFromParent() {
-    try {
-      if (server.pid && !server.killed) {
-        server.kill();
-      }
-    } catch {
-      /* ignore */
-    }
+  function cleanupAll() {
+    killServer(server);
+    killBridge(bridge);
+  }
+
+  function shutdownFromParentSignal() {
+    killServer(server);
+  }
+
+  if (isWin) {
+    process.on("exit", () => {
+      killProcessTreeWin(bridge.pid, true);
+      killProcessTreeWin(server.pid, true);
+    });
+  }
+
+  if (!process.stdin.isTTY) {
+    process.stdin.resume();
+    process.stdin.on("end", () => {
+      cleanupAll();
+      setTimeout(() => process.exit(0), 0);
+    });
   }
 
   server.on("error", (e) => {
@@ -92,13 +149,12 @@ function killBridge(bridge) {
   bridge.on("exit", (code, signal) => {
     if (signal || (code !== 0 && code !== null)) {
       err(`ts-bridge exited unexpectedly (code=${code}, signal=${signal})`);
-      shutdownFromParent();
+      shutdownFromParentSignal();
     }
   });
 
-  process.on("SIGINT", shutdownFromParent);
-  process.on("SIGTERM", shutdownFromParent);
-  process.on("exit", () => killBridge(bridge));
+  process.on("SIGINT", shutdownFromParentSignal);
+  process.on("SIGTERM", shutdownFromParentSignal);
 })().catch((e) => {
   err(String(e && e.stack ? e.stack : e));
   process.exit(1);
