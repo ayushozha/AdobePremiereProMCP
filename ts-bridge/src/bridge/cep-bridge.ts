@@ -97,6 +97,49 @@ const DEFAULT_RECONNECT_MAX_MS = 30_000;
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const PONG_TIMEOUT_MS = 5_000;
 
+/**
+ * ExtendScript helpers use `_ok({ ... })` → JSON `{ success: true, data: payload }`.
+ * The CEP panel forwards that whole object as the WebSocket `result`. Unwrap so
+ * gRPC serializers see proto-shaped fields (camelCase).
+ */
+function unwrapCepEnvelope(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return {};
+  }
+  const o = raw as Record<string, unknown>;
+  if (
+    o["success"] === true &&
+    o["data"] !== undefined &&
+    o["data"] !== null &&
+    typeof o["data"] === "object" &&
+    !Array.isArray(o["data"])
+  ) {
+    return o["data"] as Record<string, unknown>;
+  }
+  return o;
+}
+
+function normalizePingPayload(payload: Record<string, unknown>): PingResult {
+  const running =
+    payload["premiereRunning"] === true || payload["premiere_running"] === true;
+  const ver =
+    (typeof payload["premiereVersion"] === "string" && payload["premiereVersion"]) ||
+    (typeof payload["premiere_version"] === "string" && payload["premiere_version"]) ||
+    "";
+  const projOpen =
+    payload["projectOpen"] === true || payload["project_open"] === true;
+  const mode =
+    (typeof payload["bridgeMode"] === "string" && payload["bridgeMode"]) ||
+    (typeof payload["bridge_mode"] === "string" && payload["bridge_mode"]) ||
+    "cep";
+  return {
+    premiereRunning: running,
+    premiereVersion: ver,
+    projectOpen: projOpen,
+    bridgeMode: mode,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Implementation
 // ---------------------------------------------------------------------------
@@ -412,7 +455,22 @@ export class CepBridge implements PremiereBridge {
 
   async ping(): Promise<PingResult> {
     try {
-      return await this.send<PingResult>("ping", {});
+      const raw = await this.send<unknown>("ping", {});
+      if (
+        raw &&
+        typeof raw === "object" &&
+        !Array.isArray(raw) &&
+        (raw as Record<string, unknown>)["success"] === false
+      ) {
+        return {
+          premiereRunning: false,
+          premiereVersion: "",
+          projectOpen: false,
+          bridgeMode: "cep",
+        };
+      }
+      const payload = unwrapCepEnvelope(raw);
+      return normalizePingPayload(payload);
     } catch {
       return {
         premiereRunning: false,
