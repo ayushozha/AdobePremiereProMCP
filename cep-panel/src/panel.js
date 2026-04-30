@@ -296,18 +296,21 @@
             var fn = p.function_name || "";
             var argsJson = p.args_json || "";
 
-            // Build lazy-load prefix: if the function doesn't exist yet,
-            // load the full premiere.jsx (once) to make it available.
-            var loadScript = "";
-            if (!premiereJsxLoaded) {
-                loadScript =
-                    'if (typeof ' + fn + ' !== "function") { ' +
-                    '  try { $.evalFile("' + premiereJsxPath + '"); } catch(loadErr) {} ' +
-                    '} ';
-            }
+            // Before every evalCommand: if fn is missing, load premiere.jsx.
+            // Always emit this guard — never skip it based on premiereJsxLoaded.
+            // A prior bug set that flag after the first successful evalCommand even when
+            // only core.jsx ran (e.g. getSequenceList), leaving premiere-only helpers
+            // unloaded and causing "EvalScript error" on clips/MOGRT APIs.
+            var loadScript =
+                'if (typeof ' + fn + ' !== "function") { ' +
+                '  try { $.evalFile("' + premiereJsxPath + '"); } catch(loadErr) {} ' +
+                '} ';
 
             var callScript;
-            if (argsJson && argsJson !== "{}" && argsJson !== "[]") {
+            var expanded = expandEvalCommandArgs(fn, argsJson);
+            if (expanded !== null && expanded !== undefined) {
+                callScript = expanded;
+            } else if (argsJson && argsJson !== "{}" && argsJson !== "[]") {
                 callScript = fn + "(" + escapeForEval(argsJson) + ")";
             } else {
                 callScript = fn + "()";
@@ -325,6 +328,55 @@
         if (str === undefined || str === null) { str = ""; }
         str = String(str);
         return "'" + str.replace(/\\/g, "\\\\").replace(/'/g, "\\'") + "'";
+    }
+
+    /** Go sends evalCommand(fn, "{\"a\":...}") — expand into positional ExtendScript calls. */
+    function expandEvalCommandArgs(fn, argsJson) {
+        if (!argsJson || typeof argsJson !== "string") return null;
+        if (argsJson.charAt(0) !== "{") return null;
+        var po;
+        try { po = JSON.parse(argsJson); } catch (e0) { return null; }
+
+        var ti;
+        var ci;
+        var pi;
+        var txt;
+        var pn;
+        var val;
+
+        if (fn === "getClipsOnTrack") {
+            var tt = po.trackType || po.track_type || "video";
+            ti = po.trackIndex !== undefined ? po.trackIndex : po.track_index;
+            if (ti === undefined || ti === null) ti = 0;
+            return fn + "(" + escapeForEval(String(tt)) + "," + Number(ti) + ")";
+        }
+        if (fn === "getMOGRTProperties") {
+            ti = po.trackIndex !== undefined ? po.trackIndex : po.track_index;
+            ci = po.clipIndex !== undefined ? po.clipIndex : po.clip_index;
+            if (ti === undefined || ti === null) ti = 0;
+            if (ci === undefined || ci === null) ci = 0;
+            return fn + "(" + Number(ti) + "," + Number(ci) + ")";
+        }
+        if (fn === "setMOGRTText") {
+            ti = po.trackIndex !== undefined ? po.trackIndex : po.track_index;
+            ci = po.clipIndex !== undefined ? po.clipIndex : po.clip_index;
+            pi = po.propertyIndex !== undefined ? po.propertyIndex : po.property_index;
+            txt = po.text !== undefined && po.text !== null ? String(po.text) : "";
+            if (ti === undefined || ti === null) ti = 0;
+            if (ci === undefined || ci === null) ci = 0;
+            if (pi === undefined || pi === null) pi = 0;
+            return fn + "(" + Number(ti) + "," + Number(ci) + "," + Number(pi) + "," + escapeForEval(txt) + ")";
+        }
+        if (fn === "setMOGRTProperty") {
+            ti = po.trackIndex !== undefined ? po.trackIndex : po.track_index;
+            ci = po.clipIndex !== undefined ? po.clipIndex : po.clip_index;
+            pn = po.propertyName || po.property_name || "";
+            val = po.value !== undefined && po.value !== null ? String(po.value) : "";
+            if (ti === undefined || ti === null) ti = 0;
+            if (ci === undefined || ci === null) ci = 0;
+            return fn + "(" + Number(ti) + "," + Number(ci) + "," + escapeForEval(pn) + "," + escapeForEval(val) + ")";
+        }
+        return null;
     }
 
     // ---------------------------------------------------------------------------
@@ -382,12 +434,6 @@
             } catch (e) {
                 // If it's not JSON, return it as a plain string value
                 result = rawResult;
-            }
-
-            // If this was a successful evalCommand, premiere.jsx is now loaded
-            if (action === "evalCommand" && !premiereJsxLoaded) {
-                premiereJsxLoaded = true;
-                log("premiere.jsx loaded (lazy)", "success");
             }
 
             log("Done: " + action + " [" + requestId.substring(0, 8) + "]", "success");
