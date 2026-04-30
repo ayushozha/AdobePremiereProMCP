@@ -105,6 +105,21 @@ function _secondsToTime(seconds) {
     return t;
 }
 
+/**
+ * CEP bridge calls evalScript("fn('{...JSON...}')") with a SINGLE string argument,
+ * while many handlers below declare separate parameters. Detect and unwrap.
+ */
+function _tryParseJSONObjectString(v) {
+    if (v === undefined || v === null || v === "") return null;
+    var s = String(v).replace(/^\s+|\s+$/g, "");
+    if (s.charAt(0) !== "{") return null;
+    try {
+        var o = JSON.parse(s);
+        if (typeof o === "object" && o !== null && !(o instanceof Array)) return o;
+    } catch (eIgnored) {}
+    return null;
+}
+
 // ---------------------------------------------------------------------------
 // ping() - Health check
 // ---------------------------------------------------------------------------
@@ -2723,6 +2738,13 @@ function getClipInfo(trackType, trackIndex, clipIndex) {
 // ---------------------------------------------------------------------------
 function getClipsOnTrack(trackType, trackIndex) {
     try {
+        var argObj = _tryParseJSONObjectString(trackType);
+        if (argObj) {
+            trackType = argObj.trackType || argObj.track_type;
+            if (argObj.trackIndex !== undefined || argObj.track_index !== undefined) {
+                trackIndex = argObj.trackIndex !== undefined ? argObj.trackIndex : argObj.track_index;
+            }
+        }
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
@@ -5159,6 +5181,11 @@ function importMOGRT(mogrtPath, timeTicks, videoTrackOffset, audioTrackOffset) {
 
 function getMOGRTProperties(trackIndex, clipIndex) {
     try {
+        var mobj = _tryParseJSONObjectString(trackIndex);
+        if (mobj) {
+            trackIndex = mobj.trackIndex !== undefined ? mobj.trackIndex : mobj.track_index;
+            clipIndex = mobj.clipIndex !== undefined ? mobj.clipIndex : mobj.clip_index;
+        }
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
@@ -5186,6 +5213,14 @@ function getMOGRTProperties(trackIndex, clipIndex) {
 
 function setMOGRTText(trackIndex, clipIndex, propertyIndex, text) {
     try {
+        var tobj = _tryParseJSONObjectString(trackIndex);
+        if (tobj) {
+            trackIndex = tobj.trackIndex !== undefined ? tobj.trackIndex : tobj.track_index;
+            clipIndex = tobj.clipIndex !== undefined ? tobj.clipIndex : tobj.clip_index;
+            propertyIndex =
+                tobj.propertyIndex !== undefined ? tobj.propertyIndex : tobj.property_index;
+            text = tobj.text !== undefined ? String(tobj.text) : "";
+        }
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
@@ -5207,6 +5242,14 @@ function setMOGRTText(trackIndex, clipIndex, propertyIndex, text) {
 
 function setMOGRTProperty(trackIndex, clipIndex, propertyName, value) {
     try {
+        var pobj = _tryParseJSONObjectString(trackIndex);
+        if (pobj) {
+            trackIndex = pobj.trackIndex !== undefined ? pobj.trackIndex : pobj.track_index;
+            clipIndex = pobj.clipIndex !== undefined ? pobj.clipIndex : pobj.clip_index;
+            propertyName =
+                pobj.propertyName !== undefined ? pobj.propertyName : pobj.property_name;
+            value = pobj.value !== undefined ? String(pobj.value) : "";
+        }
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
