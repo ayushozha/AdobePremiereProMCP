@@ -1795,20 +1795,20 @@ function getSequenceList() {
             sequences.push({
                 index: i,
                 name: seq.name || "",
-                sequenceID: seq.sequenceID || "",
-                frameSizeHorizontal: seq.frameSizeHorizontal || 0,
-                frameSizeVertical: seq.frameSizeVertical || 0,
+                sequence_id: seq.sequenceID || "",
+                frame_size_horizontal: seq.frameSizeHorizontal || 0,
+                frame_size_vertical: seq.frameSizeVertical || 0,
                 timebase: seq.timebase || "",
-                videoTrackCount: seq.videoTracks ? seq.videoTracks.numTracks : 0,
-                audioTrackCount: seq.audioTracks ? seq.audioTracks.numTracks : 0,
-                isActive: (seq.sequenceID === activeID)
+                video_track_count: seq.videoTracks ? seq.videoTracks.numTracks : 0,
+                audio_track_count: seq.audioTracks ? seq.audioTracks.numTracks : 0,
+                is_active: seq.sequenceID === activeID,
             });
         }
 
         return _ok({
             count: sequences.length,
             sequences: sequences,
-            activeSequenceID: activeID
+            active_sequence_id: activeID,
         });
     } catch (e) {
         return _err("getSequenceList failed: " + e.message);

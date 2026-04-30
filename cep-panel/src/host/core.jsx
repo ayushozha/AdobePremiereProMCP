@@ -212,14 +212,25 @@ function getSequenceList() {
         if (!app.project) return _err("No project is open.");
         var seqs = [];
         var numSeqs = 0;
-        try { numSeqs = app.project.sequences.numItems; } catch (e1) {}
+        try { numSeqs = app.project.sequences.numSequences || app.project.sequences.numItems || 0; } catch (e1) {}
+        var activeID = app.project.activeSequence ? (app.project.activeSequence.sequenceID || "") : "";
         for (var i = 0; i < numSeqs; i++) {
             var s = app.project.sequences[i];
             if (s) {
-                seqs.push({ index: i, name: s.name, id: s.sequenceID });
+                seqs.push({
+                    index: i,
+                    name: s.name || "",
+                    sequence_id: s.sequenceID || "",
+                    frame_size_horizontal: s.frameSizeHorizontal || 0,
+                    frame_size_vertical: s.frameSizeVertical || 0,
+                    timebase: s.timebase || "",
+                    video_track_count: (s.videoTracks && s.videoTracks.numTracks !== undefined) ? s.videoTracks.numTracks : 0,
+                    audio_track_count: (s.audioTracks && s.audioTracks.numTracks !== undefined) ? s.audioTracks.numTracks : 0,
+                    is_active: (s.sequenceID === activeID)
+                });
             }
         }
-        return _ok({ sequences: seqs, count: seqs.length });
+        return _ok({ sequences: seqs, count: seqs.length, active_sequence_id: activeID });
     } catch (e) { return _err("Failed to list sequences: " + e.message); }
 }
 
