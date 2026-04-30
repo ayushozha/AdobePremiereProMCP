@@ -158,7 +158,8 @@ func (e *Engine) GetSequenceList(ctx context.Context) (*SequenceListResult, erro
 		return nil, fmt.Errorf("failed to list sequences — open a project first with premiere_open_project: %w", err)
 	}
 	var out SequenceListResult
-	if err := json.Unmarshal([]byte(result), &out); err != nil {
+	payload := unwrapExtendScriptEnvelope(result)
+	if err := json.Unmarshal(payload, &out); err != nil {
 		return nil, fmt.Errorf("GetSequenceList: could not parse response from Premiere Pro: %w", err)
 	}
 	return &out, nil
