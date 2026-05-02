@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
+	"time"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	"go.uber.org/zap"
@@ -14,6 +16,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/config"
+	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/embeddedbridge"
 	grpcclients "github.com/anthropics/premierpro-mcp/go-orchestrator/internal/grpc"
 	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/mcp"
 	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/orchestrator"
@@ -36,9 +39,10 @@ func main() {
 func run() error {
 	// ── Flags ──────────────────────────────────────────────────────────
 	var (
-		transport = flag.String("transport", "", `MCP transport: "stdio" (default) or "sse"`)
-		port      = flag.Int("port", 0, "SSE HTTP port (only used with --transport=sse)")
-		logLevel  = flag.String("log-level", "", `Log level: "debug", "info", "warn", "error"`)
+		transport   = flag.String("transport", "", `MCP transport: "stdio" (default) or "sse"`)
+		port        = flag.Int("port", 0, "SSE HTTP port (only used with --transport=sse)")
+		logLevel    = flag.String("log-level", "", `Log level: "debug", "info", "warn", "error"`)
+		embedBridge = flag.Bool("embed-ts-bridge", false, "Windows only: spawn the TypeScript gRPC bridge in a Job Object that dies when server.exe terminates (recommended for Cursor MCP)")
 	)
 	flag.Parse()
 
@@ -72,6 +76,23 @@ func run() error {
 		zap.String("built", date),
 		zap.String("transport", string(cfg.Transport)),
 	)
+
+	var stopEmbedded func()
+	if *embedBridge {
+		if runtime.GOOS != "windows" {
+			return fmt.Errorf("--embed-ts-bridge is only supported on Windows")
+		}
+		var ebErr error
+		stopEmbedded, ebErr = embeddedbridge.Start(logger)
+		if ebErr != nil {
+			return ebErr
+		}
+		// Matches cursor-mcp-launcher delay — gRPC listens after node boot.
+		time.Sleep(2 * time.Second)
+	}
+	if stopEmbedded != nil {
+		defer stopEmbedded()
+	}
 
 	// ── gRPC client connections ───────────────────────────────────────
 	clients, err := grpcclients.NewClients(&grpcclients.ClientsConfig{

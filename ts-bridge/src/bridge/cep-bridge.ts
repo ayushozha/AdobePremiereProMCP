@@ -97,6 +97,65 @@ const DEFAULT_RECONNECT_MAX_MS = 30_000;
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const PONG_TIMEOUT_MS = 5_000;
 
+/** Map CEP WebSocket ping payload to gRPC {@link PingResult}. Handles PP24 + PP25 envelope shapes. */
+function normalizeCepPingResult(raw: unknown): PingResult {
+  const fallback: PingResult = {
+    premiereRunning: false,
+    premiereVersion: "",
+    projectOpen: false,
+    bridgeMode: "cep",
+  };
+
+  if (raw === null || raw === undefined || typeof raw !== "object") {
+    return fallback;
+  }
+
+  const o = raw as Record<string, unknown>;
+  const data = o["data"];
+  let inner: Record<string, unknown> | undefined;
+  if (typeof data === "object" && data !== null) {
+    inner = data as Record<string, unknown>;
+  } else if ("premiere_running" in o || "premiereRunning" in o) {
+    inner = o;
+  }
+
+  if (!inner) {
+    return fallback;
+  }
+
+  const running =
+    typeof inner["premiereRunning"] === "boolean"
+      ? inner["premiereRunning"]
+      : typeof inner["premiere_running"] === "boolean"
+        ? inner["premiere_running"]
+        : false;
+  const version =
+    typeof inner["premiereVersion"] === "string"
+      ? inner["premiereVersion"]
+      : typeof inner["premiere_version"] === "string"
+        ? inner["premiere_version"]
+        : "";
+  const open =
+    typeof inner["projectOpen"] === "boolean"
+      ? inner["projectOpen"]
+      : typeof inner["project_open"] === "boolean"
+        ? inner["project_open"]
+        : false;
+  const mode =
+    typeof inner["bridgeMode"] === "string"
+      ? inner["bridgeMode"]
+      : typeof inner["bridge_mode"] === "string"
+        ? inner["bridge_mode"]
+        : "cep";
+
+  return {
+    premiereRunning: running,
+    premiereVersion: version,
+    projectOpen: open,
+    bridgeMode: mode,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Implementation
 // ---------------------------------------------------------------------------
@@ -412,7 +471,21 @@ export class CepBridge implements PremiereBridge {
 
   async ping(): Promise<PingResult> {
     try {
-      return await this.send<PingResult>("ping", {});
+      const raw = await this.send<unknown>("ping", {});
+      if (
+        raw &&
+        typeof raw === "object" &&
+        !Array.isArray(raw) &&
+        (raw as Record<string, unknown>)["success"] === false
+      ) {
+        return {
+          premiereRunning: false,
+          premiereVersion: "",
+          projectOpen: false,
+          bridgeMode: "cep",
+        };
+      }
+      return normalizeCepPingResult(raw);
     } catch {
       return {
         premiereRunning: false,

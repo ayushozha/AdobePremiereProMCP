@@ -105,6 +105,21 @@ function _secondsToTime(seconds) {
     return t;
 }
 
+/**
+ * CEP bridge calls evalScript("fn('{...JSON...}')") with a SINGLE string argument,
+ * while many handlers below declare separate parameters. Detect and unwrap.
+ */
+function _tryParseJSONObjectString(v) {
+    if (v === undefined || v === null || v === "") return null;
+    var s = String(v).replace(/^\s+|\s+$/g, "");
+    if (s.charAt(0) !== "{") return null;
+    try {
+        var o = JSON.parse(s);
+        if (typeof o === "object" && o !== null && !(o instanceof Array)) return o;
+    } catch (eIgnored) {}
+    return null;
+}
+
 // ---------------------------------------------------------------------------
 // ping() - Health check
 // ---------------------------------------------------------------------------
@@ -1780,20 +1795,20 @@ function getSequenceList() {
             sequences.push({
                 index: i,
                 name: seq.name || "",
-                sequenceID: seq.sequenceID || "",
-                frameSizeHorizontal: seq.frameSizeHorizontal || 0,
-                frameSizeVertical: seq.frameSizeVertical || 0,
+                sequence_id: seq.sequenceID || "",
+                frame_size_horizontal: seq.frameSizeHorizontal || 0,
+                frame_size_vertical: seq.frameSizeVertical || 0,
                 timebase: seq.timebase || "",
-                videoTrackCount: seq.videoTracks ? seq.videoTracks.numTracks : 0,
-                audioTrackCount: seq.audioTracks ? seq.audioTracks.numTracks : 0,
-                isActive: (seq.sequenceID === activeID)
+                video_track_count: seq.videoTracks ? seq.videoTracks.numTracks : 0,
+                audio_track_count: seq.audioTracks ? seq.audioTracks.numTracks : 0,
+                is_active: seq.sequenceID === activeID,
             });
         }
 
         return _ok({
             count: sequences.length,
             sequences: sequences,
-            activeSequenceID: activeID
+            active_sequence_id: activeID,
         });
     } catch (e) {
         return _err("getSequenceList failed: " + e.message);
@@ -2251,6 +2266,25 @@ function insertBarsAndTone(paramsJson) {
     }
 }
 
+// Bundle scripted marker edits into one undo step when the host supports it.
+function _runWithUndoGroup(undoLabel, fn) {
+    var opened = false;
+    var label = undoLabel || "Script";
+    try {
+        if (typeof app !== "undefined" && app && typeof app.beginUndoGroup === "function") {
+            app.beginUndoGroup(label);
+            opened = true;
+        }
+        return fn();
+    } finally {
+        if (opened && typeof app.endUndoGroup === "function") {
+            try {
+                app.endUndoGroup();
+            } catch (endE) {}
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // getSequenceMarkers() - Get all markers on the active sequence
 // ---------------------------------------------------------------------------
@@ -2320,27 +2354,29 @@ function addSequenceMarker(paramsJson) {
             return _err("Sequence does not support markers");
         }
 
-        var newMarker = seq.markers.createMarker(time);
-        if (newMarker) {
+        var ret = null;
+        _runWithUndoGroup("Add sequence marker", function () {
+            var newMarker = seq.markers.createMarker(time);
+            if (!newMarker) {
+                throw new Error("Failed to create marker");
+            }
             if (name !== "") newMarker.name = name;
             if (comment !== "") newMarker.comments = comment;
             if (color >= 0) newMarker.colorIndex = color;
             if (duration > 0) {
                 newMarker.end = _secondsToTime(time + duration);
             }
-        } else {
-            return _err("Failed to create marker");
-        }
-
-        return _ok({
-            name: name,
-            comment: comment,
-            time: time,
-            duration: duration,
-            color: color,
-            sequenceName: seq.name || "",
-            sequenceID: seq.sequenceID || ""
+            ret = _ok({
+                name: name,
+                comment: comment,
+                time: time,
+                duration: duration,
+                color: color,
+                sequenceName: seq.name || "",
+                sequenceID: seq.sequenceID || ""
+            });
         });
+        return ret;
     } catch (e) {
         return _err("addSequenceMarker failed: " + e.message);
     }
@@ -2369,29 +2405,32 @@ function deleteSequenceMarker(markerIndex) {
             return _err("Invalid marker index: " + markerIndex);
         }
 
-        // Navigate to the target marker by index
-        var marker = seq.markers.getFirstMarker();
-        var idx = 0;
-        while (marker && idx < markerIndex) {
-            marker = seq.markers.getNextMarker(marker);
-            idx++;
-        }
+        var ret = null;
+        _runWithUndoGroup("Delete sequence marker", function () {
+            var marker = seq.markers.getFirstMarker();
+            var idx = 0;
+            while (marker && idx < markerIndex) {
+                marker = seq.markers.getNextMarker(marker);
+                idx++;
+            }
 
-        if (!marker) {
-            return _err("Marker index " + markerIndex + " not found");
-        }
+            if (!marker) {
+                throw new Error("Marker index " + markerIndex + " not found");
+            }
 
-        var deletedName = marker.name || "";
-        var deletedTime = _timeToSeconds(marker.start);
-        seq.markers.deleteMarker(marker);
+            var deletedName = marker.name || "";
+            var deletedTime = _timeToSeconds(marker.start);
+            seq.markers.deleteMarker(marker);
 
-        return _ok({
-            deletedIndex: markerIndex,
-            deletedName: deletedName,
-            deletedTime: deletedTime,
-            sequenceName: seq.name || "",
-            sequenceID: seq.sequenceID || ""
+            ret = _ok({
+                deletedIndex: markerIndex,
+                deletedName: deletedName,
+                deletedTime: deletedTime,
+                sequenceName: seq.name || "",
+                sequenceID: seq.sequenceID || ""
+            });
         });
+        return ret;
     } catch (e) {
         return _err("deleteSequenceMarker failed: " + e.message);
     }
@@ -2723,6 +2762,13 @@ function getClipInfo(trackType, trackIndex, clipIndex) {
 // ---------------------------------------------------------------------------
 function getClipsOnTrack(trackType, trackIndex) {
     try {
+        var argObj = _tryParseJSONObjectString(trackType);
+        if (argObj) {
+            trackType = argObj.trackType || argObj.track_type;
+            if (argObj.trackIndex !== undefined || argObj.track_index !== undefined) {
+                trackIndex = argObj.trackIndex !== undefined ? argObj.trackIndex : argObj.track_index;
+            }
+        }
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
@@ -4761,7 +4807,7 @@ function setLumetriTint(trackIndex, clipIndex, value) { try { return _setLumetri
 function setLumetriExposure(trackIndex, clipIndex, value) { try { return _setLumetriProperty(trackIndex, clipIndex, "Exposure", value); } catch (e) { return _err("setLumetriExposure failed: " + e.message); } }
 
 // ---------------------------------------------------------------------------
-// Lumetri Color — Extended (Comprehensive Color Correction)
+// Lumetri Color - Extended (Comprehensive Color Correction)
 // ---------------------------------------------------------------------------
 
 /**
@@ -4814,7 +4860,7 @@ function _getLumetriComponent(trackIndex, clipIndex) {
     return lumetri;
 }
 
-/** 1. lumetriGetAll — Get all Lumetri Color parameter values */
+/** 1. lumetriGetAll - Get all Lumetri Color parameter values */
 function lumetriGetAll(trackIndex, clipIndex) {
     try {
         if (!app.project) return _err("No project is open");
@@ -4849,67 +4895,67 @@ function lumetriGetAll(trackIndex, clipIndex) {
     } catch (e) { return _err("lumetriGetAll failed: " + e.message); }
 }
 
-/** 2. lumetriSetExposure — Set exposure (-4.0 to 4.0) */
+/** 2. lumetriSetExposure - Set exposure (-4.0 to 4.0) */
 function lumetriSetExposure(trackIndex, clipIndex, value) {
     try { value = Math.max(-4.0, Math.min(4.0, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Exposure", value); } catch (e) { return _err("lumetriSetExposure failed: " + e.message); }
 }
 
-/** 3. lumetriSetContrast — Set contrast (-100 to 100) */
+/** 3. lumetriSetContrast - Set contrast (-100 to 100) */
 function lumetriSetContrast(trackIndex, clipIndex, value) {
     try { value = Math.max(-100, Math.min(100, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Contrast", value); } catch (e) { return _err("lumetriSetContrast failed: " + e.message); }
 }
 
-/** 4. lumetriSetHighlights — Set highlights (-100 to 100) */
+/** 4. lumetriSetHighlights - Set highlights (-100 to 100) */
 function lumetriSetHighlights(trackIndex, clipIndex, value) {
     try { value = Math.max(-100, Math.min(100, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Highlights", value); } catch (e) { return _err("lumetriSetHighlights failed: " + e.message); }
 }
 
-/** 5. lumetriSetShadows — Set shadows (-100 to 100) */
+/** 5. lumetriSetShadows - Set shadows (-100 to 100) */
 function lumetriSetShadows(trackIndex, clipIndex, value) {
     try { value = Math.max(-100, Math.min(100, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Shadows", value); } catch (e) { return _err("lumetriSetShadows failed: " + e.message); }
 }
 
-/** 6. lumetriSetWhites — Set whites (-100 to 100) */
+/** 6. lumetriSetWhites - Set whites (-100 to 100) */
 function lumetriSetWhites(trackIndex, clipIndex, value) {
     try { value = Math.max(-100, Math.min(100, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Whites", value); } catch (e) { return _err("lumetriSetWhites failed: " + e.message); }
 }
 
-/** 7. lumetriSetBlacks — Set blacks (-100 to 100) */
+/** 7. lumetriSetBlacks - Set blacks (-100 to 100) */
 function lumetriSetBlacks(trackIndex, clipIndex, value) {
     try { value = Math.max(-100, Math.min(100, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Blacks", value); } catch (e) { return _err("lumetriSetBlacks failed: " + e.message); }
 }
 
-/** 8. lumetriSetTemperature — Set white balance temperature */
+/** 8. lumetriSetTemperature - Set white balance temperature */
 function lumetriSetTemperature(trackIndex, clipIndex, value) {
     try { value = parseFloat(value) || 0; return _setLumetriProperty(trackIndex, clipIndex, "Temperature", value); } catch (e) { return _err("lumetriSetTemperature failed: " + e.message); }
 }
 
-/** 9. lumetriSetTint — Set white balance tint */
+/** 9. lumetriSetTint - Set white balance tint */
 function lumetriSetTint(trackIndex, clipIndex, value) {
     try { value = parseFloat(value) || 0; return _setLumetriProperty(trackIndex, clipIndex, "Tint", value); } catch (e) { return _err("lumetriSetTint failed: " + e.message); }
 }
 
-/** 10. lumetriSetSaturation — Set saturation (0 to 200) */
+/** 10. lumetriSetSaturation - Set saturation (0 to 200) */
 function lumetriSetSaturation(trackIndex, clipIndex, value) {
     try { value = Math.max(0, Math.min(200, parseFloat(value) || 100)); return _setLumetriProperty(trackIndex, clipIndex, "Saturation", value); } catch (e) { return _err("lumetriSetSaturation failed: " + e.message); }
 }
 
-/** 11. lumetriSetVibrance — Set vibrance (-100 to 100) */
+/** 11. lumetriSetVibrance - Set vibrance (-100 to 100) */
 function lumetriSetVibrance(trackIndex, clipIndex, value) {
     try { value = Math.max(-100, Math.min(100, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Vibrance", value); } catch (e) { return _err("lumetriSetVibrance failed: " + e.message); }
 }
 
-/** 12. lumetriSetFadedFilm — Set faded film amount (0 to 100) */
+/** 12. lumetriSetFadedFilm - Set faded film amount (0 to 100) */
 function lumetriSetFadedFilm(trackIndex, clipIndex, value) {
     try { value = Math.max(0, Math.min(100, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Faded Film", value); } catch (e) { return _err("lumetriSetFadedFilm failed: " + e.message); }
 }
 
-/** 13. lumetriSetSharpen — Set sharpening (0 to 200) */
+/** 13. lumetriSetSharpen - Set sharpening (0 to 200) */
 function lumetriSetSharpen(trackIndex, clipIndex, value) {
     try { value = Math.max(0, Math.min(200, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Sharpen", value); } catch (e) { return _err("lumetriSetSharpen failed: " + e.message); }
 }
 
-/** 14. lumetriSetCurvePoint — Set a point on RGB/Luma curve (channel: luma/red/green/blue) */
+/** 14. lumetriSetCurvePoint - Set a point on RGB/Luma curve (channel: luma/red/green/blue) */
 function lumetriSetCurvePoint(trackIndex, clipIndex, channel, inputValue, outputValue) {
     try {
         if (!app.project) return _err("No project is open");
@@ -4930,7 +4976,7 @@ function lumetriSetCurvePoint(trackIndex, clipIndex, channel, inputValue, output
     } catch (e) { return _err("lumetriSetCurvePoint failed: " + e.message); }
 }
 
-/** 15. lumetriSetShadowColor — Set shadow color wheel */
+/** 15. lumetriSetShadowColor - Set shadow color wheel */
 function lumetriSetShadowColor(trackIndex, clipIndex, hue, saturation, brightness) {
     try {
         if (!app.project) return _err("No project is open");
@@ -4945,7 +4991,7 @@ function lumetriSetShadowColor(trackIndex, clipIndex, hue, saturation, brightnes
     } catch (e) { return _err("lumetriSetShadowColor failed: " + e.message); }
 }
 
-/** 16. lumetriSetMidtoneColor — Set midtone color wheel */
+/** 16. lumetriSetMidtoneColor - Set midtone color wheel */
 function lumetriSetMidtoneColor(trackIndex, clipIndex, hue, saturation, brightness) {
     try {
         if (!app.project) return _err("No project is open");
@@ -4960,7 +5006,7 @@ function lumetriSetMidtoneColor(trackIndex, clipIndex, hue, saturation, brightne
     } catch (e) { return _err("lumetriSetMidtoneColor failed: " + e.message); }
 }
 
-/** 17. lumetriSetHighlightColor — Set highlight color wheel */
+/** 17. lumetriSetHighlightColor - Set highlight color wheel */
 function lumetriSetHighlightColor(trackIndex, clipIndex, hue, saturation, brightness) {
     try {
         if (!app.project) return _err("No project is open");
@@ -4975,27 +5021,27 @@ function lumetriSetHighlightColor(trackIndex, clipIndex, hue, saturation, bright
     } catch (e) { return _err("lumetriSetHighlightColor failed: " + e.message); }
 }
 
-/** 18. lumetriSetVignetteAmount — Set vignette amount */
+/** 18. lumetriSetVignetteAmount - Set vignette amount */
 function lumetriSetVignetteAmount(trackIndex, clipIndex, value) {
     try { value = Math.max(-5, Math.min(5, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Vignette Amount", value); } catch (e) { return _err("lumetriSetVignetteAmount failed: " + e.message); }
 }
 
-/** 19. lumetriSetVignetteMidpoint — Set vignette midpoint */
+/** 19. lumetriSetVignetteMidpoint - Set vignette midpoint */
 function lumetriSetVignetteMidpoint(trackIndex, clipIndex, value) {
     try { value = Math.max(0, Math.min(100, parseFloat(value) || 50)); return _setLumetriProperty(trackIndex, clipIndex, "Vignette Midpoint", value); } catch (e) { return _err("lumetriSetVignetteMidpoint failed: " + e.message); }
 }
 
-/** 20. lumetriSetVignetteRoundness — Set vignette roundness */
+/** 20. lumetriSetVignetteRoundness - Set vignette roundness */
 function lumetriSetVignetteRoundness(trackIndex, clipIndex, value) {
     try { value = Math.max(-100, Math.min(100, parseFloat(value) || 0)); return _setLumetriProperty(trackIndex, clipIndex, "Vignette Roundness", value); } catch (e) { return _err("lumetriSetVignetteRoundness failed: " + e.message); }
 }
 
-/** 21. lumetriSetVignetteFeather — Set vignette feather */
+/** 21. lumetriSetVignetteFeather - Set vignette feather */
 function lumetriSetVignetteFeather(trackIndex, clipIndex, value) {
     try { value = Math.max(0, Math.min(100, parseFloat(value) || 50)); return _setLumetriProperty(trackIndex, clipIndex, "Vignette Feather", value); } catch (e) { return _err("lumetriSetVignetteFeather failed: " + e.message); }
 }
 
-/** 22. lumetriApplyLUT — Apply a LUT file (.cube, .3dl) */
+/** 22. lumetriApplyLUT - Apply a LUT file (.cube, .3dl) */
 function lumetriApplyLUT(trackIndex, clipIndex, lutPath) {
     try {
         if (!app.project) return _err("No project is open");
@@ -5013,7 +5059,7 @@ function lumetriApplyLUT(trackIndex, clipIndex, lutPath) {
     } catch (e) { return _err("lumetriApplyLUT failed: " + e.message); }
 }
 
-/** 23. lumetriRemoveLUT — Remove applied LUT */
+/** 23. lumetriRemoveLUT - Remove applied LUT */
 function lumetriRemoveLUT(trackIndex, clipIndex) {
     try {
         if (!app.project) return _err("No project is open");
@@ -5025,7 +5071,7 @@ function lumetriRemoveLUT(trackIndex, clipIndex) {
     } catch (e) { return _err("lumetriRemoveLUT failed: " + e.message); }
 }
 
-/** 24. lumetriAutoColor — Auto color correction (applies reasonable defaults) */
+/** 24. lumetriAutoColor - Auto color correction (applies reasonable defaults) */
 function lumetriAutoColor(trackIndex, clipIndex) {
     try {
         if (!app.project) return _err("No project is open");
@@ -5038,7 +5084,7 @@ function lumetriAutoColor(trackIndex, clipIndex) {
     } catch (e) { return _err("lumetriAutoColor failed: " + e.message); }
 }
 
-/** 25. lumetriReset — Reset all Lumetri settings to default */
+/** 25. lumetriReset - Reset all Lumetri settings to default */
 function lumetriReset(trackIndex, clipIndex) {
     try {
         if (!app.project) return _err("No project is open");
@@ -5051,7 +5097,7 @@ function lumetriReset(trackIndex, clipIndex) {
     } catch (e) { return _err("lumetriReset failed: " + e.message); }
 }
 
-/** 26. getColorInfo — Get basic color statistics for a clip */
+/** 26. getColorInfo - Get basic color statistics for a clip */
 function getColorInfo(trackIndex, clipIndex) {
     try {
         if (!app.project) return _err("No project is open");
@@ -5078,7 +5124,7 @@ function getColorInfo(trackIndex, clipIndex) {
 /** Internal variable to store copied Lumetri settings for paste operations */
 var _copiedLumetriSettings = null;
 
-/** 27. copyColorGrade — Copy Lumetri settings from a source clip */
+/** 27. copyColorGrade - Copy Lumetri settings from a source clip */
 function copyColorGrade(srcTrackIndex, srcClipIndex) {
     try {
         if (!app.project) return _err("No project is open");
@@ -5090,7 +5136,7 @@ function copyColorGrade(srcTrackIndex, srcClipIndex) {
     } catch (e) { return _err("copyColorGrade failed: " + e.message); }
 }
 
-/** 28. pasteColorGrade — Paste previously copied Lumetri settings */
+/** 28. pasteColorGrade - Paste previously copied Lumetri settings */
 function pasteColorGrade(destTrackIndex, destClipIndex) {
     try {
         if (!app.project) return _err("No project is open");
@@ -5103,7 +5149,7 @@ function pasteColorGrade(destTrackIndex, destClipIndex) {
     } catch (e) { return _err("pasteColorGrade failed: " + e.message); }
 }
 
-/** 29. applyColorGradeToAll — Apply grade from source clip to all clips on a track */
+/** 29. applyColorGradeToAll - Apply grade from source clip to all clips on a track */
 function applyColorGradeToAll(srcTrackIndex, srcClipIndex, trackIndex) {
     try {
         if (!app.project) return _err("No project is open");
@@ -5124,7 +5170,7 @@ function applyColorGradeToAll(srcTrackIndex, srcClipIndex, trackIndex) {
     } catch (e) { return _err("applyColorGradeToAll failed: " + e.message); }
 }
 
-/** 30. lumetriAutoWhiteBalance — Auto white balance (resets temperature and tint to neutral) */
+/** 30. lumetriAutoWhiteBalance - Auto white balance (resets temperature and tint to neutral) */
 function lumetriAutoWhiteBalance(trackIndex, clipIndex) {
     try {
         if (!app.project) return _err("No project is open");
@@ -5159,6 +5205,11 @@ function importMOGRT(mogrtPath, timeTicks, videoTrackOffset, audioTrackOffset) {
 
 function getMOGRTProperties(trackIndex, clipIndex) {
     try {
+        var mobj = _tryParseJSONObjectString(trackIndex);
+        if (mobj) {
+            trackIndex = mobj.trackIndex !== undefined ? mobj.trackIndex : mobj.track_index;
+            clipIndex = mobj.clipIndex !== undefined ? mobj.clipIndex : mobj.clip_index;
+        }
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
@@ -5186,6 +5237,14 @@ function getMOGRTProperties(trackIndex, clipIndex) {
 
 function setMOGRTText(trackIndex, clipIndex, propertyIndex, text) {
     try {
+        var tobj = _tryParseJSONObjectString(trackIndex);
+        if (tobj) {
+            trackIndex = tobj.trackIndex !== undefined ? tobj.trackIndex : tobj.track_index;
+            clipIndex = tobj.clipIndex !== undefined ? tobj.clipIndex : tobj.clip_index;
+            propertyIndex =
+                tobj.propertyIndex !== undefined ? tobj.propertyIndex : tobj.property_index;
+            text = tobj.text !== undefined ? String(tobj.text) : "";
+        }
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
@@ -5207,6 +5266,14 @@ function setMOGRTText(trackIndex, clipIndex, propertyIndex, text) {
 
 function setMOGRTProperty(trackIndex, clipIndex, propertyName, value) {
     try {
+        var pobj = _tryParseJSONObjectString(trackIndex);
+        if (pobj) {
+            trackIndex = pobj.trackIndex !== undefined ? pobj.trackIndex : pobj.track_index;
+            clipIndex = pobj.clipIndex !== undefined ? pobj.clipIndex : pobj.clip_index;
+            propertyName =
+                pobj.propertyName !== undefined ? pobj.propertyName : pobj.property_name;
+            value = pobj.value !== undefined ? String(pobj.value) : "";
+        }
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
@@ -7092,9 +7159,13 @@ function addClipMarker(trackType, trackIndex, clipIndex, time, name, comment, co
         if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
         var clip = track.clips[clipIndex];
         if (!clip.markers) return _err("Clip does not support markers");
-        var marker = clip.markers.createMarker(time);
-        if (marker) { marker.name = name; marker.comments = comment; if (marker.setColorByIndex) { marker.setColorByIndex(color); } }
-        return _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, markerTime: time, markerName: name, markerComment: comment, markerColor: color });
+        var ret;
+        _runWithUndoGroup("Add clip marker", function () {
+            var marker = clip.markers.createMarker(time);
+            if (marker) { marker.name = name; marker.comments = comment; if (marker.setColorByIndex) { marker.setColorByIndex(color); } }
+            ret = _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, markerTime: time, markerName: name, markerComment: comment, markerColor: color });
+        });
+        return ret;
     } catch (e) { return _err("addClipMarker failed: " + e.message); }
 }
 
@@ -7133,8 +7204,12 @@ function deleteClipMarker(trackType, trackIndex, clipIndex, markerIndex) {
         while (marker && idx < markerIndex) { marker = clip.markers.getNextMarker(marker); idx++; }
         if (!marker) return _err("Marker index " + markerIndex + " out of range");
         var markerName = marker.name || "";
-        clip.markers.deleteMarker(marker);
-        return _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, markerIndex: markerIndex, deletedMarkerName: markerName, deleted: true });
+        var ret;
+        _runWithUndoGroup("Delete clip marker", function () {
+            clip.markers.deleteMarker(marker);
+            ret = _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, markerIndex: markerIndex, deletedMarkerName: markerName, deleted: true });
+        });
+        return ret;
     } catch (e) { return _err("deleteClipMarker failed: " + e.message); }
 }
 
@@ -9261,17 +9336,19 @@ function importMarkersFromCSV(csvPath) {
         var file = new File(csvPath); if (!file.exists) return _err("CSV file not found: " + csvPath);
         file.encoding = "UTF-8"; file.open("r"); var content = file.read(); file.close();
         var lines = content.split(/\r?\n/); var imported = 0; var markers = seq.markers;
-        for (var i = 1; i < lines.length; i++) {
-            var line = lines[i].replace(/^\s+|\s+$/g, ""); if (!line) continue;
-            var parts = line.split(","); if (parts.length < 3) continue;
-            var name = parts[0] || ""; var comment = parts[1] || "";
-            var startSec = parseFloat(parts[2]) || 0; var endSec = parseFloat(parts[3]) || startSec;
-            var colorIdx = parseInt(parts[4], 10) || 0;
-            try {
-                var newMarker = markers.createMarker(startSec);
-                if (newMarker) { newMarker.name = name; newMarker.comments = comment; if (endSec > startSec) newMarker.end = _secondsToTime(endSec); if (colorIdx > 0 && newMarker.setColorByIndex) newMarker.setColorByIndex(colorIdx); imported++; }
-            } catch (me) {}
-        }
+        _runWithUndoGroup("Import markers from CSV", function () {
+            for (var i = 1; i < lines.length; i++) {
+                var line = lines[i].replace(/^\s+|\s+$/g, ""); if (!line) continue;
+                var parts = line.split(","); if (parts.length < 3) continue;
+                var name = parts[0] || ""; var comment = parts[1] || "";
+                var startSec = parseFloat(parts[2]) || 0; var endSec = parseFloat(parts[3]) || startSec;
+                var colorIdx = parseInt(parts[4], 10) || 0;
+                try {
+                    var newMarker = markers.createMarker(startSec);
+                    if (newMarker) { newMarker.name = name; newMarker.comments = comment; if (endSec > startSec) newMarker.end = _secondsToTime(endSec); if (colorIdx > 0 && newMarker.setColorByIndex) newMarker.setColorByIndex(colorIdx); imported++; }
+                } catch (me) {}
+            }
+        });
         return _ok({csvPath: csvPath, markersImported: imported});
     } catch (e) { return _err("importMarkersFromCSV failed: " + e.message); }
 }
@@ -9281,10 +9358,12 @@ function deleteAllMarkers() {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence; if (!seq) return _err("No active sequence");
         var markers = seq.markers; if (!markers) return _err("Sequence has no markers object");
-        var toDelete = []; var marker = markers.getFirstMarker();
-        while (marker) { toDelete.push(marker); marker = markers.getNextMarker(marker); }
         var count = 0;
-        for (var i = 0; i < toDelete.length; i++) { try { markers.deleteMarker(toDelete[i]); count++; } catch (de) {} }
+        _runWithUndoGroup("Delete all sequence markers", function () {
+            var toDelete = []; var marker = markers.getFirstMarker();
+            while (marker) { toDelete.push(marker); marker = markers.getNextMarker(marker); }
+            for (var i = 0; i < toDelete.length; i++) { try { markers.deleteMarker(toDelete[i]); count++; } catch (de) {} }
+        });
         return _ok({markersDeleted: count});
     } catch (e) { return _err("deleteAllMarkers failed: " + e.message); }
 }
@@ -9758,7 +9837,7 @@ function extractAudioFromVideo(projectItemIndex) {
 // ---------------------------------------------------------------------------
 
 /**
- * 1. getGeneralPreferences — Get general preferences.
+ * 1. getGeneralPreferences - Get general preferences.
  */
 function getGeneralPreferences() {
     try {
@@ -9783,7 +9862,7 @@ function getGeneralPreferences() {
 }
 
 /**
- * 2. setDefaultStillDuration — Set default still image duration in frames.
+ * 2. setDefaultStillDuration - Set default still image duration in frames.
  */
 function setDefaultStillDuration(frames) {
     try {
@@ -9801,7 +9880,7 @@ function setDefaultStillDuration(frames) {
 }
 
 /**
- * 3. setDefaultTransitionDuration — Set default video transition duration in seconds.
+ * 3. setDefaultTransitionDuration - Set default video transition duration in seconds.
  */
 function setDefaultTransitionDuration(seconds) {
     try {
@@ -9818,7 +9897,7 @@ function setDefaultTransitionDuration(seconds) {
 }
 
 /**
- * 4. setDefaultAudioTransitionDuration — Set default audio transition duration in seconds.
+ * 4. setDefaultAudioTransitionDuration - Set default audio transition duration in seconds.
  */
 function setDefaultAudioTransitionDuration(seconds) {
     try {
@@ -9839,7 +9918,7 @@ function setDefaultAudioTransitionDuration(seconds) {
 // ---------------------------------------------------------------------------
 
 /**
- * 5. getBrightness — Get UI brightness level.
+ * 5. getBrightness - Get UI brightness level.
  */
 function getBrightness() {
     try {
@@ -9852,7 +9931,7 @@ function getBrightness() {
 }
 
 /**
- * 6. setBrightness — Set UI brightness (0-255).
+ * 6. setBrightness - Set UI brightness (0-255).
  */
 function setBrightness(level) {
     try {
@@ -9876,7 +9955,7 @@ function setBrightness(level) {
 // ---------------------------------------------------------------------------
 
 /**
- * 7. setAutoSaveEnabled — Enable/disable auto-save.
+ * 7. setAutoSaveEnabled - Enable/disable auto-save.
  */
 function setAutoSaveEnabled(enabled) {
     try {
@@ -9891,7 +9970,7 @@ function setAutoSaveEnabled(enabled) {
 }
 
 /**
- * 8. setAutoSaveMaxVersions — Set max auto-save versions.
+ * 8. setAutoSaveMaxVersions - Set max auto-save versions.
  */
 function setAutoSaveMaxVersions(count) {
     try {
@@ -9909,7 +9988,7 @@ function setAutoSaveMaxVersions(count) {
 }
 
 /**
- * 9. getAutoSaveLocation — Get auto-save folder location.
+ * 9. getAutoSaveLocation - Get auto-save folder location.
  */
 function getAutoSaveLocation() {
     try {
@@ -9933,7 +10012,7 @@ function getAutoSaveLocation() {
 // ---------------------------------------------------------------------------
 
 /**
- * 10. getPlaybackResolution — Get playback resolution setting.
+ * 10. getPlaybackResolution - Get playback resolution setting.
  */
 function getPlaybackResolution() {
     try {
@@ -9951,7 +10030,7 @@ function getPlaybackResolution() {
 }
 
 /**
- * 11. setPlaybackResolution — Set playback resolution (full, 1/2, 1/4, 1/8, 1/16).
+ * 11. setPlaybackResolution - Set playback resolution (full, 1/2, 1/4, 1/8, 1/16).
  */
 function setPlaybackResolution(quality) {
     try {
@@ -9978,7 +10057,7 @@ function setPlaybackResolution(quality) {
 }
 
 /**
- * 12. getPrerollFrames — Get pre-roll frames.
+ * 12. getPrerollFrames - Get pre-roll frames.
  */
 function getPrerollFrames() {
     try {
@@ -9991,7 +10070,7 @@ function getPrerollFrames() {
 }
 
 /**
- * 13. setPrerollFrames — Set pre-roll frames.
+ * 13. setPrerollFrames - Set pre-roll frames.
  */
 function setPrerollFrames(frames) {
     try {
@@ -10009,7 +10088,7 @@ function setPrerollFrames(frames) {
 }
 
 /**
- * 14. getPostrollFrames — Get post-roll frames.
+ * 14. getPostrollFrames - Get post-roll frames.
  */
 function getPostrollFrames() {
     try {
@@ -10022,7 +10101,7 @@ function getPostrollFrames() {
 }
 
 /**
- * 15. setPostrollFrames — Set post-roll frames.
+ * 15. setPostrollFrames - Set post-roll frames.
  */
 function setPostrollFrames(frames) {
     try {
@@ -10044,7 +10123,7 @@ function setPostrollFrames(frames) {
 // ---------------------------------------------------------------------------
 
 /**
- * 16. getTimelineSettings — Get all timeline preferences.
+ * 16. getTimelineSettings - Get all timeline preferences.
  */
 function getTimelineSettings() {
     try {
@@ -10066,7 +10145,7 @@ function getTimelineSettings() {
 }
 
 /**
- * 17. setTimeDisplayFormat — Set time display format (timecode, frames, feet+frames).
+ * 17. setTimeDisplayFormat - Set time display format (timecode, frames, feet+frames).
  */
 function setTimeDisplayFormat(format) {
     try {
@@ -10083,7 +10162,7 @@ function setTimeDisplayFormat(format) {
 }
 
 /**
- * 18. setVideoTransitionDefaultDuration — Set default video transition duration in frames.
+ * 18. setVideoTransitionDefaultDuration - Set default video transition duration in frames.
  */
 function setVideoTransitionDefaultDuration(frames) {
     try {
@@ -10105,7 +10184,7 @@ function setVideoTransitionDefaultDuration(frames) {
 // ---------------------------------------------------------------------------
 
 /**
- * 19. getMediaCacheSettings — Get media cache settings.
+ * 19. getMediaCacheSettings - Get media cache settings.
  */
 function getMediaCacheSettings() {
     try {
@@ -10123,7 +10202,7 @@ function getMediaCacheSettings() {
 }
 
 /**
- * 20. setMediaCacheLocation — Set media cache location.
+ * 20. setMediaCacheLocation - Set media cache location.
  */
 function setMediaCacheLocation(path) {
     try {
@@ -10144,7 +10223,7 @@ function setMediaCacheLocation(path) {
 }
 
 /**
- * 21. setMediaCacheSize — Set max media cache size in GB.
+ * 21. setMediaCacheSize - Set max media cache size in GB.
  */
 function setMediaCacheSize(maxGB) {
     try {
@@ -10161,7 +10240,7 @@ function setMediaCacheSize(maxGB) {
 }
 
 /**
- * 22. cleanMediaCacheOlderThan — Clean cache files older than N days.
+ * 22. cleanMediaCacheOlderThan - Clean cache files older than N days.
  */
 function cleanMediaCacheOlderThan(days) {
     try {
@@ -10198,7 +10277,7 @@ function cleanMediaCacheOlderThan(days) {
 // ---------------------------------------------------------------------------
 
 /**
- * 23. getLabelColorNames — Get all label color names.
+ * 23. getLabelColorNames - Get all label color names.
  */
 function getLabelColorNames() {
     try {
@@ -10224,7 +10303,7 @@ function getLabelColorNames() {
 }
 
 /**
- * 24. setLabelColorName — Rename a label color.
+ * 24. setLabelColorName - Rename a label color.
  */
 function setLabelColorName(index, name) {
     try {
@@ -10249,7 +10328,7 @@ function setLabelColorName(index, name) {
 // ---------------------------------------------------------------------------
 
 /**
- * 25. getRendererInfo — Get current renderer (Software, CUDA, Metal, OpenCL).
+ * 25. getRendererInfo - Get current renderer (Software, CUDA, Metal, OpenCL).
  */
 function getRendererInfo() {
     try {
@@ -10272,7 +10351,7 @@ function getRendererInfo() {
 }
 
 /**
- * 26. getGPUInfo — Get GPU information.
+ * 26. getGPUInfo - Get GPU information.
  */
 function getGPUInfo() {
     try {
@@ -10299,7 +10378,7 @@ function getGPUInfo() {
 }
 
 /**
- * 27. setRenderer — Set the active renderer.
+ * 27. setRenderer - Set the active renderer.
  */
 function setRenderer(rendererName) {
     try {
@@ -10320,7 +10399,7 @@ function setRenderer(rendererName) {
 // ---------------------------------------------------------------------------
 
 /**
- * 28. getDefaultSequencePresets — List available sequence presets.
+ * 28. getDefaultSequencePresets - List available sequence presets.
  */
 function getDefaultSequencePresets() {
     try {
@@ -10347,7 +10426,7 @@ function getDefaultSequencePresets() {
 }
 
 /**
- * 29. setDefaultSequencePreset — Set default sequence preset.
+ * 29. setDefaultSequencePreset - Set default sequence preset.
  */
 function setDefaultSequencePreset(presetPath) {
     try {
@@ -10368,7 +10447,7 @@ function setDefaultSequencePreset(presetPath) {
 }
 
 /**
- * 30. getInstalledCodecs — List installed codecs/formats.
+ * 30. getInstalledCodecs - List installed codecs/formats.
  */
 function getInstalledCodecs() {
     try {
@@ -12801,7 +12880,7 @@ function playMacro(name) {
 
 // ===========================================================================
 // VR / 360 Video, HDR, Stereoscopic, Frame Rate, Aspect Ratio, Timecode,
-// Render Settings, and Closed Captions (Extended) — Immersive & Advanced
+// Render Settings, and Closed Captions (Extended) - Immersive & Advanced
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
@@ -14818,7 +14897,7 @@ function optimizeProject() {
 // ---------------------------------------------------------------------------
 
 /**
- * createMontage — Auto-assemble clips with transitions and background music.
+ * createMontage - Auto-assemble clips with transitions and background music.
  * @param {string} clipIndicesJSON - JSON array of project item indices
  * @param {string} transitionName - Transition to apply between clips
  * @param {number} transitionDuration - Transition duration in seconds
@@ -14878,7 +14957,7 @@ function createMontage(clipIndicesJSON, transitionName, transitionDuration, musi
 }
 
 /**
- * createSlideshow — Create a slideshow from images with transitions and music.
+ * createSlideshow - Create a slideshow from images with transitions and music.
  * @param {string} imageIndicesJSON - JSON array of project item indices for images
  * @param {number} slideDuration - Duration per slide in seconds
  * @param {string} transitionName - Transition between slides
@@ -14928,7 +15007,7 @@ function createSlideshow(imageIndicesJSON, slideDuration, transitionName, musicP
 }
 
 /**
- * createHighlightReel — Extract marker-tagged sections into a new highlight sequence.
+ * createHighlightReel - Extract marker-tagged sections into a new highlight sequence.
  * @param {number} sequenceIndex - Index of the source sequence
  * @param {string} markerColor - Marker color to filter (e.g. "Green")
  * @param {string} outputName - Name for the highlight sequence
@@ -14982,7 +15061,7 @@ function createHighlightReel(sequenceIndex, markerColor, outputName) {
 }
 
 /**
- * rippleDeleteEmptySpaces — Remove all empty spaces (gaps) across all tracks.
+ * rippleDeleteEmptySpaces - Remove all empty spaces (gaps) across all tracks.
  */
 function rippleDeleteEmptySpaces() {
     try {
@@ -15026,7 +15105,7 @@ function rippleDeleteEmptySpaces() {
 }
 
 /**
- * alignAllClipsToTrack — Move clips from one track to align with clips on another.
+ * alignAllClipsToTrack - Move clips from one track to align with clips on another.
  * @param {number} sourceTrack - Source video track index
  * @param {number} destTrack - Destination video track index
  */
@@ -15060,7 +15139,7 @@ function alignAllClipsToTrack(sourceTrack, destTrack) {
 // ---------------------------------------------------------------------------
 
 /**
- * syncAllAudioToVideo — Attempt to sync audio clips to corresponding video by timecode.
+ * syncAllAudioToVideo - Attempt to sync audio clips to corresponding video by timecode.
  */
 function syncAllAudioToVideo() {
     try {
@@ -15098,7 +15177,7 @@ function syncAllAudioToVideo() {
 }
 
 /**
- * replaceAudio — Replace the audio of a video clip at given track/clip index.
+ * replaceAudio - Replace the audio of a video clip at given track/clip index.
  * @param {number} videoTrackIndex - Video track index
  * @param {number} videoClipIndex - Clip index on the video track
  * @param {string} audioPath - Path to the replacement audio file
@@ -15130,7 +15209,7 @@ function replaceAudio(videoTrackIndex, videoClipIndex, audioPath) {
 }
 
 /**
- * addMusicBed — Add background music with fades and volume control.
+ * addMusicBed - Add background music with fades and volume control.
  * @param {string} audioPath - Path to the music file
  * @param {number} trackIndex - Audio track index
  * @param {number} startTime - Start time in seconds
@@ -15170,7 +15249,7 @@ function addMusicBed(audioPath, trackIndex, startTime, endTime, fadeIn, fadeOut,
 }
 
 /**
- * duckMusicUnderDialogue — Lower music volume under dialogue clips.
+ * duckMusicUnderDialogue - Lower music volume under dialogue clips.
  * @param {number} musicTrackIndex - Audio track index of music
  * @param {number} dialogueTrackIndex - Audio track index of dialogue
  * @param {number} duckAmount - Amount to duck in dB (positive number, e.g. 12)
@@ -15212,7 +15291,7 @@ function duckMusicUnderDialogue(musicTrackIndex, dialogueTrackIndex, duckAmount)
 }
 
 /**
- * addSoundEffect — Place a sound effect at a specific time on a track.
+ * addSoundEffect - Place a sound effect at a specific time on a track.
  * @param {string} sfxPath - Path to the sound effect file
  * @param {number} trackIndex - Audio track index
  * @param {number} time - Time in seconds to place the SFX
@@ -15240,7 +15319,7 @@ function addSoundEffect(sfxPath, trackIndex, time, volume) {
 // ---------------------------------------------------------------------------
 
 /**
- * matchColorBetweenClips — Copy Lumetri color settings from one clip to another.
+ * matchColorBetweenClips - Copy Lumetri color settings from one clip to another.
  * @param {number} srcTrackIndex - Source video track index
  * @param {number} srcClipIndex - Source clip index
  * @param {number} destTrackIndex - Destination video track index
@@ -15279,7 +15358,7 @@ function matchColorBetweenClips(srcTrackIndex, srcClipIndex, destTrackIndex, des
 }
 
 /**
- * applyColorPreset — Apply a named color preset to a clip.
+ * applyColorPreset - Apply a named color preset to a clip.
  * @param {number} trackIndex - Video track index
  * @param {number} clipIndex - Clip index
  * @param {string} presetName - Preset name (Warm, Cool, Vintage, Cinematic, Desaturated, HighContrast)
@@ -15311,7 +15390,7 @@ function applyColorPreset(trackIndex, clipIndex, presetName) {
 }
 
 /**
- * createColorGradient — Apply gradual color temperature change across clips.
+ * createColorGradient - Apply gradual color temperature change across clips.
  * @param {number} trackIndex - Video track index
  * @param {number} startClipIndex - First clip index
  * @param {number} endClipIndex - Last clip index
@@ -15352,7 +15431,7 @@ function createColorGradient(trackIndex, startClipIndex, endClipIndex, startTemp
 }
 
 /**
- * autoCorrectAllClips — Auto color correct all clips on a video track.
+ * autoCorrectAllClips - Auto color correct all clips on a video track.
  * @param {number} trackIndex - Video track index
  */
 function autoCorrectAllClips(trackIndex) {
@@ -15383,7 +15462,7 @@ function autoCorrectAllClips(trackIndex) {
 // ---------------------------------------------------------------------------
 
 /**
- * addSubtitlesFromSRT — Parse an SRT file and place subtitles on the timeline.
+ * addSubtitlesFromSRT - Parse an SRT file and place subtitles on the timeline.
  * @param {string} srtPath - Path to the SRT file
  * @param {number} trackIndex - Video track index for captions
  */
@@ -15424,7 +15503,7 @@ function addSubtitlesFromSRT(srtPath, trackIndex) {
 }
 
 /**
- * addEndCredits — Add scrolling end credits to the timeline.
+ * addEndCredits - Add scrolling end credits to the timeline.
  * @param {string} creditsJSON - JSON array of credit lines [{role, name}]
  * @param {number} trackIndex - Video track index
  * @param {number} scrollDuration - Duration of the credits scroll in seconds
@@ -15455,7 +15534,7 @@ function addEndCredits(creditsJSON, trackIndex, scrollDuration, style) {
 }
 
 /**
- * addChapterMarkers — Add chapter markers to the active sequence.
+ * addChapterMarkers - Add chapter markers to the active sequence.
  * @param {string} chaptersJSON - JSON array of [{time, title}]
  */
 function addChapterMarkers(chaptersJSON) {
@@ -15465,23 +15544,25 @@ function addChapterMarkers(chaptersJSON) {
         var chapters = JSON.parse(chaptersJSON);
         if (!chapters || chapters.length === 0) return _err("No chapters provided");
         var added = 0;
-        for (var i = 0; i < chapters.length; i++) {
-            var ch = chapters[i];
-            var time = parseFloat(ch.time) || 0;
-            var title = ch.title || ("Chapter " + (i + 1));
-            try {
-                var marker = seq.markers.createMarker(time);
-                marker.name = title;
-                marker.comments = "Chapter marker";
-                added++;
-            } catch (me) {}
-        }
+        _runWithUndoGroup("Add chapter markers", function () {
+            for (var i = 0; i < chapters.length; i++) {
+                var ch = chapters[i];
+                var time = parseFloat(ch.time) || 0;
+                var title = ch.title || ("Chapter " + (i + 1));
+                try {
+                    var marker = seq.markers.createMarker(time);
+                    marker.name = title;
+                    marker.comments = "Chapter marker";
+                    added++;
+                } catch (me) {}
+            }
+        });
         return _ok({chaptersAdded: added, totalChapters: chapters.length});
     } catch (e) { return _err("addChapterMarkers failed: " + e.message); }
 }
 
 /**
- * generateChaptersFromMarkers — Export markers as YouTube chapter format.
+ * generateChaptersFromMarkers - Export markers as YouTube chapter format.
  * @param {string} outputPath - File path to write the chapters text
  */
 function generateChaptersFromMarkers(outputPath) {
@@ -15530,7 +15611,7 @@ function generateChaptersFromMarkers(outputPath) {
 // ---------------------------------------------------------------------------
 
 /**
- * exportForYouTube — Export with YouTube-optimized settings (H.264, 1080p or 4K).
+ * exportForYouTube - Export with YouTube-optimized settings (H.264, 1080p or 4K).
  * @param {string} outputPath - Output file path
  * @param {string} title - Video title metadata
  * @param {string} description - Video description metadata
@@ -15566,7 +15647,7 @@ function exportForYouTube(outputPath, title, description) {
 }
 
 /**
- * exportForInstagram — Export for Instagram with specific aspect ratio.
+ * exportForInstagram - Export for Instagram with specific aspect ratio.
  * @param {string} outputPath - Output file path
  * @param {string} aspectRatio - "1:1", "4:5", or "9:16"
  */
@@ -15591,7 +15672,7 @@ function exportForInstagram(outputPath, aspectRatio) {
 }
 
 /**
- * exportForTikTok — Export for TikTok (9:16, <3 minutes, H.264).
+ * exportForTikTok - Export for TikTok (9:16, <3 minutes, H.264).
  * @param {string} outputPath - Output file path
  */
 function exportForTikTok(outputPath) {
@@ -15614,7 +15695,7 @@ function exportForTikTok(outputPath) {
 }
 
 /**
- * exportForTwitter — Export for Twitter (16:9, <2:20, H.264).
+ * exportForTwitter - Export for Twitter (16:9, <2:20, H.264).
  * @param {string} outputPath - Output file path
  */
 function exportForTwitter(outputPath) {
@@ -15638,7 +15719,7 @@ function exportForTwitter(outputPath) {
 }
 
 /**
- * exportMultipleFormats — Export in multiple formats at once.
+ * exportMultipleFormats - Export in multiple formats at once.
  * @param {string} outputDir - Output directory path
  * @param {string} formatsJSON - JSON array of format strings: ["youtube","instagram_square","tiktok","twitter"]
  */
@@ -15673,7 +15754,7 @@ function exportMultipleFormats(outputDir, formatsJSON) {
 // ---------------------------------------------------------------------------
 
 /**
- * setupNewProject — Full project setup with configuration.
+ * setupNewProject - Full project setup with configuration.
  * @param {string} name - Project name
  * @param {string} path - Project file path
  * @param {string} resolution - "1080p" or "4k"
@@ -15701,7 +15782,7 @@ function setupNewProject(name, path, resolution, fps, audioSampleRate) {
 }
 
 /**
- * setupEditingWorkspace — Complete workspace setup.
+ * setupEditingWorkspace - Complete workspace setup.
  * @param {string} projectPath - Project file path to open
  * @param {string} mediaFolder - Path to media folder to import
  * @param {string} sequenceName - Name for the initial sequence
@@ -15729,7 +15810,7 @@ function setupEditingWorkspace(projectPath, mediaFolder, sequenceName) {
 }
 
 /**
- * importAndOrganize — Import all media from a folder and auto-organize into bins.
+ * importAndOrganize - Import all media from a folder and auto-organize into bins.
  * @param {string} mediaFolder - Path to the media folder
  * @param {boolean} autoCreateBins - Whether to auto-create bins by type
  */
@@ -15774,7 +15855,7 @@ function importAndOrganize(mediaFolder, autoCreateBins) {
 }
 
 /**
- * prepareForDelivery — Check specs and prepare project for final delivery.
+ * prepareForDelivery - Check specs and prepare project for final delivery.
  * @param {string} specsJSON - JSON object with delivery specs {width, height, fps, audioDB, maxDuration}
  */
 function prepareForDelivery(specsJSON) {
@@ -15823,7 +15904,7 @@ function prepareForDelivery(specsJSON) {
 // ---------------------------------------------------------------------------
 
 /**
- * archiveProject — Archive the current project with optional media.
+ * archiveProject - Archive the current project with optional media.
  * @param {string} outputPath - Archive output path
  * @param {boolean} includeMedia - Include media files
  * @param {boolean} includeRenders - Include rendered files
@@ -15850,7 +15931,7 @@ function archiveProject(outputPath, includeMedia, includeRenders) {
 }
 
 /**
- * trimProject — Remove unused media and clean the project.
+ * trimProject - Remove unused media and clean the project.
  */
 function trimProject() {
     try {
@@ -15890,7 +15971,7 @@ function trimProject() {
 }
 
 /**
- * consolidateAndTranscode — Consolidate media and transcode to a single codec.
+ * consolidateAndTranscode - Consolidate media and transcode to a single codec.
  * @param {string} outputDir - Output directory for consolidated media
  * @param {string} codec - Target codec (e.g. "h264", "prores")
  * @param {string} quality - Quality preset ("low", "medium", "high")
@@ -16757,7 +16838,7 @@ function showDialog(title, message, buttons) {
 // ---------------------------------------------------------------------------
 
 /**
- * openPanel — Open a Premiere Pro panel by name.
+ * openPanel - Open a Premiere Pro panel by name.
  */
 function openPanel(panelName) {
     try {
@@ -16788,7 +16869,7 @@ function openPanel(panelName) {
 }
 
 /**
- * closePanel — Close a Premiere Pro panel by name.
+ * closePanel - Close a Premiere Pro panel by name.
  */
 function closePanel(panelName) {
     try {
@@ -16804,7 +16885,7 @@ function closePanel(panelName) {
 }
 
 /**
- * getOpenPanels — List currently open panels.
+ * getOpenPanels - List currently open panels.
  */
 function getOpenPanels() {
     try {
@@ -16828,7 +16909,7 @@ function getOpenPanels() {
 }
 
 /**
- * resetPanelLayout — Reset to default panel layout.
+ * resetPanelLayout - Reset to default panel layout.
  */
 function resetPanelLayout() {
     try {
@@ -16841,7 +16922,7 @@ function resetPanelLayout() {
 }
 
 /**
- * maximizePanel — Maximize a panel (full screen toggle).
+ * maximizePanel - Maximize a panel (full screen toggle).
  */
 function maximizePanel(panelName) {
     try {
@@ -16861,7 +16942,7 @@ function maximizePanel(panelName) {
 // ---------------------------------------------------------------------------
 
 /**
- * getWindowInfo — Get main window size and position.
+ * getWindowInfo - Get main window size and position.
  */
 function getWindowInfo() {
     try {
@@ -16893,7 +16974,7 @@ function getWindowInfo() {
 }
 
 /**
- * setWindowSize — Set main window size.
+ * setWindowSize - Set main window size.
  */
 function setWindowSize(width, height) {
     try {
@@ -16911,7 +16992,7 @@ function setWindowSize(width, height) {
 }
 
 /**
- * minimizeWindow — Minimize Premiere Pro.
+ * minimizeWindow - Minimize Premiere Pro.
  */
 function minimizeWindow() {
     try {
@@ -16923,7 +17004,7 @@ function minimizeWindow() {
 }
 
 /**
- * bringToFront — Bring Premiere Pro window to front.
+ * bringToFront - Bring Premiere Pro window to front.
  */
 function bringToFront() {
     try {
@@ -16936,7 +17017,7 @@ function bringToFront() {
 }
 
 /**
- * enterFullscreen — Enter fullscreen mode.
+ * enterFullscreen - Enter fullscreen mode.
  */
 function enterFullscreen() {
     try {
@@ -16953,7 +17034,7 @@ function enterFullscreen() {
 // ---------------------------------------------------------------------------
 
 /**
- * setTrackHeight — Set individual track height.
+ * setTrackHeight - Set individual track height.
  */
 function setTrackHeight(trackType, trackIndex, height) {
     try {
@@ -16980,7 +17061,7 @@ function setTrackHeight(trackType, trackIndex, height) {
 }
 
 /**
- * collapseTrack — Collapse a track.
+ * collapseTrack - Collapse a track.
  */
 function collapseTrack(trackType, trackIndex) {
     try {
@@ -17005,7 +17086,7 @@ function collapseTrack(trackType, trackIndex) {
 }
 
 /**
- * expandTrack — Expand a track.
+ * expandTrack - Expand a track.
  */
 function expandTrack(trackType, trackIndex) {
     try {
@@ -17031,7 +17112,7 @@ function expandTrack(trackType, trackIndex) {
 }
 
 /**
- * collapseAllTracks — Collapse all tracks.
+ * collapseAllTracks - Collapse all tracks.
  */
 function collapseAllTracks() {
     try {
@@ -17055,7 +17136,7 @@ function collapseAllTracks() {
 }
 
 /**
- * expandAllTracks — Expand all tracks.
+ * expandAllTracks - Expand all tracks.
  */
 function expandAllTracks() {
     try {
@@ -17084,7 +17165,7 @@ function expandAllTracks() {
 // ---------------------------------------------------------------------------
 
 /**
- * setLabelPreferences — Set all label color names.
+ * setLabelPreferences - Set all label color names.
  */
 function setLabelPreferences(labels) {
     try {
@@ -17112,7 +17193,7 @@ function setLabelPreferences(labels) {
 }
 
 /**
- * getActiveLabelFilter — Get active label filter in project panel.
+ * getActiveLabelFilter - Get active label filter in project panel.
  */
 function getActiveLabelFilter() {
     try {
@@ -17131,7 +17212,7 @@ function getActiveLabelFilter() {
 }
 
 /**
- * setLabelFilter — Filter project panel by label color.
+ * setLabelFilter - Filter project panel by label color.
  */
 function setLabelFilter(colorIndex) {
     try {
@@ -17147,7 +17228,7 @@ function setLabelFilter(colorIndex) {
 }
 
 /**
- * clearLabelFilter — Clear label filter.
+ * clearLabelFilter - Clear label filter.
  */
 function clearLabelFilter() {
     try {
@@ -17164,7 +17245,7 @@ function clearLabelFilter() {
 // Note: setTimeDisplayFormat (item 20) already exists above in the preferences section.
 
 /**
- * setAudioWaveformDisplay — Show/hide audio waveforms on timeline.
+ * setAudioWaveformDisplay - Show/hide audio waveforms on timeline.
  */
 function setAudioWaveformDisplay(enabled) {
     try {
@@ -17180,7 +17261,7 @@ function setAudioWaveformDisplay(enabled) {
 }
 
 /**
- * setVideoThumbnailDisplay — Show/hide video thumbnails on timeline.
+ * setVideoThumbnailDisplay - Show/hide video thumbnails on timeline.
  */
 function setVideoThumbnailDisplay(enabled) {
     try {
@@ -17196,7 +17277,7 @@ function setVideoThumbnailDisplay(enabled) {
 }
 
 /**
- * setTrackNameDisplay — Show/hide track names.
+ * setTrackNameDisplay - Show/hide track names.
  */
 function setTrackNameDisplay(enabled) {
     try {
@@ -17216,7 +17297,7 @@ function setTrackNameDisplay(enabled) {
 // ---------------------------------------------------------------------------
 
 /**
- * showAlert — Show alert dialog.
+ * showAlert - Show alert dialog.
  */
 function showAlert(title, message) {
     try {
@@ -17228,7 +17309,7 @@ function showAlert(title, message) {
 }
 
 /**
- * showConfirmDialog — Show confirm dialog (yes/no).
+ * showConfirmDialog - Show confirm dialog (yes/no).
  */
 function showConfirmDialog(title, message) {
     try {
@@ -17240,7 +17321,7 @@ function showConfirmDialog(title, message) {
 }
 
 /**
- * showInputDialog — Show input dialog.
+ * showInputDialog - Show input dialog.
  */
 function showInputDialog(title, promptText, defaultValue) {
     try {
@@ -17256,7 +17337,7 @@ function showInputDialog(title, promptText, defaultValue) {
 }
 
 /**
- * showProgressDialog — Show progress dialog.
+ * showProgressDialog - Show progress dialog.
  */
 function showProgressDialog(title, message, progress) {
     try {
@@ -17281,7 +17362,7 @@ function showProgressDialog(title, message, progress) {
 }
 
 /**
- * writeToConsole — Write to ExtendScript console.
+ * writeToConsole - Write to ExtendScript console.
  */
 function writeToConsole(message) {
     try {
@@ -17296,7 +17377,7 @@ function writeToConsole(message) {
 // ---------------------------------------------------------------------------
 
 /**
- * getUIScaling — Get current UI scaling factor.
+ * getUIScaling - Get current UI scaling factor.
  */
 function getUIScaling() {
     try {
@@ -17326,7 +17407,7 @@ function getUIScaling() {
 }
 
 /**
- * setHighContrastMode — Toggle high contrast mode.
+ * setHighContrastMode - Toggle high contrast mode.
  */
 function setHighContrastMode(enabled) {
     try {
@@ -17350,7 +17431,7 @@ function setHighContrastMode(enabled) {
 // ============================================================================
 
 /**
- * assembleFromEDL — Assemble timeline from EDL JSON.
+ * assembleFromEDL - Assemble timeline from EDL JSON.
  * edlJson: JSON string with {clips:[{file,inPoint,outPoint,trackIndex,position,transitionName,transitionDuration},...]}
  */
 function assembleFromEDL(edlJson) {
@@ -17400,7 +17481,7 @@ function assembleFromEDL(edlJson) {
 }
 
 /**
- * assembleFromCSV — Assemble timeline from CSV file.
+ * assembleFromCSV - Assemble timeline from CSV file.
  * Columns: file, in, out, track, position
  */
 function assembleFromCSV(csvPath) {
@@ -17443,7 +17524,7 @@ function assembleFromCSV(csvPath) {
 }
 
 /**
- * assembleFromFolderOrder — Assemble clips from folder in filename order.
+ * assembleFromFolderOrder - Assemble clips from folder in filename order.
  */
 function assembleFromFolderOrder(folderPath, transitionName, transitionDuration) {
     try {
@@ -17482,7 +17563,7 @@ function assembleFromFolderOrder(folderPath, transitionName, transitionDuration)
 }
 
 /**
- * interleaveClips — Interleave clips from two tracks onto a destination arrangement.
+ * interleaveClips - Interleave clips from two tracks onto a destination arrangement.
  */
 function interleaveClips(trackIndexA, trackIndexB, transitionDuration) {
     try {
@@ -17514,7 +17595,7 @@ function interleaveClips(trackIndexA, trackIndexB, transitionDuration) {
 }
 
 /**
- * shuffleClips — Randomly shuffle clip order on a track.
+ * shuffleClips - Randomly shuffle clip order on a track.
  */
 function shuffleClips(trackType, trackIndex) {
     try {
@@ -17540,7 +17621,7 @@ function shuffleClips(trackType, trackIndex) {
 }
 
 /**
- * sortClipsByDuration — Sort clips by duration on a track.
+ * sortClipsByDuration - Sort clips by duration on a track.
  */
 function sortClipsByDuration(trackType, trackIndex, ascending) {
     try {
@@ -17563,7 +17644,7 @@ function sortClipsByDuration(trackType, trackIndex, ascending) {
 }
 
 /**
- * sortClipsByName — Sort clips alphabetically by clip name.
+ * sortClipsByName - Sort clips alphabetically by clip name.
  */
 function sortClipsByName(trackType, trackIndex, ascending) {
     try {
@@ -17591,7 +17672,7 @@ function sortClipsByName(trackType, trackIndex, ascending) {
 }
 
 /**
- * sortClipsByFileName — Sort clips by source file name.
+ * sortClipsByFileName - Sort clips by source file name.
  */
 function sortClipsByFileName(trackType, trackIndex, ascending) {
     try {
@@ -17623,7 +17704,7 @@ function sortClipsByFileName(trackType, trackIndex, ascending) {
 }
 
 /**
- * reverseClipOrder — Reverse order of clips on a track.
+ * reverseClipOrder - Reverse order of clips on a track.
  */
 function reverseClipOrder(trackType, trackIndex) {
     try {
@@ -17645,7 +17726,7 @@ function reverseClipOrder(trackType, trackIndex) {
 }
 
 /**
- * distributeClipsEvenly — Distribute clips evenly over a total duration.
+ * distributeClipsEvenly - Distribute clips evenly over a total duration.
  */
 function distributeClipsEvenly(trackType, trackIndex, totalDuration) {
     try {
@@ -17677,7 +17758,7 @@ function distributeClipsEvenly(trackType, trackIndex, totalDuration) {
 }
 
 /**
- * stackClips — Remove gaps, stack all clips from a start time.
+ * stackClips - Remove gaps, stack all clips from a start time.
  */
 function stackClips(trackType, trackIndex, startTime) {
     try {
@@ -17705,7 +17786,7 @@ function stackClips(trackType, trackIndex, startTime) {
 }
 
 /**
- * createOverlayTrack — Create overlay from one track over another with opacity and blend mode.
+ * createOverlayTrack - Create overlay from one track over another with opacity and blend mode.
  */
 function createOverlayTrack(sourceTrack, destTrack, opacity, blendMode) {
     try {
@@ -17731,7 +17812,7 @@ function createOverlayTrack(sourceTrack, destTrack, opacity, blendMode) {
 }
 
 /**
- * createGreenScreenComposite — Chroma key composite of foreground over background.
+ * createGreenScreenComposite - Chroma key composite of foreground over background.
  */
 function createGreenScreenComposite(fgTrackIndex, fgClipIndex, bgTrackIndex, bgClipIndex, keyColor) {
     try {
@@ -17756,7 +17837,7 @@ function createGreenScreenComposite(fgTrackIndex, fgClipIndex, bgTrackIndex, bgC
 }
 
 /**
- * createPictureInPictureGrid — Multi-source PIP grid layout.
+ * createPictureInPictureGrid - Multi-source PIP grid layout.
  */
 function createPictureInPictureGrid(trackIndicesJSON, layout) {
     try {
@@ -17782,7 +17863,7 @@ function createPictureInPictureGrid(trackIndicesJSON, layout) {
 }
 
 /**
- * layerTracks — Layer multiple tracks with specified opacities.
+ * layerTracks - Layer multiple tracks with specified opacities.
  */
 function layerTracks(baseTrack, overlayTracksJSON, opacitiesJSON) {
     try {
@@ -17807,7 +17888,7 @@ function layerTracks(baseTrack, overlayTracksJSON, opacitiesJSON) {
 }
 
 /**
- * generateBlackClip — Generate a black video clip on the timeline.
+ * generateBlackClip - Generate a black video clip on the timeline.
  */
 function generateBlackClip(trackIndex, startTime, duration) {
     try {
@@ -17827,7 +17908,7 @@ function generateBlackClip(trackIndex, startTime, duration) {
 }
 
 /**
- * generateColorClip — Generate a solid color clip on the timeline.
+ * generateColorClip - Generate a solid color clip on the timeline.
  * color: hex string e.g. "#FF0000"
  */
 function generateColorClip(trackIndex, startTime, duration, color) {
@@ -17850,7 +17931,7 @@ function generateColorClip(trackIndex, startTime, duration, color) {
 }
 
 /**
- * generateGradientClip — Generate a gradient clip on the timeline.
+ * generateGradientClip - Generate a gradient clip on the timeline.
  */
 function generateGradientClip(trackIndex, startTime, duration, colorStart, colorEnd, direction) {
     try {
@@ -17869,7 +17950,7 @@ function generateGradientClip(trackIndex, startTime, duration, colorStart, color
 }
 
 /**
- * generateTestPattern — Generate a test pattern clip (bars, grid, checkerboard).
+ * generateTestPattern - Generate a test pattern clip (bars, grid, checkerboard).
  */
 function generateTestPattern(trackIndex, startTime, duration, pattern) {
     try {
@@ -17893,7 +17974,7 @@ function generateTestPattern(trackIndex, startTime, duration, pattern) {
 }
 
 /**
- * generateSilence — Generate a silent audio clip.
+ * generateSilence - Generate a silent audio clip.
  */
 function generateSilence(trackIndex, startTime, duration) {
     try {
@@ -17909,7 +17990,7 @@ function generateSilence(trackIndex, startTime, duration) {
 }
 
 /**
- * generateTone — Generate an audio tone (sine, square, sawtooth).
+ * generateTone - Generate an audio tone (sine, square, sawtooth).
  */
 function generateTone(trackIndex, startTime, duration, frequency, amplitude) {
     try {
@@ -17927,7 +18008,7 @@ function generateTone(trackIndex, startTime, duration, frequency, amplitude) {
 }
 
 /**
- * duplicateTimelineSection — Copy a section of timeline to another position.
+ * duplicateTimelineSection - Copy a section of timeline to another position.
  */
 function duplicateTimelineSection(startTime, endTime, destTime) {
     try {
@@ -17963,7 +18044,7 @@ function duplicateTimelineSection(startTime, endTime, destTime) {
 }
 
 /**
- * repeatTimelineSection — Repeat a section of timeline N times.
+ * repeatTimelineSection - Repeat a section of timeline N times.
  */
 function repeatTimelineSection(startTime, endTime, count) {
     try {
@@ -17984,7 +18065,7 @@ function repeatTimelineSection(startTime, endTime, count) {
 }
 
 /**
- * mirrorTimeline — Mirror/reverse the entire timeline.
+ * mirrorTimeline - Mirror/reverse the entire timeline.
  */
 function mirrorTimeline() {
     try {
@@ -18012,7 +18093,7 @@ function mirrorTimeline() {
 }
 
 /**
- * splitTimelineAtPlayhead — Split timeline into two sequences at playhead position.
+ * splitTimelineAtPlayhead - Split timeline into two sequences at playhead position.
  */
 function splitTimelineAtPlayhead() {
     try {
@@ -18056,7 +18137,7 @@ function splitTimelineAtPlayhead() {
 }
 
 /**
- * getTimelineGapReport — Detailed report of all gaps on the timeline.
+ * getTimelineGapReport - Detailed report of all gaps on the timeline.
  */
 function getTimelineGapReport() {
     try {
@@ -18091,7 +18172,7 @@ function getTimelineGapReport() {
 }
 
 /**
- * getTimelineConflictReport — Report overlapping clips.
+ * getTimelineConflictReport - Report overlapping clips.
  */
 function getTimelineConflictReport() {
     try {
@@ -18124,7 +18205,7 @@ function getTimelineConflictReport() {
 }
 
 /**
- * getTimelineEffectsReport — Report all effects used on timeline.
+ * getTimelineEffectsReport - Report all effects used on timeline.
  */
 function getTimelineEffectsReport() {
     try {
@@ -18161,7 +18242,7 @@ function getTimelineEffectsReport() {
 }
 
 /**
- * getTimelineDurationBreakdown — Duration breakdown by clip type/source.
+ * getTimelineDurationBreakdown - Duration breakdown by clip type/source.
  */
 function getTimelineDurationBreakdown() {
     try {
@@ -18197,7 +18278,7 @@ function getTimelineDurationBreakdown() {
 }
 
 /**
- * getTimelineTrackUsageReport — Report track usage (empty/used time per track).
+ * getTimelineTrackUsageReport - Report track usage (empty/used time per track).
  */
 function getTimelineTrackUsageReport() {
     try {
@@ -18231,7 +18312,7 @@ function getTimelineTrackUsageReport() {
 // ---------------------------------------------------------------------------
 
 /**
- * getExportSettingsForPreset — Get detailed encoding settings from an export preset file.
+ * getExportSettingsForPreset - Get detailed encoding settings from an export preset file.
  */
 function getExportSettingsForPreset(presetPath) {
     try {
@@ -18271,7 +18352,7 @@ function getExportSettingsForPreset(presetPath) {
 }
 
 /**
- * createCustomExportSettings — Create custom export settings object.
+ * createCustomExportSettings - Create custom export settings object.
  * @param {string} settingsJson - JSON with codec, bitrate, resolution, fps, audio fields.
  */
 function createCustomExportSettings(settingsJson) {
@@ -18294,7 +18375,7 @@ function createCustomExportSettings(settingsJson) {
 }
 
 /**
- * getAvailableCodecs — List all available video codecs (via exporter list).
+ * getAvailableCodecs - List all available video codecs (via exporter list).
  */
 function getAvailableCodecs() {
     try {
@@ -18321,7 +18402,7 @@ function getAvailableCodecs() {
 }
 
 /**
- * getAvailableAudioCodecs — List all available audio codecs.
+ * getAvailableAudioCodecs - List all available audio codecs.
  */
 function getAvailableAudioCodecs() {
     try {
@@ -18340,7 +18421,7 @@ function getAvailableAudioCodecs() {
 }
 
 /**
- * getAvailableContainers — List available container formats.
+ * getAvailableContainers - List available container formats.
  */
 function getAvailableContainers() {
     try {
@@ -18363,7 +18444,7 @@ function getAvailableContainers() {
 // ---------------------------------------------------------------------------
 
 /**
- * convertToProRes — Convert a project item to Apple ProRes.
+ * convertToProRes - Convert a project item to Apple ProRes.
  * @param {number} projectItemIndex - Zero-based project item index.
  * @param {string} variant - ProRes variant: "422", "4444", "LT", "Proxy".
  * @param {string} outputPath - Output file path.
@@ -18402,7 +18483,7 @@ function convertToProRes(projectItemIndex, variant, outputPath) {
 }
 
 /**
- * convertToH264 — Convert a project item to H.264.
+ * convertToH264 - Convert a project item to H.264.
  */
 function convertToH264(projectItemIndex, outputPath, bitrate) {
     try {
@@ -18431,7 +18512,7 @@ function convertToH264(projectItemIndex, outputPath, bitrate) {
 }
 
 /**
- * convertToH265 — Convert a project item to H.265/HEVC.
+ * convertToH265 - Convert a project item to H.265/HEVC.
  */
 function convertToH265(projectItemIndex, outputPath, bitrate) {
     try {
@@ -18460,7 +18541,7 @@ function convertToH265(projectItemIndex, outputPath, bitrate) {
 }
 
 /**
- * convertToDNxHR — Convert a project item to DNxHR.
+ * convertToDNxHR - Convert a project item to DNxHR.
  * @param {string} profile - DNxHR profile: "LB", "SQ", "HQ", "HQX", "444".
  */
 function convertToDNxHR(projectItemIndex, outputPath, profile) {
@@ -18494,7 +18575,7 @@ function convertToDNxHR(projectItemIndex, outputPath, profile) {
 }
 
 /**
- * convertToGIF — Export a sequence as an animated GIF.
+ * convertToGIF - Export a sequence as an animated GIF.
  */
 function convertToGIF(sequenceIndex, outputPath, width, fps) {
     try {
@@ -18528,7 +18609,7 @@ function convertToGIF(sequenceIndex, outputPath, width, fps) {
 // ---------------------------------------------------------------------------
 
 /**
- * generateClipThumbnail — Generate a thumbnail image from a clip at a given time offset.
+ * generateClipThumbnail - Generate a thumbnail image from a clip at a given time offset.
  */
 function generateClipThumbnail(projectItemIndex, timeOffset, outputPath) {
     try {
@@ -18558,7 +18639,7 @@ function generateClipThumbnail(projectItemIndex, timeOffset, outputPath) {
 }
 
 /**
- * generateSequenceThumbnail — Generate a thumbnail image from a sequence at a given time.
+ * generateSequenceThumbnail - Generate a thumbnail image from a sequence at a given time.
  */
 function generateSequenceThumbnail(sequenceIndex, timeOffset, outputPath) {
     try {
@@ -18586,7 +18667,7 @@ function generateSequenceThumbnail(sequenceIndex, timeOffset, outputPath) {
 }
 
 /**
- * generateContactSheet — Generate a contact sheet (grid of thumbnails) from a clip.
+ * generateContactSheet - Generate a contact sheet (grid of thumbnails) from a clip.
  */
 function generateContactSheet(projectItemIndex, outputPath, cols, rows) {
     try {
@@ -18626,7 +18707,7 @@ function generateContactSheet(projectItemIndex, outputPath, cols, rows) {
 }
 
 /**
- * generateStoryboard — Generate storyboard frames from a sequence at regular intervals.
+ * generateStoryboard - Generate storyboard frames from a sequence at regular intervals.
  */
 function generateStoryboard(sequenceIndex, outputPath, interval) {
     try {
@@ -18671,7 +18752,7 @@ function generateStoryboard(sequenceIndex, outputPath, interval) {
 // ---------------------------------------------------------------------------
 
 /**
- * analyzeMediaCodec — Detailed codec analysis for a project item.
+ * analyzeMediaCodec - Detailed codec analysis for a project item.
  */
 function analyzeMediaCodec(projectItemIndex) {
     try {
@@ -18727,7 +18808,7 @@ function analyzeMediaCodec(projectItemIndex) {
 }
 
 /**
- * compareMediaSpecs — Compare specs of two project items.
+ * compareMediaSpecs - Compare specs of two project items.
  */
 function compareMediaSpecs(itemIndex1, itemIndex2) {
     try {
@@ -18769,7 +18850,7 @@ function compareMediaSpecs(itemIndex1, itemIndex2) {
 }
 
 /**
- * getBitRateInfo — Get bitrate information for a project item.
+ * getBitRateInfo - Get bitrate information for a project item.
  */
 function getBitRateInfo(projectItemIndex) {
     try {
@@ -18817,7 +18898,7 @@ function getBitRateInfo(projectItemIndex) {
 }
 
 /**
- * getColorDepthInfo — Get color depth and chroma subsampling for a project item.
+ * getColorDepthInfo - Get color depth and chroma subsampling for a project item.
  */
 function getColorDepthInfo(projectItemIndex) {
     try {
@@ -18856,7 +18937,7 @@ function getColorDepthInfo(projectItemIndex) {
 }
 
 /**
- * getAudioSpecsDetailed — Detailed audio specs for a project item.
+ * getAudioSpecsDetailed - Detailed audio specs for a project item.
  */
 function getAudioSpecsDetailed(projectItemIndex) {
     try {
@@ -18899,7 +18980,7 @@ function getAudioSpecsDetailed(projectItemIndex) {
 }
 
 /**
- * isVariableFrameRate — Check if a clip has variable frame rate.
+ * isVariableFrameRate - Check if a clip has variable frame rate.
  */
 function isVariableFrameRate(projectItemIndex) {
     try {
@@ -18937,7 +19018,7 @@ function isVariableFrameRate(projectItemIndex) {
 // ---------------------------------------------------------------------------
 
 /**
- * getFileHash — Get a file hash for a project item's media file.
+ * getFileHash - Get a file hash for a project item's media file.
  * Note: ExtendScript lacks native crypto; this does a basic checksum.
  */
 function getFileHash(projectItemIndex, algorithm) {
@@ -18969,7 +19050,7 @@ function getFileHash(projectItemIndex, algorithm) {
 }
 
 /**
- * getFileDates — Get creation/modification dates for a project item's media file.
+ * getFileDates - Get creation/modification dates for a project item's media file.
  */
 function getFileDates(projectItemIndex) {
     try {
@@ -18994,7 +19075,7 @@ function getFileDates(projectItemIndex) {
 }
 
 /**
- * moveMediaFile — Move media file to a new directory and relink in project.
+ * moveMediaFile - Move media file to a new directory and relink in project.
  */
 function moveMediaFile(projectItemIndex, newDirectory) {
     try {
@@ -19031,7 +19112,7 @@ function moveMediaFile(projectItemIndex, newDirectory) {
 }
 
 /**
- * copyMediaFile — Copy a project item's media file to a destination directory.
+ * copyMediaFile - Copy a project item's media file to a destination directory.
  */
 function copyMediaFile(projectItemIndex, destDirectory) {
     try {
@@ -19063,7 +19144,7 @@ function copyMediaFile(projectItemIndex, destDirectory) {
 }
 
 /**
- * renameMediaFile — Rename a media file on disk and relink in the project.
+ * renameMediaFile - Rename a media file on disk and relink in the project.
  */
 function renameMediaFile(projectItemIndex, newName) {
     try {
@@ -19106,7 +19187,7 @@ function renameMediaFile(projectItemIndex, newName) {
 // ---------------------------------------------------------------------------
 
 /**
- * addToRenderQueue — Add a sequence to Premiere Pro's internal render queue.
+ * addToRenderQueue - Add a sequence to Premiere Pro's internal render queue.
  */
 function addToRenderQueue(sequenceIndex, presetPath, outputPath) {
     try {
@@ -19138,7 +19219,7 @@ function addToRenderQueue(sequenceIndex, presetPath, outputPath) {
 }
 
 /**
- * getRenderQueueStatus — Get the current render queue status.
+ * getRenderQueueStatus - Get the current render queue status.
  */
 function getRenderQueueStatus() {
     try {
@@ -19158,7 +19239,7 @@ function getRenderQueueStatus() {
 }
 
 /**
- * clearRenderQueue — Clear the render queue.
+ * clearRenderQueue - Clear the render queue.
  */
 function clearRenderQueue() {
     try {
@@ -19172,7 +19253,7 @@ function clearRenderQueue() {
 }
 
 /**
- * pauseRenderQueue — Pause rendering.
+ * pauseRenderQueue - Pause rendering.
  */
 function pauseRenderQueue() {
     try {
@@ -19184,7 +19265,7 @@ function pauseRenderQueue() {
 }
 
 /**
- * resumeRenderQueue — Resume rendering.
+ * resumeRenderQueue - Resume rendering.
  */
 function resumeRenderQueue() {
     try {
@@ -21980,7 +22061,7 @@ function createApprovalPackage(sequenceIndex, outputDir) {
         var rpt = "=== APPROVAL PACKAGE ===\nSequence: "+seq.name+"\nDate: "+new Date().toISOString()+"\nDuration: "+dur.toFixed(2)+"s\nClips: "+tc+"\n";
         var folder = new Folder(pkgDir); folder.create();
         var rf = new File(pkg.reportPath); rf.open("w"); rf.write(rpt); rf.close();
-        return _ok({ sequence: seq.name, package: pkg, duration: dur, clipCount: tc });
+        return _ok({ sequence: seq.name, "package": pkg, duration: dur, clipCount: tc });
     } catch (e) { return _err("createApprovalPackage failed: " + e.message); }
 }
 
@@ -22831,7 +22912,7 @@ function setTimelineViewExtents(startSeconds, endSeconds) {
 // ---------------------------------------------------------------------------
 
 /**
- * getClipCameraInfo — Get camera metadata (make, model, lens, ISO, shutter, aperture)
+ * getClipCameraInfo - Get camera metadata (make, model, lens, ISO, shutter, aperture)
  * from XMP metadata embedded in the media file.
  */
 function getClipCameraInfo(projectItemIndex) {
@@ -22869,7 +22950,7 @@ function getClipCameraInfo(projectItemIndex) {
 }
 
 /**
- * getClipGPSInfo — Get GPS coordinates from XMP metadata.
+ * getClipGPSInfo - Get GPS coordinates from XMP metadata.
  */
 function getClipGPSInfo(projectItemIndex) {
     try {
@@ -22897,7 +22978,7 @@ function getClipGPSInfo(projectItemIndex) {
 }
 
 /**
- * getClipRecordDate — Get recording date/time from XMP metadata.
+ * getClipRecordDate - Get recording date/time from XMP metadata.
  */
 function getClipRecordDate(projectItemIndex) {
     try {
@@ -22923,7 +23004,7 @@ function getClipRecordDate(projectItemIndex) {
 }
 
 /**
- * sortClipsByRecordDate — Sort clips in a bin by recording date.
+ * sortClipsByRecordDate - Sort clips in a bin by recording date.
  * Reads XMP DateTimeOriginal/CreateDate and returns sorted order.
  */
 function sortClipsByRecordDate(binPath) {
@@ -22974,7 +23055,7 @@ function sortClipsByRecordDate(binPath) {
 }
 
 /**
- * groupClipsByCamera — Group clips by camera make/model into bins.
+ * groupClipsByCamera - Group clips by camera make/model into bins.
  * Creates sub-bins named after camera model and moves matching clips.
  */
 function groupClipsByCamera(binPath) {
@@ -23039,7 +23120,7 @@ function groupClipsByCamera(binPath) {
 // ---------------------------------------------------------------------------
 
 /**
- * markShotType — Mark a clip with a shot type using a marker (wide, medium, closeup, insert, cutaway).
+ * markShotType - Mark a clip with a shot type using a marker (wide, medium, closeup, insert, cutaway).
  */
 function markShotType(trackType, trackIndex, clipIndex, shotType) {
     try {
@@ -23068,7 +23149,7 @@ function markShotType(trackType, trackIndex, clipIndex, shotType) {
 }
 
 /**
- * getShotType — Get shot type marker from a clip.
+ * getShotType - Get shot type marker from a clip.
  */
 function getShotType(trackType, trackIndex, clipIndex) {
     try {
@@ -23095,7 +23176,7 @@ function getShotType(trackType, trackIndex, clipIndex) {
 }
 
 /**
- * filterByShotType — Get all clips in a sequence matching a specific shot type.
+ * filterByShotType - Get all clips in a sequence matching a specific shot type.
  */
 function filterByShotType(sequenceIndex, shotType) {
     try {
@@ -23130,7 +23211,7 @@ function filterByShotType(sequenceIndex, shotType) {
 }
 
 /**
- * createShotList — Export a shot list from a sequence to a file.
+ * createShotList - Export a shot list from a sequence to a file.
  */
 function createShotList(sequenceIndex, outputPath) {
     try {
@@ -23186,7 +23267,7 @@ function createShotList(sequenceIndex, outputPath) {
 }
 
 /**
- * importShotList — Import a shot list from CSV and apply shot types to timeline clips.
+ * importShotList - Import a shot list from CSV and apply shot types to timeline clips.
  */
 function importShotList(csvPath, sequenceIndex) {
     try {
@@ -23246,7 +23327,7 @@ function importShotList(csvPath, sequenceIndex) {
 // ---------------------------------------------------------------------------
 
 /**
- * markScene — Mark a clip with a scene number using a marker.
+ * markScene - Mark a clip with a scene number using a marker.
  */
 function markScene(trackType, trackIndex, clipIndex, sceneNumber) {
     try {
@@ -23275,7 +23356,7 @@ function markScene(trackType, trackIndex, clipIndex, sceneNumber) {
 }
 
 /**
- * markTake — Mark a clip with a take number using a marker.
+ * markTake - Mark a clip with a take number using a marker.
  */
 function markTake(trackType, trackIndex, clipIndex, takeNumber) {
     try {
@@ -23304,7 +23385,7 @@ function markTake(trackType, trackIndex, clipIndex, takeNumber) {
 }
 
 /**
- * getBestTake — Get the longest/marked-best take for a scene number across all tracks.
+ * getBestTake - Get the longest/marked-best take for a scene number across all tracks.
  */
 function getBestTake(sceneNumber) {
     try {
@@ -23344,7 +23425,7 @@ function getBestTake(sceneNumber) {
 }
 
 /**
- * organizeByScenesAndTakes — Auto-organize project items by parsing scene/take from filenames.
+ * organizeByScenesAndTakes - Auto-organize project items by parsing scene/take from filenames.
  * Expected naming: S01T01_*, Scene1_Take2_*, etc.
  */
 function organizeByScenesAndTakes() {
@@ -23400,7 +23481,7 @@ function organizeByScenesAndTakes() {
 }
 
 /**
- * getSceneList — Get all scenes with their takes from the active sequence.
+ * getSceneList - Get all scenes with their takes from the active sequence.
  */
 function getSceneList() {
     try {
@@ -23447,7 +23528,7 @@ function getSceneList() {
 // ---------------------------------------------------------------------------
 
 /**
- * matchCameraSettings — Compare camera settings between two project items.
+ * matchCameraSettings - Compare camera settings between two project items.
  */
 function matchCameraSettings(clip1Index, clip2Index) {
     try {
@@ -23498,7 +23579,7 @@ function matchCameraSettings(clip1Index, clip2Index) {
 }
 
 /**
- * findClipsFromSameCamera — Find all clips shot with the same camera as the given clip.
+ * findClipsFromSameCamera - Find all clips shot with the same camera as the given clip.
  */
 function findClipsFromSameCamera(projectItemIndex) {
     try {
@@ -23549,7 +23630,7 @@ function findClipsFromSameCamera(projectItemIndex) {
 }
 
 /**
- * createMulticamByCamera — Create a multicam sequence grouping clips by camera make/model.
+ * createMulticamByCamera - Create a multicam sequence grouping clips by camera make/model.
  */
 function createMulticamByCamera(outputName) {
     try {
@@ -23607,7 +23688,7 @@ function createMulticamByCamera(outputName) {
 // ---------------------------------------------------------------------------
 
 /**
- * getSourceTimecode — Get original source timecode from a project item.
+ * getSourceTimecode - Get original source timecode from a project item.
  */
 function getSourceTimecode(projectItemIndex) {
     try {
@@ -23642,7 +23723,7 @@ function getSourceTimecode(projectItemIndex) {
 }
 
 /**
- * setSourceTimecodeOffset — Set source timecode offset on a project item via XMP.
+ * setSourceTimecodeOffset - Set source timecode offset on a project item via XMP.
  */
 function setSourceTimecodeOffset(projectItemIndex, offset) {
     try {
@@ -23662,7 +23743,7 @@ function setSourceTimecodeOffset(projectItemIndex, offset) {
 }
 
 /**
- * syncByTimecode — Sync clips across specified tracks by aligning their source timecodes.
+ * syncByTimecode - Sync clips across specified tracks by aligning their source timecodes.
  */
 function syncByTimecode(trackIndicesJson) {
     try {
@@ -23702,7 +23783,7 @@ function syncByTimecode(trackIndicesJson) {
 }
 
 /**
- * findTimecodeBreaks — Find gaps in timecode continuity on a track.
+ * findTimecodeBreaks - Find gaps in timecode continuity on a track.
  */
 function findTimecodeBreaks(trackType, trackIndex) {
     try {
@@ -23741,7 +23822,7 @@ function findTimecodeBreaks(trackType, trackIndex) {
 // ---------------------------------------------------------------------------
 
 /**
- * rateClip — Rate a clip (1-5 stars) by setting XMP rating metadata.
+ * rateClip - Rate a clip (1-5 stars) by setting XMP rating metadata.
  */
 function rateClip(projectItemIndex, rating) {
     try {
@@ -23762,7 +23843,7 @@ function rateClip(projectItemIndex, rating) {
 }
 
 /**
- * getClipRating — Get clip rating from XMP metadata.
+ * getClipRating - Get clip rating from XMP metadata.
  */
 function getClipRating(projectItemIndex) {
     try {
@@ -23785,7 +23866,7 @@ function getClipRating(projectItemIndex) {
 }
 
 /**
- * filterByRating — Get all project items with rating >= minRating.
+ * filterByRating - Get all project items with rating >= minRating.
  */
 function filterByRating(minRating) {
     try {
@@ -23816,7 +23897,7 @@ function filterByRating(minRating) {
 }
 
 /**
- * getTopRatedClips — Get top N rated clips, sorted by rating descending.
+ * getTopRatedClips - Get top N rated clips, sorted by rating descending.
  */
 function getTopRatedClips(count) {
     try {
@@ -23854,7 +23935,7 @@ function getTopRatedClips(count) {
 // ---------------------------------------------------------------------------
 
 /**
- * setClipNote — Set a text note on a project item via XMP dc:description.
+ * setClipNote - Set a text note on a project item via XMP dc:description.
  */
 function setClipNote(projectItemIndex, note) {
     try {
@@ -23874,7 +23955,7 @@ function setClipNote(projectItemIndex, note) {
 }
 
 /**
- * getClipNote — Get clip note from XMP dc:description.
+ * getClipNote - Get clip note from XMP dc:description.
  */
 function getClipNote(projectItemIndex) {
     try {
@@ -23896,7 +23977,7 @@ function getClipNote(projectItemIndex) {
 }
 
 /**
- * searchClipNotes — Search all clip notes for a text string.
+ * searchClipNotes - Search all clip notes for a text string.
  */
 function searchClipNotes(searchText) {
     try {
@@ -23926,7 +24007,7 @@ function searchClipNotes(searchText) {
 }
 
 /**
- * exportClipNotes — Export all clip notes as CSV or JSON to a file.
+ * exportClipNotes - Export all clip notes as CSV or JSON to a file.
  */
 function exportClipNotes(outputPath, format) {
     try {
@@ -23982,7 +24063,7 @@ function exportClipNotes(outputPath, format) {
 // ---------------------------------------------------------------------------
 
 /**
- * 1. snapshotTimeline(sequenceIndex) — Create a JSON snapshot of timeline state.
+ * 1. snapshotTimeline(sequenceIndex) - Create a JSON snapshot of timeline state.
  */
 function snapshotTimeline(sequenceIndex) {
     try {
@@ -24042,7 +24123,7 @@ function snapshotTimeline(sequenceIndex) {
 }
 
 /**
- * 2. compareTimelineSnapshots(snapshot1Json, snapshot2Json) — Diff two timeline snapshots.
+ * 2. compareTimelineSnapshots(snapshot1Json, snapshot2Json) - Diff two timeline snapshots.
  */
 function compareTimelineSnapshots(snapshot1Json, snapshot2Json) {
     try {
@@ -24104,7 +24185,7 @@ function compareTimelineSnapshots(snapshot1Json, snapshot2Json) {
 }
 
 /**
- * 3. getTimelineChanges(sequenceIndex, sinceTimestamp) — Get changes since timestamp.
+ * 3. getTimelineChanges(sequenceIndex, sinceTimestamp) - Get changes since timestamp.
  */
 function getTimelineChanges(sequenceIndex, sinceTimestamp) {
     try {
@@ -24124,7 +24205,7 @@ function getTimelineChanges(sequenceIndex, sinceTimestamp) {
 }
 
 /**
- * 4. highlightChangedClips(sequenceIndex, changedClipIds) — Select/highlight changed clips.
+ * 4. highlightChangedClips(sequenceIndex, changedClipIds) - Select/highlight changed clips.
  */
 function highlightChangedClips(sequenceIndex, changedClipIds) {
     try {
@@ -24155,7 +24236,7 @@ function highlightChangedClips(sequenceIndex, changedClipIds) {
 }
 
 /**
- * 5. revertClipToSnapshot(trackType, trackIndex, clipIndex, snapshotJson) — Revert clip to snapshot state.
+ * 5. revertClipToSnapshot(trackType, trackIndex, clipIndex, snapshotJson) - Revert clip to snapshot state.
  */
 function revertClipToSnapshot(trackType, trackIndex, clipIndex, snapshotJson) {
     try {
@@ -24200,7 +24281,7 @@ function revertClipToSnapshot(trackType, trackIndex, clipIndex, snapshotJson) {
 // ---------------------------------------------------------------------------
 
 /**
- * 6. saveSequenceVersion(sequenceIndex, versionName, notes) — Save named version.
+ * 6. saveSequenceVersion(sequenceIndex, versionName, notes) - Save named version.
  */
 function saveSequenceVersion(sequenceIndex, versionName, notes) {
     try {
@@ -24228,7 +24309,7 @@ function saveSequenceVersion(sequenceIndex, versionName, notes) {
 }
 
 /**
- * 7. listSequenceVersions(sequenceIndex) — List all saved versions.
+ * 7. listSequenceVersions(sequenceIndex) - List all saved versions.
  */
 function listSequenceVersions(sequenceIndex) {
     try {
@@ -24263,7 +24344,7 @@ function listSequenceVersions(sequenceIndex) {
 }
 
 /**
- * 8. loadSequenceVersion(sequenceIndex, versionName) — Load a saved version.
+ * 8. loadSequenceVersion(sequenceIndex, versionName) - Load a saved version.
  */
 function loadSequenceVersion(sequenceIndex, versionName) {
     try {
@@ -24291,7 +24372,7 @@ function loadSequenceVersion(sequenceIndex, versionName) {
 }
 
 /**
- * 9. deleteSequenceVersion(sequenceIndex, versionName) — Delete a version.
+ * 9. deleteSequenceVersion(sequenceIndex, versionName) - Delete a version.
  */
 function deleteSequenceVersion(sequenceIndex, versionName) {
     try {
@@ -24310,7 +24391,7 @@ function deleteSequenceVersion(sequenceIndex, versionName) {
 }
 
 /**
- * 10. mergeSequenceVersions(baseVersion, overlayVersion, strategy) — Merge two versions.
+ * 10. mergeSequenceVersions(baseVersion, overlayVersion, strategy) - Merge two versions.
  */
 function mergeSequenceVersions(baseVersion, overlayVersion, strategy) {
     try {
@@ -24373,7 +24454,7 @@ function mergeSequenceVersions(baseVersion, overlayVersion, strategy) {
 // ---------------------------------------------------------------------------
 
 /**
- * 11. createABComparison(seqIndexA, seqIndexB) — Set up side-by-side comparison.
+ * 11. createABComparison(seqIndexA, seqIndexB) - Set up side-by-side comparison.
  */
 function createABComparison(seqIndexA, seqIndexB) {
     try {
@@ -24400,7 +24481,7 @@ function createABComparison(seqIndexA, seqIndexB) {
 }
 
 /**
- * 12. switchABView(view) — Switch between A, B, or split view.
+ * 12. switchABView(view) - Switch between A, B, or split view.
  */
 function switchABView(view) {
     try {
@@ -24416,7 +24497,7 @@ function switchABView(view) {
 }
 
 /**
- * 13. getABDifferences(seqIndexA, seqIndexB) — List differences between A and B.
+ * 13. getABDifferences(seqIndexA, seqIndexB) - List differences between A and B.
  */
 function getABDifferences(seqIndexA, seqIndexB) {
     try {
@@ -24435,7 +24516,7 @@ function getABDifferences(seqIndexA, seqIndexB) {
 // ---------------------------------------------------------------------------
 
 /**
- * 14. getClipboardContents() — Get clipboard contents info.
+ * 14. getClipboardContents() - Get clipboard contents info.
  */
 function getClipboardContents() {
     try {
@@ -24458,7 +24539,7 @@ function getClipboardContents() {
 }
 
 /**
- * 15. clearClipboard() — Clear editing clipboard.
+ * 15. clearClipboard() - Clear editing clipboard.
  */
 function clearClipboard() {
     try {
@@ -24483,7 +24564,7 @@ function clearClipboard() {
 }
 
 /**
- * 16. clipboardHasContent() — Check if clipboard has content.
+ * 16. clipboardHasContent() - Check if clipboard has content.
  */
 function clipboardHasContent() {
     try {
@@ -24502,7 +24583,7 @@ function clipboardHasContent() {
 // ---------------------------------------------------------------------------
 
 /**
- * 17. getUndoHistory(count) — Get undo history entries.
+ * 17. getUndoHistory(count) - Get undo history entries.
  */
 function getUndoHistory(count) {
     try {
@@ -24520,7 +24601,7 @@ function getUndoHistory(count) {
 }
 
 /**
- * 18. getUndoCount() — Get available undo count.
+ * 18. getUndoCount() - Get available undo count.
  */
 function getUndoCount() {
     try {
@@ -24537,7 +24618,7 @@ function getUndoCount() {
 }
 
 /**
- * 19. undoMultiple(count) — Undo multiple steps.
+ * 19. undoMultiple(count) - Undo multiple steps.
  */
 function undoMultiple(count) {
     try {
@@ -24557,7 +24638,7 @@ function undoMultiple(count) {
 }
 
 /**
- * 20. redoMultiple(count) — Redo multiple steps.
+ * 20. redoMultiple(count) - Redo multiple steps.
  */
 function redoMultiple(count) {
     try {
@@ -24581,7 +24662,7 @@ function redoMultiple(count) {
 // ---------------------------------------------------------------------------
 
 /**
- * 21. createProjectBackup(outputPath, includeMedia) — Create full project backup.
+ * 21. createProjectBackup(outputPath, includeMedia) - Create full project backup.
  */
 function createProjectBackup(outputPath, includeMedia) {
     try {
@@ -24632,7 +24713,7 @@ function createProjectBackup(outputPath, includeMedia) {
 }
 
 /**
- * 22. getAutoSaveVersions() — List auto-save versions.
+ * 22. getAutoSaveVersions() - List auto-save versions.
  */
 function getAutoSaveVersions() {
     try {
@@ -24659,7 +24740,7 @@ function getAutoSaveVersions() {
 }
 
 /**
- * 23. restoreAutoSave(versionPath) — Restore from auto-save.
+ * 23. restoreAutoSave(versionPath) - Restore from auto-save.
  */
 function restoreAutoSave(versionPath) {
     try {
@@ -24672,7 +24753,7 @@ function restoreAutoSave(versionPath) {
 }
 
 /**
- * 24. setAutoSaveNow() — Trigger immediate auto-save.
+ * 24. setAutoSaveNow() - Trigger immediate auto-save.
  */
 function setAutoSaveNow() {
     try {
@@ -24694,7 +24775,7 @@ function setAutoSaveNow() {
 }
 
 /**
- * 25. getBackupSchedule() — Get backup schedule info.
+ * 25. getBackupSchedule() - Get backup schedule info.
  */
 function getBackupSchedule() {
     try {
@@ -24733,7 +24814,7 @@ function getBackupSchedule() {
 // ---------------------------------------------------------------------------
 
 /**
- * 26. upgradeProjectVersion(projectPath) — Upgrade older project file.
+ * 26. upgradeProjectVersion(projectPath) - Upgrade older project file.
  */
 function upgradeProjectVersion(projectPath) {
     try {
@@ -24747,7 +24828,7 @@ function upgradeProjectVersion(projectPath) {
 }
 
 /**
- * 27. getProjectVersion(projectPath) — Get project file version.
+ * 27. getProjectVersion(projectPath) - Get project file version.
  */
 function getProjectVersion(projectPath) {
     try {
@@ -24779,7 +24860,7 @@ function getProjectVersion(projectPath) {
 }
 
 /**
- * 28. exportProjectForOlderVersion(outputPath, targetVersion) — Save for older Premiere Pro.
+ * 28. exportProjectForOlderVersion(outputPath, targetVersion) - Save for older Premiere Pro.
  */
 function exportProjectForOlderVersion(outputPath, targetVersion) {
     try {
@@ -24811,7 +24892,7 @@ function exportProjectForOlderVersion(outputPath, targetVersion) {
 }
 
 /**
- * 29. checkProjectCompatibility(projectPath) — Check compatibility with current version.
+ * 29. checkProjectCompatibility(projectPath) - Check compatibility with current version.
  */
 function checkProjectCompatibility(projectPath) {
     try {
@@ -24852,7 +24933,7 @@ function checkProjectCompatibility(projectPath) {
 }
 
 /**
- * 30. importProjectFromOtherNLE(sourcePath, sourceFormat) — Import from DaVinci/FCPX/Avid.
+ * 30. importProjectFromOtherNLE(sourcePath, sourceFormat) - Import from DaVinci/FCPX/Avid.
  */
 function importProjectFromOtherNLE(sourcePath, sourceFormat) {
     try {

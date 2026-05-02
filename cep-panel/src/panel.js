@@ -44,7 +44,7 @@
 
     // Lazy-loading state for the full premiere.jsx ExtendScript library
     var premiereJsxLoaded = false;
-    var premiereJsxPath = path.join(__dirname, "host", "premiere.jsx").replace(/\\/g, "/");
+    var premiereJsxPath = resolveHostScriptPath("premiere.jsx");
 
     // Stats tracking
     var stats = {
@@ -58,6 +58,19 @@
 
     // In-flight command timers: requestId -> start timestamp
     var commandTimers = {};
+
+    function resolveHostScriptPath(fileName) {
+        var candidates = [
+            path.join(__dirname, "host", fileName),
+            path.join(__dirname, "src", "host", fileName),
+        ];
+        for (var i = 0; i < candidates.length; i++) {
+            if (fs.existsSync(candidates[i])) {
+                return candidates[i].replace(/\\/g, "/");
+            }
+        }
+        return candidates[0].replace(/\\/g, "/");
+    }
 
     // ---------------------------------------------------------------------------
     // UI element references
@@ -283,18 +296,21 @@
             var fn = p.function_name || "";
             var argsJson = p.args_json || "";
 
-            // Build lazy-load prefix: if the function doesn't exist yet,
-            // load the full premiere.jsx (once) to make it available.
-            var loadScript = "";
-            if (!premiereJsxLoaded) {
-                loadScript =
-                    'if (typeof ' + fn + ' !== "function") { ' +
-                    '  try { $.evalFile("' + premiereJsxPath + '"); } catch(loadErr) {} ' +
-                    '} ';
-            }
+            // Before every evalCommand: if fn is missing, load premiere.jsx.
+            // Always emit this guard — never skip it based on premiereJsxLoaded.
+            // A prior bug set that flag after the first successful evalCommand even when
+            // only core.jsx ran (e.g. getSequenceList), leaving premiere-only helpers
+            // unloaded and causing "EvalScript error" on clips/MOGRT APIs.
+            var loadScript =
+                'if (typeof ' + fn + ' !== "function") { ' +
+                '  try { $.evalFile("' + premiereJsxPath + '"); } catch(loadErr) {} ' +
+                '} ';
 
             var callScript;
-            if (argsJson && argsJson !== "{}" && argsJson !== "[]") {
+            var expanded = expandEvalCommandArgs(fn, argsJson);
+            if (expanded !== null && expanded !== undefined) {
+                callScript = expanded;
+            } else if (argsJson && argsJson !== "{}" && argsJson !== "[]") {
                 callScript = fn + "(" + escapeForEval(argsJson) + ")";
             } else {
                 callScript = fn + "()";
@@ -312,6 +328,55 @@
         if (str === undefined || str === null) { str = ""; }
         str = String(str);
         return "'" + str.replace(/\\/g, "\\\\").replace(/'/g, "\\'") + "'";
+    }
+
+    /** Go sends evalCommand(fn, "{\"a\":...}") — expand into positional ExtendScript calls. */
+    function expandEvalCommandArgs(fn, argsJson) {
+        if (!argsJson || typeof argsJson !== "string") return null;
+        if (argsJson.charAt(0) !== "{") return null;
+        var po;
+        try { po = JSON.parse(argsJson); } catch (e0) { return null; }
+
+        var ti;
+        var ci;
+        var pi;
+        var txt;
+        var pn;
+        var val;
+
+        if (fn === "getClipsOnTrack") {
+            var tt = po.trackType || po.track_type || "video";
+            ti = po.trackIndex !== undefined ? po.trackIndex : po.track_index;
+            if (ti === undefined || ti === null) ti = 0;
+            return fn + "(" + escapeForEval(String(tt)) + "," + Number(ti) + ")";
+        }
+        if (fn === "getMOGRTProperties") {
+            ti = po.trackIndex !== undefined ? po.trackIndex : po.track_index;
+            ci = po.clipIndex !== undefined ? po.clipIndex : po.clip_index;
+            if (ti === undefined || ti === null) ti = 0;
+            if (ci === undefined || ci === null) ci = 0;
+            return fn + "(" + Number(ti) + "," + Number(ci) + ")";
+        }
+        if (fn === "setMOGRTText") {
+            ti = po.trackIndex !== undefined ? po.trackIndex : po.track_index;
+            ci = po.clipIndex !== undefined ? po.clipIndex : po.clip_index;
+            pi = po.propertyIndex !== undefined ? po.propertyIndex : po.property_index;
+            txt = po.text !== undefined && po.text !== null ? String(po.text) : "";
+            if (ti === undefined || ti === null) ti = 0;
+            if (ci === undefined || ci === null) ci = 0;
+            if (pi === undefined || pi === null) pi = 0;
+            return fn + "(" + Number(ti) + "," + Number(ci) + "," + Number(pi) + "," + escapeForEval(txt) + ")";
+        }
+        if (fn === "setMOGRTProperty") {
+            ti = po.trackIndex !== undefined ? po.trackIndex : po.track_index;
+            ci = po.clipIndex !== undefined ? po.clipIndex : po.clip_index;
+            pn = po.propertyName || po.property_name || "";
+            val = po.value !== undefined && po.value !== null ? String(po.value) : "";
+            if (ti === undefined || ti === null) ti = 0;
+            if (ci === undefined || ci === null) ci = 0;
+            return fn + "(" + Number(ti) + "," + Number(ci) + "," + escapeForEval(pn) + "," + escapeForEval(val) + ")";
+        }
+        return null;
     }
 
     // ---------------------------------------------------------------------------
@@ -369,12 +434,6 @@
             } catch (e) {
                 // If it's not JSON, return it as a plain string value
                 result = rawResult;
-            }
-
-            // If this was a successful evalCommand, premiere.jsx is now loaded
-            if (action === "evalCommand" && !premiereJsxLoaded) {
-                premiereJsxLoaded = true;
-                log("premiere.jsx loaded (lazy)", "success");
             }
 
             log("Done: " + action + " [" + requestId.substring(0, 8) + "]", "success");
@@ -546,20 +605,40 @@
     // Load ExtendScript host functions
     // ---------------------------------------------------------------------------
     function loadHostScript() {
-        var corePath = path.join(__dirname, "host", "core.jsx").replace(/\\/g, "/");
+        var corePath = resolveHostScriptPath("core.jsx");
+        var coreEval = [
+            "(function(){",
+            "try {",
+            "  $.evalFile(\"" + corePath + "\");",
+            "  return \"OK\";",
+            "} catch (e) {",
+            "  return \"ERROR: \" + e.name + \": \" + e.message + \" @ line \" + e.line;",
+            "}",
+            "}())",
+        ].join("");
+        var premiereEval = [
+            "(function(){",
+            "try {",
+            "  $.evalFile(\"" + premiereJsxPath + "\");",
+            "  return \"OK\";",
+            "} catch (e) {",
+            "  return \"ERROR: \" + e.name + \": \" + e.message + \" @ line \" + e.line;",
+            "}",
+            "}())",
+        ].join("");
         log("Loading core ExtendScript: " + corePath);
-        csInterface.evalScript('$.evalFile("' + corePath + '")', function (result) {
-            if (result === "EvalScript error.") {
-                log("Failed to load core.jsx -- ExtendScript error", "error");
+        csInterface.evalScript(coreEval, function (result) {
+            if (result !== "OK") {
+                log("Failed to load core.jsx -- " + result, "error");
             } else {
                 log("Core ExtendScript loaded", "success");
                 // Eagerly attempt to load the full premiere.jsx in the background.
                 // If it fails (too large for $.evalFile), functions will be
                 // lazy-loaded on the first evalCommand call instead.
                 log("Loading extended functions from premiere.jsx...");
-                csInterface.evalScript('$.evalFile("' + premiereJsxPath + '")', function (result2) {
-                    if (result2 === "EvalScript error.") {
-                        log("Extended functions will be loaded on first use (lazy)", "info");
+                csInterface.evalScript(premiereEval, function (result2) {
+                    if (result2 !== "OK") {
+                        log("Extended functions will be loaded on first use (lazy): " + result2, "info");
                     } else {
                         premiereJsxLoaded = true;
                         log("All ExtendScript functions loaded", "success");
