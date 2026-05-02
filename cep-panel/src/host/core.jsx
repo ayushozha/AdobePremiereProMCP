@@ -53,6 +53,24 @@ function _parseArgs(argsJson, requiredFields) {
 }
 
 /**
+ * Major release number from app.version (e.g. 24, 25) for PP24 vs PP25 compatibility branches.
+ */
+function _premiereMajorVersion() {
+    try {
+        var v = app.version || "";
+        var m = v.match(/^(\d+)/);
+        return m ? parseInt(m[1], 10) : 0;
+    } catch (e) {
+        return 0;
+    }
+}
+
+/** True when Premiere major >= minMajor (release-family gate). */
+function _premiereAtLeastMajor(minMajor) {
+    return _premiereMajorVersion() >= minMajor;
+}
+
+/**
  * Return the active sequence or null, guarding against app.project being null.
  */
 function _getActiveSequence() {

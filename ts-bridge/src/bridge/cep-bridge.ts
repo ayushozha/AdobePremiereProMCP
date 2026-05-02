@@ -97,45 +97,61 @@ const DEFAULT_RECONNECT_MAX_MS = 30_000;
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const PONG_TIMEOUT_MS = 5_000;
 
-/**
- * ExtendScript helpers use `_ok({ ... })` → JSON `{ success: true, data: payload }`.
- * The CEP panel forwards that whole object as the WebSocket `result`. Unwrap so
- * gRPC serializers see proto-shaped fields (camelCase).
- */
-function unwrapCepEnvelope(raw: unknown): Record<string, unknown> {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return {};
-  }
-  const o = raw as Record<string, unknown>;
-  if (
-    o["success"] === true &&
-    o["data"] !== undefined &&
-    o["data"] !== null &&
-    typeof o["data"] === "object" &&
-    !Array.isArray(o["data"])
-  ) {
-    return o["data"] as Record<string, unknown>;
-  }
-  return o;
-}
+/** Map CEP WebSocket ping payload to gRPC {@link PingResult}. Handles PP24 + PP25 envelope shapes. */
+function normalizeCepPingResult(raw: unknown): PingResult {
+  const fallback: PingResult = {
+    premiereRunning: false,
+    premiereVersion: "",
+    projectOpen: false,
+    bridgeMode: "cep",
+  };
 
-function normalizePingPayload(payload: Record<string, unknown>): PingResult {
+  if (raw === null || raw === undefined || typeof raw !== "object") {
+    return fallback;
+  }
+
+  const o = raw as Record<string, unknown>;
+  const data = o["data"];
+  let inner: Record<string, unknown> | undefined;
+  if (typeof data === "object" && data !== null) {
+    inner = data as Record<string, unknown>;
+  } else if ("premiere_running" in o || "premiereRunning" in o) {
+    inner = o;
+  }
+
+  if (!inner) {
+    return fallback;
+  }
+
   const running =
-    payload["premiereRunning"] === true || payload["premiere_running"] === true;
-  const ver =
-    (typeof payload["premiereVersion"] === "string" && payload["premiereVersion"]) ||
-    (typeof payload["premiere_version"] === "string" && payload["premiere_version"]) ||
-    "";
-  const projOpen =
-    payload["projectOpen"] === true || payload["project_open"] === true;
+    typeof inner["premiereRunning"] === "boolean"
+      ? inner["premiereRunning"]
+      : typeof inner["premiere_running"] === "boolean"
+        ? inner["premiere_running"]
+        : false;
+  const version =
+    typeof inner["premiereVersion"] === "string"
+      ? inner["premiereVersion"]
+      : typeof inner["premiere_version"] === "string"
+        ? inner["premiere_version"]
+        : "";
+  const open =
+    typeof inner["projectOpen"] === "boolean"
+      ? inner["projectOpen"]
+      : typeof inner["project_open"] === "boolean"
+        ? inner["project_open"]
+        : false;
   const mode =
-    (typeof payload["bridgeMode"] === "string" && payload["bridgeMode"]) ||
-    (typeof payload["bridge_mode"] === "string" && payload["bridge_mode"]) ||
-    "cep";
+    typeof inner["bridgeMode"] === "string"
+      ? inner["bridgeMode"]
+      : typeof inner["bridge_mode"] === "string"
+        ? inner["bridge_mode"]
+        : "cep";
+
   return {
     premiereRunning: running,
-    premiereVersion: ver,
-    projectOpen: projOpen,
+    premiereVersion: version,
+    projectOpen: open,
     bridgeMode: mode,
   };
 }
@@ -469,8 +485,7 @@ export class CepBridge implements PremiereBridge {
           bridgeMode: "cep",
         };
       }
-      const payload = unwrapCepEnvelope(raw);
-      return normalizePingPayload(payload);
+      return normalizeCepPingResult(raw);
     } catch {
       return {
         premiereRunning: false,
