@@ -2266,7 +2266,68 @@ function insertBarsAndTone(paramsJson) {
     }
 }
 
-// getSequenceMarkers — implemented in core.jsx (always loaded); keeps EvalCommand working if premiere.jsx fails to $.evalFile.
+// Bundle scripted marker edits into one undo step when the host supports it.
+function _runWithUndoGroup(undoLabel, fn) {
+    var opened = false;
+    var label = undoLabel || "Script";
+    try {
+        if (typeof app !== "undefined" && app && typeof app.beginUndoGroup === "function") {
+            app.beginUndoGroup(label);
+            opened = true;
+        }
+        return fn();
+    } finally {
+        if (opened && typeof app.endUndoGroup === "function") {
+            try {
+                app.endUndoGroup();
+            } catch (endE) {}
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// getSequenceMarkers() - Get all markers on the active sequence
+// ---------------------------------------------------------------------------
+function getSequenceMarkers() {
+    try {
+        if (!app.project) {
+            return _err("No project is open");
+        }
+
+        var seq = app.project.activeSequence;
+        if (!seq) {
+            return _err("No active sequence");
+        }
+
+        var markers = [];
+        if (seq.markers) {
+            var marker = seq.markers.getFirstMarker();
+            var idx = 0;
+            while (marker) {
+                markers.push({
+                    index: idx,
+                    name: marker.name || "",
+                    comment: marker.comments || "",
+                    start: _timeToSeconds(marker.start),
+                    end: _timeToSeconds(marker.end),
+                    type: marker.type || "",
+                    colorIndex: marker.colorIndex !== undefined ? marker.colorIndex : -1
+                });
+                idx++;
+                marker = seq.markers.getNextMarker(marker);
+            }
+        }
+
+        return _ok({
+            count: markers.length,
+            markers: markers,
+            sequenceName: seq.name || "",
+            sequenceID: seq.sequenceID || ""
+        });
+    } catch (e) {
+        return _err("getSequenceMarkers failed: " + e.message);
+    }
+}
 
 // ---------------------------------------------------------------------------
 // addSequenceMarker(paramsJson) - Add a marker to the active sequence
@@ -2293,27 +2354,29 @@ function addSequenceMarker(paramsJson) {
             return _err("Sequence does not support markers");
         }
 
-        var newMarker = seq.markers.createMarker(time);
-        if (newMarker) {
+        var ret = null;
+        _runWithUndoGroup("Add sequence marker", function () {
+            var newMarker = seq.markers.createMarker(time);
+            if (!newMarker) {
+                throw new Error("Failed to create marker");
+            }
             if (name !== "") newMarker.name = name;
             if (comment !== "") newMarker.comments = comment;
             if (color >= 0) newMarker.colorIndex = color;
             if (duration > 0) {
                 newMarker.end = _secondsToTime(time + duration);
             }
-        } else {
-            return _err("Failed to create marker");
-        }
-
-        return _ok({
-            name: name,
-            comment: comment,
-            time: time,
-            duration: duration,
-            color: color,
-            sequenceName: seq.name || "",
-            sequenceID: seq.sequenceID || ""
+            ret = _ok({
+                name: name,
+                comment: comment,
+                time: time,
+                duration: duration,
+                color: color,
+                sequenceName: seq.name || "",
+                sequenceID: seq.sequenceID || ""
+            });
         });
+        return ret;
     } catch (e) {
         return _err("addSequenceMarker failed: " + e.message);
     }
@@ -2342,29 +2405,32 @@ function deleteSequenceMarker(markerIndex) {
             return _err("Invalid marker index: " + markerIndex);
         }
 
-        // Navigate to the target marker by index
-        var marker = seq.markers.getFirstMarker();
-        var idx = 0;
-        while (marker && idx < markerIndex) {
-            marker = seq.markers.getNextMarker(marker);
-            idx++;
-        }
+        var ret = null;
+        _runWithUndoGroup("Delete sequence marker", function () {
+            var marker = seq.markers.getFirstMarker();
+            var idx = 0;
+            while (marker && idx < markerIndex) {
+                marker = seq.markers.getNextMarker(marker);
+                idx++;
+            }
 
-        if (!marker) {
-            return _err("Marker index " + markerIndex + " not found");
-        }
+            if (!marker) {
+                throw new Error("Marker index " + markerIndex + " not found");
+            }
 
-        var deletedName = marker.name || "";
-        var deletedTime = _timeToSeconds(marker.start);
-        seq.markers.deleteMarker(marker);
+            var deletedName = marker.name || "";
+            var deletedTime = _timeToSeconds(marker.start);
+            seq.markers.deleteMarker(marker);
 
-        return _ok({
-            deletedIndex: markerIndex,
-            deletedName: deletedName,
-            deletedTime: deletedTime,
-            sequenceName: seq.name || "",
-            sequenceID: seq.sequenceID || ""
+            ret = _ok({
+                deletedIndex: markerIndex,
+                deletedName: deletedName,
+                deletedTime: deletedTime,
+                sequenceName: seq.name || "",
+                sequenceID: seq.sequenceID || ""
+            });
         });
+        return ret;
     } catch (e) {
         return _err("deleteSequenceMarker failed: " + e.message);
     }
@@ -7093,9 +7159,13 @@ function addClipMarker(trackType, trackIndex, clipIndex, time, name, comment, co
         if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
         var clip = track.clips[clipIndex];
         if (!clip.markers) return _err("Clip does not support markers");
-        var marker = clip.markers.createMarker(time);
-        if (marker) { marker.name = name; marker.comments = comment; if (marker.setColorByIndex) { marker.setColorByIndex(color); } }
-        return _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, markerTime: time, markerName: name, markerComment: comment, markerColor: color });
+        var ret;
+        _runWithUndoGroup("Add clip marker", function () {
+            var marker = clip.markers.createMarker(time);
+            if (marker) { marker.name = name; marker.comments = comment; if (marker.setColorByIndex) { marker.setColorByIndex(color); } }
+            ret = _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, markerTime: time, markerName: name, markerComment: comment, markerColor: color });
+        });
+        return ret;
     } catch (e) { return _err("addClipMarker failed: " + e.message); }
 }
 
@@ -7134,8 +7204,12 @@ function deleteClipMarker(trackType, trackIndex, clipIndex, markerIndex) {
         while (marker && idx < markerIndex) { marker = clip.markers.getNextMarker(marker); idx++; }
         if (!marker) return _err("Marker index " + markerIndex + " out of range");
         var markerName = marker.name || "";
-        clip.markers.deleteMarker(marker);
-        return _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, markerIndex: markerIndex, deletedMarkerName: markerName, deleted: true });
+        var ret;
+        _runWithUndoGroup("Delete clip marker", function () {
+            clip.markers.deleteMarker(marker);
+            ret = _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, markerIndex: markerIndex, deletedMarkerName: markerName, deleted: true });
+        });
+        return ret;
     } catch (e) { return _err("deleteClipMarker failed: " + e.message); }
 }
 
@@ -9262,17 +9336,19 @@ function importMarkersFromCSV(csvPath) {
         var file = new File(csvPath); if (!file.exists) return _err("CSV file not found: " + csvPath);
         file.encoding = "UTF-8"; file.open("r"); var content = file.read(); file.close();
         var lines = content.split(/\r?\n/); var imported = 0; var markers = seq.markers;
-        for (var i = 1; i < lines.length; i++) {
-            var line = lines[i].replace(/^\s+|\s+$/g, ""); if (!line) continue;
-            var parts = line.split(","); if (parts.length < 3) continue;
-            var name = parts[0] || ""; var comment = parts[1] || "";
-            var startSec = parseFloat(parts[2]) || 0; var endSec = parseFloat(parts[3]) || startSec;
-            var colorIdx = parseInt(parts[4], 10) || 0;
-            try {
-                var newMarker = markers.createMarker(startSec);
-                if (newMarker) { newMarker.name = name; newMarker.comments = comment; if (endSec > startSec) newMarker.end = _secondsToTime(endSec); if (colorIdx > 0 && newMarker.setColorByIndex) newMarker.setColorByIndex(colorIdx); imported++; }
-            } catch (me) {}
-        }
+        _runWithUndoGroup("Import markers from CSV", function () {
+            for (var i = 1; i < lines.length; i++) {
+                var line = lines[i].replace(/^\s+|\s+$/g, ""); if (!line) continue;
+                var parts = line.split(","); if (parts.length < 3) continue;
+                var name = parts[0] || ""; var comment = parts[1] || "";
+                var startSec = parseFloat(parts[2]) || 0; var endSec = parseFloat(parts[3]) || startSec;
+                var colorIdx = parseInt(parts[4], 10) || 0;
+                try {
+                    var newMarker = markers.createMarker(startSec);
+                    if (newMarker) { newMarker.name = name; newMarker.comments = comment; if (endSec > startSec) newMarker.end = _secondsToTime(endSec); if (colorIdx > 0 && newMarker.setColorByIndex) newMarker.setColorByIndex(colorIdx); imported++; }
+                } catch (me) {}
+            }
+        });
         return _ok({csvPath: csvPath, markersImported: imported});
     } catch (e) { return _err("importMarkersFromCSV failed: " + e.message); }
 }
@@ -9282,10 +9358,12 @@ function deleteAllMarkers() {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence; if (!seq) return _err("No active sequence");
         var markers = seq.markers; if (!markers) return _err("Sequence has no markers object");
-        var toDelete = []; var marker = markers.getFirstMarker();
-        while (marker) { toDelete.push(marker); marker = markers.getNextMarker(marker); }
         var count = 0;
-        for (var i = 0; i < toDelete.length; i++) { try { markers.deleteMarker(toDelete[i]); count++; } catch (de) {} }
+        _runWithUndoGroup("Delete all sequence markers", function () {
+            var toDelete = []; var marker = markers.getFirstMarker();
+            while (marker) { toDelete.push(marker); marker = markers.getNextMarker(marker); }
+            for (var i = 0; i < toDelete.length; i++) { try { markers.deleteMarker(toDelete[i]); count++; } catch (de) {} }
+        });
         return _ok({markersDeleted: count});
     } catch (e) { return _err("deleteAllMarkers failed: " + e.message); }
 }
@@ -15466,17 +15544,19 @@ function addChapterMarkers(chaptersJSON) {
         var chapters = JSON.parse(chaptersJSON);
         if (!chapters || chapters.length === 0) return _err("No chapters provided");
         var added = 0;
-        for (var i = 0; i < chapters.length; i++) {
-            var ch = chapters[i];
-            var time = parseFloat(ch.time) || 0;
-            var title = ch.title || ("Chapter " + (i + 1));
-            try {
-                var marker = seq.markers.createMarker(time);
-                marker.name = title;
-                marker.comments = "Chapter marker";
-                added++;
-            } catch (me) {}
-        }
+        _runWithUndoGroup("Add chapter markers", function () {
+            for (var i = 0; i < chapters.length; i++) {
+                var ch = chapters[i];
+                var time = parseFloat(ch.time) || 0;
+                var title = ch.title || ("Chapter " + (i + 1));
+                try {
+                    var marker = seq.markers.createMarker(time);
+                    marker.name = title;
+                    marker.comments = "Chapter marker";
+                    added++;
+                } catch (me) {}
+            }
+        });
         return _ok({chaptersAdded: added, totalChapters: chapters.length});
     } catch (e) { return _err("addChapterMarkers failed: " + e.message); }
 }
