@@ -141,6 +141,14 @@ install-panel:
 install-panel-win:
     scripts\\install-cep-panel-win.bat
 
+# Install UXP transcript bridge panel (macOS)
+install-uxp-panel:
+    bash ./scripts/install-uxp-panel.sh
+
+# Install UXP transcript bridge panel (Windows)
+install-uxp-panel-win:
+    scripts\\install-uxp-panel-win.bat
+
 # ─── Dev ───
 
 # Start all services in dev mode

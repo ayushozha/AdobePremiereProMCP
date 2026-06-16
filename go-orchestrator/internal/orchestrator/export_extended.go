@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 )
 
 // ---------------------------------------------------------------------------
@@ -60,14 +61,27 @@ func (e *Engine) ExportFrame(ctx context.Context, params *ExportFrameParams) (*G
 	if params.OutputPath == "" {
 		return nil, fmt.Errorf("export frame: output_path must not be empty")
 	}
-	argsJSON, _ := json.Marshal(map[string]any{
-		"params": params,
-	})
+	argsJSON, _ := json.Marshal(params)
 	result, err := e.premiere.EvalCommand(ctx, "exportFrame", string(argsJSON))
 	if err != nil {
-		return nil, fmt.Errorf("ExportFrame: %w", err)
+		return e.exportFrameWithFallback(ctx, params, err)
 	}
-	return &GenericExportResult{Status: "success", OutputPath: result}, nil
+
+	// Premiere may return success without writing a file on 24.x (QE exportFramePNG throws).
+	if _, statErr := os.Stat(params.OutputPath); statErr != nil {
+		if fbErr := e.exportFrameViaFFmpeg(ctx, params.OutputPath, 0); fbErr != nil {
+			return nil, fmt.Errorf("ExportFrame: premiere returned %q but file missing; ffmpeg fallback: %w", result, fbErr)
+		}
+		return &GenericExportResult{Status: "success", OutputPath: params.OutputPath}, nil
+	}
+	return &GenericExportResult{Status: "success", OutputPath: params.OutputPath}, nil
+}
+
+func (e *Engine) exportFrameWithFallback(ctx context.Context, params *ExportFrameParams, premiereErr error) (*GenericExportResult, error) {
+	if fbErr := e.exportFrameViaFFmpeg(ctx, params.OutputPath, 0); fbErr != nil {
+		return nil, fmt.Errorf("ExportFrame: %w; ffmpeg fallback: %v", premiereErr, fbErr)
+	}
+	return &GenericExportResult{Status: "success", OutputPath: params.OutputPath}, nil
 }
 
 // ExportAAF exports a sequence as an AAF file.

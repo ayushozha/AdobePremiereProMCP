@@ -63,3 +63,5 @@ Thumbs.db
 tmp/
 .cache/
 go-orchestrator/cli
+
+.specstory/

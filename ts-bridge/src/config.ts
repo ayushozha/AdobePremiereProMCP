@@ -26,6 +26,12 @@ export interface BridgeConfig {
   /** WebSocket port for CEP panel communication (only used in cep mode). */
   cepWsPort: number;
 
+  /** WebSocket port for UXP panel transcript bridge (Premiere 25.0+). */
+  uxpWsPort: number;
+
+  /** Timeout for UXP transcript commands (ms). */
+  uxpCommandTimeoutMs: number;
+
   /** gRPC server host/bind address. */
   grpcHost: string;
 }
@@ -52,7 +58,9 @@ const VALID_LOG_LEVELS: ReadonlySet<string> = new Set<LogLevel>([
  * | PREMIERE_PATH         | /Applications/Adobe Premiere Pro 2025/...             |
  * | BRIDGE_MODE           | cep                                                  |
  * | BRIDGE_LOG_LEVEL      | info                                                 |
- * | BRIDGE_CEP_WS_PORT    | 8089                                                 |
+ * | BRIDGE_CEP_WS_PORT    | 9801                                                 |
+ * | BRIDGE_UXP_WS_PORT    | 9802                                                 |
+ * | BRIDGE_UXP_CMD_TIMEOUT_MS | 120000                                           |
  */
 export function loadConfig(): BridgeConfig {
   const rawMode = process.env["BRIDGE_MODE"] ?? "cep";
@@ -78,7 +86,22 @@ export function loadConfig(): BridgeConfig {
     bridgeMode: rawMode as BridgeMode,
     logLevel: rawLogLevel as LogLevel,
     cepWsPort: parsePort("BRIDGE_CEP_WS_PORT", 9801),
+    uxpWsPort: parsePort("BRIDGE_UXP_WS_PORT", 9802),
+    uxpCommandTimeoutMs: parsePositiveInt("BRIDGE_UXP_CMD_TIMEOUT_MS", 120_000),
   };
+}
+
+function parsePositiveInt(envKey: string, fallback: number): number {
+  const raw = process.env[envKey];
+  if (raw === undefined) return fallback;
+
+  const parsed = Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed) || parsed < 1) {
+    throw new Error(
+      `Invalid ${envKey} "${raw}". Must be a positive integer.`,
+    );
+  }
+  return parsed;
 }
 
 function parsePort(envKey: string, fallback: number): number {

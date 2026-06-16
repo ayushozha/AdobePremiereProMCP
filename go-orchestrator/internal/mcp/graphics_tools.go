@@ -287,6 +287,34 @@ func registerGraphicsTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	)
 
 	s.AddTool(
+		gomcp.NewTool("premiere_export_sequence_transcript",
+			gomcp.WithDescription("Export transcript data for the active sequence to prtranscript, json, or text. On Premiere 25.0+ with the UXP bridge connected, reads Text-panel Speech-to-Text data from source clips. On Premiere 24.x (or when UXP is unavailable), falls back to caption tracks — create captions from Text > Transcript first."),
+			gomcp.WithString("output_path", gomcp.Required(), gomcp.Description("Absolute path for the output transcript file")),
+			gomcp.WithString("format", gomcp.Description("Output format: 'prtranscript' (default, HH:MM:SS:FF blocks), 'json', or 'text'"), gomcp.Enum("prtranscript", "json", "text")),
+			gomcp.WithString("speaker_label", gomcp.Description("Fallback speaker label when Premiere does not name a speaker (default: 'Unknown')")),
+			gomcp.WithBoolean("include_audio_tracks", gomcp.Description("Also scan audio track items for clip transcripts (default: false)")),
+		),
+		func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
+			logger.Debug("handling premiere_export_sequence_transcript")
+			outputPath := gomcp.ParseString(req, "output_path", "")
+			if outputPath == "" {
+				return gomcp.NewToolResultError("parameter 'output_path' is required"), nil
+			}
+			result, err := orch.ExportSequenceTranscript(
+				ctx,
+				outputPath,
+				gomcp.ParseString(req, "format", "prtranscript"),
+				gomcp.ParseString(req, "speaker_label", "Unknown"),
+				gomcp.ParseBoolean(req, "include_audio_tracks", false),
+			)
+			if err != nil {
+				return gomcp.NewToolResultError(fmt.Sprintf("failed to export sequence transcript: %v", err)), nil
+			}
+			return toolResultJSON(result)
+		},
+	)
+
+	s.AddTool(
 		gomcp.NewTool("premiere_style_captions",
 			gomcp.WithDescription("Style all captions on a track (font, size, color, background, position)."),
 			gomcp.WithNumber("track_index", gomcp.Description("Zero-based caption track index (default: 0)")),

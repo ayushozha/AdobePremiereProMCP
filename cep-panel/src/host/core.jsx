@@ -29,7 +29,7 @@ if (typeof JSON === "undefined") {
     };
 }
 
-// ── Shared Helpers ────────────────────────────────────────────────────
+// -- Shared Helpers ----------------------------------------------------
 
 /**
  * Safely parse JSON arguments and validate required fields.
@@ -53,6 +53,24 @@ function _parseArgs(argsJson, requiredFields) {
 }
 
 /**
+ * Major release number from app.version (e.g. 24, 25) for PP24 vs PP25 compatibility branches.
+ */
+function _premiereMajorVersion() {
+    try {
+        var v = app.version || "";
+        var m = v.match(/^(\d+)/);
+        return m ? parseInt(m[1], 10) : 0;
+    } catch (e) {
+        return 0;
+    }
+}
+
+/** True when Premiere major >= minMajor (release-family gate). */
+function _premiereAtLeastMajor(minMajor) {
+    return _premiereMajorVersion() >= minMajor;
+}
+
+/**
  * Return the active sequence or null, guarding against app.project being null.
  */
 function _getActiveSequence() {
@@ -70,14 +88,14 @@ function _requireProject() {
 
 /**
  * Require an active sequence. Returns the sequence on success, or null.
- * If null, caller should return _err("No active sequence…").
+ * If null, caller should return _err("No active sequence...").
  */
 function _requireSequence() {
     if (!app.project) return null;
     return app.project.activeSequence || null;
 }
 
-// ── Project ───────────────────────────────────────────────────────────
+// -- Project -----------------------------------------------------------
 
 function ping() {
     try {
@@ -169,7 +187,7 @@ function closeProject(argsJson) {
     } catch (e) { return _err("Failed to close project: " + e.message); }
 }
 
-// ── Sequences ─────────────────────────────────────────────────────────
+// -- Sequences ---------------------------------------------------------
 
 function createSequence(argsJson) {
     try {
@@ -212,18 +230,29 @@ function getSequenceList() {
         if (!app.project) return _err("No project is open.");
         var seqs = [];
         var numSeqs = 0;
-        try { numSeqs = app.project.sequences.numItems; } catch (e1) {}
+        try { numSeqs = app.project.sequences.numSequences || app.project.sequences.numItems || 0; } catch (e1) {}
+        var activeID = app.project.activeSequence ? (app.project.activeSequence.sequenceID || "") : "";
         for (var i = 0; i < numSeqs; i++) {
             var s = app.project.sequences[i];
             if (s) {
-                seqs.push({ index: i, name: s.name, id: s.sequenceID });
+                seqs.push({
+                    index: i,
+                    name: s.name || "",
+                    sequence_id: s.sequenceID || "",
+                    frame_size_horizontal: s.frameSizeHorizontal || 0,
+                    frame_size_vertical: s.frameSizeVertical || 0,
+                    timebase: s.timebase || "",
+                    video_track_count: (s.videoTracks && s.videoTracks.numTracks !== undefined) ? s.videoTracks.numTracks : 0,
+                    audio_track_count: (s.audioTracks && s.audioTracks.numTracks !== undefined) ? s.audioTracks.numTracks : 0,
+                    is_active: (s.sequenceID === activeID)
+                });
             }
         }
-        return _ok({ sequences: seqs, count: seqs.length });
+        return _ok({ sequences: seqs, count: seqs.length, active_sequence_id: activeID });
     } catch (e) { return _err("Failed to list sequences: " + e.message); }
 }
 
-// ── Media Import ──────────────────────────────────────────────────────
+// -- Media Import ------------------------------------------------------
 
 function importFiles(argsJson) {
     try {
@@ -271,7 +300,7 @@ function importFolder(argsJson) {
     } catch (e) { return _err("Failed to import folder '" + (folderPath || "unknown") + "': " + e.message); }
 }
 
-// ── Clips ─────────────────────────────────────────────────────────────
+// -- Clips -------------------------------------------------------------
 
 function getTimelineState(argsJson) {
     try {
@@ -408,7 +437,7 @@ function placeClip(argsJson) {
     } catch (e) { return _err("Failed to place clip: " + e.message); }
 }
 
-// ── Export ─────────────────────────────────────────────────────────────
+// -- Export -------------------------------------------------------------
 
 function exportSequence(argsJson) {
     try {
@@ -423,7 +452,7 @@ function exportSequence(argsJson) {
     } catch (e) { return _err("Failed to export sequence: " + e.message); }
 }
 
-// ── Bins ──────────────────────────────────────────────────────────────
+// -- Bins --------------------------------------------------------------
 
 function createBin(argsJson) {
     try {
@@ -460,7 +489,7 @@ function getProjectItems(argsJson) {
     } catch (e) { return _err("Failed to get project items: " + e.message); }
 }
 
-// ── Markers ───────────────────────────────────────────────────────────
+// -- Markers -----------------------------------------------------------
 
 function addSequenceMarker(argsJson) {
     try {
@@ -480,7 +509,7 @@ function addSequenceMarker(argsJson) {
     } catch (e) { return _err("Failed to add sequence marker: " + e.message); }
 }
 
-// ── Playback ──────────────────────────────────────────────────────────
+// -- Playback ----------------------------------------------------------
 
 function getPlayheadPosition() {
     try {
@@ -508,7 +537,7 @@ function setPlayheadPosition(argsJson) {
     } catch (e) { return _err("Failed to set playhead to " + (args && args.seconds !== undefined ? args.seconds + "s" : "unknown position") + ": " + e.message); }
 }
 
-// ── Audio ─────────────────────────────────────────────────────────────
+// -- Audio -------------------------------------------------------------
 
 function setAudioLevel(argsJson) {
     try {
@@ -548,7 +577,7 @@ function setAudioLevel(argsJson) {
     } catch (e) { return _err("Failed to set audio level: " + e.message); }
 }
 
-// ── Effects ───────────────────────────────────────────────────────────
+// -- Effects -----------------------------------------------------------
 
 function getClipEffects(argsJson) {
     try {
@@ -594,7 +623,7 @@ function getClipEffects(argsJson) {
     } catch (e) { return _err("Failed to get clip effects: " + e.message); }
 }
 
-// ── Transitions (QE DOM) ──────────────────────────────────────────────
+// -- Transitions (QE DOM) ----------------------------------------------
 
 function addVideoTransition(argsJson) {
     try {
@@ -629,7 +658,7 @@ function addVideoTransition(argsJson) {
     } catch (e) { return _err("Failed to add transition: " + e.message); }
 }
 
-// ── Color ─────────────────────────────────────────────────────────────
+// -- Color -------------------------------------------------------------
 
 function setLumetriProperty(argsJson) {
     try {
@@ -684,7 +713,7 @@ function setLumetriProperty(argsJson) {
     } catch (e) { return _err("Failed to set Lumetri property '" + (args && args.property ? args.property : "unknown") + "': " + e.message); }
 }
 
-// ── Motion ────────────────────────────────────────────────────────────
+// -- Motion ------------------------------------------------------------
 
 function setPosition(argsJson) {
     try {
@@ -787,7 +816,7 @@ function setOpacity(argsJson) {
     } catch (e) { return _err("Failed to set opacity: " + e.message); }
 }
 
-// ── System ────────────────────────────────────────────────────────────
+// -- System ------------------------------------------------------------
 
 function getSystemInfo() {
     try {
@@ -801,7 +830,7 @@ function getSystemInfo() {
     } catch (e) { return _err("Failed to get system info: " + e.message); }
 }
 
-// ── Tool Categories (for discoverability) ─────────────────────────────
+// -- Tool Categories (for discoverability) -----------------------------
 
 function getToolCategories() {
     return _ok({
@@ -831,7 +860,7 @@ function getToolCategories() {
     });
 }
 
-// ── Media Browser ─────────────────────────────────────────────────────
+// -- Media Browser -----------------------------------------------------
 
 function browsePath(argsJson) {
     try {
@@ -944,7 +973,7 @@ function getRecentLocations() {
     } catch (e) { return _err("Failed to get recent locations: " + e.message); }
 }
 
-// ── Timeline Panel Menu Items ─────────────────────────────────────────
+// -- Timeline Panel Menu Items -----------------------------------------
 
 function setAudioWaveformLabelColor(argsJson) {
     try {
@@ -1097,7 +1126,7 @@ function setRectifiedAudioWaveforms(argsJson) {
     } catch (e) { return _err("Failed to set rectified audio waveforms: " + e.message); }
 }
 
-// ── Frame Capture ─────────────────────────────────────────────────────
+// -- Frame Capture -----------------------------------------------------
 
 function captureFrameAsBase64(argsJson) {
     try {
@@ -1167,7 +1196,7 @@ function _binaryToBase64(data) {
     return result;
 }
 
-// ── Secure Script Execution ───────────────────────────────────────────
+// -- Secure Script Execution -------------------------------------------
 
 function executeSecureScript(argsJson) {
     try {
@@ -1203,7 +1232,7 @@ function executeQEScript(argsJson) {
     } catch (e) { return _err("Failed to execute QE script: " + e.message); }
 }
 
-// ── Panel Docking via macOS Accessibility (AppleScript) ───────────────
+// -- Panel Docking via macOS Accessibility (AppleScript) ---------------
 
 function simulateMenuClick(argsJson) {
     try {

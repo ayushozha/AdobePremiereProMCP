@@ -12,6 +12,58 @@
 
 import type { Logger } from "winston";
 import type { PremiereBridge } from "../bridge/interface.js";
+import { getUxpWsServer } from "../uxp/uxp-ws-server.js";
+
+async function exportSequenceTranscriptViaCep(
+  bridge: PremiereBridge,
+  params: Record<string, unknown>,
+  logger: Logger,
+): Promise<{
+  resultJson: string;
+  isError: boolean;
+  errorMessage: string;
+}> {
+  logger.info("Using caption-track transcript fallback (CEP/ExtendScript)");
+
+  const result = await bridge.evalCommand(
+    "exportSequenceTranscript",
+    JSON.stringify(params),
+  );
+
+  if (result.isError) {
+    return {
+      resultJson: "",
+      isError: true,
+      errorMessage: result.errorMessage,
+    };
+  }
+
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = JSON.parse(result.resultJson) as Record<string, unknown>;
+  } catch {
+    return {
+      resultJson: result.resultJson,
+      isError: false,
+      errorMessage: "",
+    };
+  }
+
+  if (parsed.success === false) {
+    return {
+      resultJson: result.resultJson,
+      isError: true,
+      errorMessage: String(parsed.error ?? "Caption transcript export failed"),
+    };
+  }
+
+  const data = (parsed.data ?? parsed) as Record<string, unknown>;
+  return {
+    resultJson: JSON.stringify(data),
+    isError: false,
+    errorMessage: "",
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Inline request / response types (mirrors proto messages)
@@ -513,6 +565,51 @@ export function createHandlers(
       logger.info("gRPC call: EvalCommand", {
         functionName: request.functionName,
       });
+
+      if (request.functionName === "exportSequenceTranscript") {
+        let params: Record<string, unknown> = {};
+        try {
+          params = JSON.parse(request.argsJson || "{}") as Record<
+            string,
+            unknown
+          >;
+        } catch (err) {
+          return {
+            resultJson: "",
+            isError: true,
+            errorMessage: `Invalid exportSequenceTranscript args JSON: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          };
+        }
+
+        const uxp = getUxpWsServer();
+        if (uxp?.isConnected) {
+          try {
+            const uxpResult = await uxp.sendCommand(
+              "exportSequenceTranscript",
+              params,
+            );
+            if (uxpResult.success) {
+              return {
+                resultJson: JSON.stringify(uxpResult.result ?? uxpResult),
+                isError: false,
+                errorMessage: "",
+              };
+            }
+            logger.info("UXP transcript export failed; trying caption fallback", {
+              error: uxpResult.error,
+            });
+          } catch (err) {
+            logger.warn("UXP transcript export error; trying caption fallback", {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+
+        return exportSequenceTranscriptViaCep(bridge, params, logger);
+      }
+
       const result = await bridge.evalCommand(
         request.functionName,
         request.argsJson,

@@ -118,8 +118,36 @@ osascript -e 'tell application "Adobe Premiere Pro 2025" to do script "app.proje
 
 Cross Dissolve, Dip to Black, Dip to White, Film Dissolve, Wipe, Barn Doors, Push, Slide, Morph Cut, Constant Power (audio), Constant Gain (audio)
 
-## 10. Future: UXP
+## 10. Sequence Transcript Export
+
+| MCP tool | Purpose |
+|----------|---------|
+| `premiere_export_sequence_transcript` | Export transcript to `prtranscript`, `json`, or `text` |
+
+### Premiere 25.0+ (Text panel via UXP)
+
+Speech-to-Text data in **Text > Transcript** is read through the UXP bridge
+(ExtendScript cannot access it directly).
+
+1. Source clips transcribed in **Text > Transcript**
+2. **PremierPro MCP UXP Bridge** panel open and connected (`ws://127.0.0.1:9802`)
+3. Enable developer mode: **Edit > Preferences > Plugins** (Premiere 25.6+)
+
+Install UXP panel: `scripts/install-uxp-panel-win.bat` (Windows) or `just install-uxp-panel` (macOS).
+
+### Premiere 24.x (caption-track fallback via CEP)
+
+When UXP is unavailable, ts-bridge exports **caption tracks** instead:
+
+1. Transcribe in **Text > Transcript**
+2. **Create Captions** from that transcript (adds a caption track)
+3. Call `premiere_export_sequence_transcript` — uses CEP automatically
+
+Caption export is a workaround: speaker labels default to `Unknown`, and block
+boundaries follow caption segments rather than Text-panel blocks.
+
+## 11. ExtendScript Sunset
 
 - ExtendScript/CEP supported through September 2026
-- UXP is the future but currently beta-only for Premiere Pro
-- CEP + ExtendScript is the correct choice for now
+- CEP + ExtendScript remains the primary bridge for timeline/markers/export
+- Text-panel transcript readback requires UXP on Premiere 25.0+; caption fallback covers 24.x

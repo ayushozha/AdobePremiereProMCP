@@ -35,6 +35,9 @@ func (e *Engine) CaptureFrameAsBase64(ctx context.Context) (*FrameCaptureResult,
 		return nil, fmt.Errorf("CaptureFrameAsBase64: failed to parse response: %w", err)
 	}
 	if !resp.Success {
+		if fb, fbErr := e.captureFrameBase64ViaFFmpeg(ctx, 0); fbErr == nil {
+			return fb, nil
+		}
 		return nil, fmt.Errorf("CaptureFrameAsBase64: %s", resp.Error)
 	}
 

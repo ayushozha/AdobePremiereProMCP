@@ -9,6 +9,7 @@ import { createLogger, format, transports } from "winston";
 import { loadConfig } from "./config.js";
 import { createBridge } from "./bridge/factory.js";
 import { createGrpcServer } from "./grpc/server.js";
+import { setUxpWsServer, UxpWsServer } from "./uxp/uxp-ws-server.js";
 
 async function main(): Promise<void> {
   // ── Configuration ──────────────────────────────────────────────────────
@@ -44,6 +45,17 @@ async function main(): Promise<void> {
   await bridge.connect();
   logger.info(`Bridge initialized in "${config.bridgeMode}" mode`);
 
+  // ── UXP transcript bridge (Premiere 25.0+ Text panel API) ─────────────
+  const uxpServer = new UxpWsServer(config, logger);
+  setUxpWsServer(uxpServer);
+  try {
+    await uxpServer.start();
+  } catch (err) {
+    logger.warn("UXP WebSocket server failed to start; transcript export unavailable", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   // ── gRPC server ────────────────────────────────────────────────────────
   const grpcServer = await createGrpcServer(config, bridge, logger);
   await grpcServer.start();
@@ -58,6 +70,7 @@ async function main(): Promise<void> {
 
     try {
       await grpcServer.stop();
+      await uxpServer.stop();
       await bridge.disconnect();
       logger.info("Shutdown complete");
     } catch (err) {

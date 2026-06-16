@@ -290,6 +290,7 @@ type Orchestrator interface {
 	EditCaption(ctx context.Context, trackIndex, captionIndex int, text string) (*GenericResult, error)
 	DeleteCaption(ctx context.Context, trackIndex, captionIndex int) (*GenericResult, error)
 	ExportCaptions(ctx context.Context, outputPath, format string) (*GenericResult, error)
+	ExportSequenceTranscript(ctx context.Context, outputPath, format, speakerLabel string, includeAudioTracks bool) (*GenericResult, error)
 	StyleCaptions(ctx context.Context, trackIndex int, font string, size float64, color, bgColor, position string) (*GenericResult, error)
 	CreateColorMatte(ctx context.Context, name string, red, green, blue, width, height int) (*GenericResult, error)
 	PlaceColorMatte(ctx context.Context, projectItemIndex, trackIndex int, startTime, duration float64) (*GenericResult, error)

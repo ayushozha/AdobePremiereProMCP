@@ -188,6 +188,32 @@ func (e *Engine) ExportCaptions(ctx context.Context, outputPath, format string) 
 	return &GenericResult{Status: "success", Message: result}, nil
 }
 
+// ExportSequenceTranscript writes transcript data for the active sequence.
+// Premiere 25.0+ with the UXP bridge reads Text-panel Speech-to-Text data;
+// otherwise ts-bridge falls back to caption tracks via CEP (Premiere 24.x).
+func (e *Engine) ExportSequenceTranscript(ctx context.Context, outputPath, format, speakerLabel string, includeAudioTracks bool) (*GenericResult, error) {
+	if outputPath == "" {
+		return nil, fmt.Errorf("ExportSequenceTranscript: outputPath is required")
+	}
+	if format == "" {
+		format = "prtranscript"
+	}
+	if speakerLabel == "" {
+		speakerLabel = "Unknown"
+	}
+	argsJSON, _ := json.Marshal(map[string]any{
+		"outputPath":         outputPath,
+		"format":             format,
+		"speakerLabel":       speakerLabel,
+		"includeAudioTracks": includeAudioTracks,
+	})
+	result, err := e.premiere.EvalCommand(ctx, "exportSequenceTranscript", string(argsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("ExportSequenceTranscript: %w", err)
+	}
+	return &GenericResult{Status: "success", Message: result}, nil
+}
+
 func (e *Engine) StyleCaptions(ctx context.Context, trackIndex int, font string, size float64, color, bgColor, position string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,

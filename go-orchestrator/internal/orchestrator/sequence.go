@@ -158,7 +158,8 @@ func (e *Engine) GetSequenceList(ctx context.Context) (*SequenceListResult, erro
 		return nil, fmt.Errorf("failed to list sequences — open a project first with premiere_open_project: %w", err)
 	}
 	var out SequenceListResult
-	if err := json.Unmarshal([]byte(result), &out); err != nil {
+	payload := unwrapExtendScriptEnvelope(result)
+	if err := json.Unmarshal(payload, &out); err != nil {
 		return nil, fmt.Errorf("GetSequenceList: could not parse response from Premiere Pro: %w", err)
 	}
 	return &out, nil
@@ -418,6 +419,17 @@ func (e *Engine) GetSequenceMarkers(ctx context.Context) (*MarkersResult, error)
 	result, err := e.premiere.EvalCommand(ctx, "getSequenceMarkers", "{}")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sequence markers — make sure a sequence is active (try premiere_set_active_sequence): %w", err)
+	}
+	// ExtendScript returns _ok() => {"success":true,"data":{...}} ; unwrap data for Go structs.
+	type extendScriptEnvelope struct {
+		Data *MarkersResult `json:"data"`
+	}
+	var env extendScriptEnvelope
+	if err := json.Unmarshal([]byte(result), &env); err != nil {
+		return nil, fmt.Errorf("GetSequenceMarkers: could not parse response from Premiere Pro: %w", err)
+	}
+	if env.Data != nil {
+		return env.Data, nil
 	}
 	var out MarkersResult
 	if err := json.Unmarshal([]byte(result), &out); err != nil {

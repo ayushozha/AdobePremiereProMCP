@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>PremierPro MCP UXP Bridge</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      font-size: 12px;
+      margin: 12px;
+      color: #e8e8e8;
+      background: #1e1e1e;
+    }
+    h1 { font-size: 14px; margin: 0 0 8px; }
+    #status { margin-bottom: 8px; }
+    .ok { color: #7dcea0; }
+    .warn { color: #f5b041; }
+    .err { color: #ec7063; }
+    #log {
+      white-space: pre-wrap;
+      font-family: Consolas, monospace;
+      font-size: 11px;
+      max-height: 240px;
+      overflow: auto;
+      border: 1px solid #333;
+      padding: 8px;
+      background: #111;
+    }
+    label { display: block; margin-top: 8px; }
+    input { width: 100%; box-sizing: border-box; margin-top: 4px; }
+    button { margin-top: 8px; margin-right: 6px; }
+  </style>
+</head>
+<body>
+  <h1>PremierPro MCP UXP Bridge</h1>
+  <div id="status" class="warn">Disconnected</div>
+  <label>
+    MCP WebSocket URL
+    <input id="ws-url" type="text" value="ws://127.0.0.1:9802" />
+  </label>
+  <button id="btn-reconnect">Reconnect</button>
+  <button id="btn-clear">Clear log</button>
+  <div id="log"></div>
+  <script src="src/main.js"></script>
+</body>
+</html>

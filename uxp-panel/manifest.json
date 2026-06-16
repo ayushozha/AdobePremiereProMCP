@@ -1,0 +1,30 @@
+{
+  "id": "com.premierpro.mcp.uxpbridge",
+  "name": "PremierPro MCP UXP Bridge",
+  "version": "1.0.0",
+  "host": {
+    "app": "premierepro",
+    "minVersion": "25.0.0"
+  },
+  "type": "panel",
+  "uiEntry": {
+    "type": "panel",
+    "file": "index.html"
+  },
+  "entrypoints": [
+    {
+      "type": "panel",
+      "id": "premierpro-mcp-uxp-bridge",
+      "label": { "default": "PremierPro MCP UXP Bridge" },
+      "file": "index.html"
+    }
+  ],
+  "manifestVersion": 5,
+  "requiredPermissions": {
+    "allowCodeGenerationFromStrings": true,
+    "network": {
+      "domains": ["127.0.0.1", "localhost"]
+    },
+    "localFileSystem": "fullAccess"
+  }
+}
