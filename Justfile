@@ -9,6 +9,8 @@ default:
 proto:
     @echo "Generating protobuf stubs..."
     buf generate proto/definitions
+    @echo "Restoring gen/go/go.mod (buf's clean:true wipes it on every generate)..."
+    ./scripts/restore-gen-go-mod.sh
 
 # Lint proto definitions
 proto-lint:
@@ -17,8 +19,12 @@ proto-lint:
 # ─── Go Orchestrator ───
 
 # Build the Go orchestrator
+# Output to bin/ rather than bin/server so Go picks the platform-correct name:
+# server.exe on Windows, server elsewhere. With an explicit extension-less -o,
+# Windows produces a file it then cannot exec -- an MCP client spawning it
+# fails with ENOENT.
 go-build:
-    cd go-orchestrator && go build -o bin/server ./cmd/server
+    cd go-orchestrator && go build -o bin/ ./cmd/server
 
 # Run the Go orchestrator
 go-run:

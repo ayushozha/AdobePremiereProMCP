@@ -15,6 +15,33 @@ NC='\033[0m'
 
 TIMEOUT=5  # Seconds to wait before SIGKILL
 
+# Ports start-all.sh binds, used to clean up orphans when .pids is gone.
+DEFAULT_PORTS="50052 50053 50054"
+
+# On Git Bash/MSYS the PIDs recorded by start-all.sh are shell PIDs, not the
+# Windows PIDs of the detached services, so `kill` reports success while the
+# process keeps holding its port and the next start fails with EADDRINUSE.
+# Fall back to killing whatever owns the port instead.
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) IS_WINDOWS=1 ;;
+    *)                    IS_WINDOWS=0 ;;
+esac
+
+kill_by_port_windows() {
+    local port="$1"
+    local pids
+    pids=$(powershell.exe -NoProfile -Command \
+        "(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).OwningProcess" \
+        2>/dev/null | tr -d '\r')
+    [ -z "$pids" ] && return 1
+    for wpid in $pids; do
+        [ -z "$wpid" ] && continue
+        powershell.exe -NoProfile -Command \
+            "Stop-Process -Id $wpid -Force -ErrorAction SilentlyContinue" >/dev/null 2>&1
+    done
+    return 0
+}
+
 echo -e "${CYAN}========================================${NC}"
 echo -e "${CYAN}  PremierPro MCP — Stopping All Services${NC}"
 echo -e "${CYAN}========================================${NC}"
@@ -22,7 +49,22 @@ echo ""
 
 if [ ! -f "$PID_FILE" ]; then
     echo -e "${YELLOW}No PID file found at $PID_FILE${NC}"
-    echo "No services appear to be running."
+    # A missing PID file does not mean nothing is running: it is deleted on
+    # every stop, so a service orphaned by a crash or a previous stop still
+    # holds its port and would make the next start fail with EADDRINUSE.
+    # Sweep the well-known ports instead of assuming we are clean.
+    if [ "$IS_WINDOWS" -eq 1 ]; then
+        swept=0
+        for port in $DEFAULT_PORTS; do
+            if kill_by_port_windows "$port"; then
+                echo -e "  ${GREEN}freed orphaned service on port $port${NC}"
+                swept=1
+            fi
+        done
+        [ "$swept" -eq 0 ] && echo "No services appear to be running."
+    else
+        echo "No services appear to be running."
+    fi
     exit 0
 fi
 
@@ -30,6 +72,16 @@ while IFS=: read -r name pid port; do
     [ -z "$name" ] && continue
 
     echo -n "Stopping $name (PID $pid, port $port)... "
+
+    if [ "$IS_WINDOWS" -eq 1 ]; then
+        kill -TERM "$pid" 2>/dev/null   # best effort for the shell-level job
+        if kill_by_port_windows "$port"; then
+            echo -e "${GREEN}stopped${NC} (port $port)"
+        else
+            echo -e "${YELLOW}already stopped${NC}"
+        fi
+        continue
+    fi
 
     if ! kill -0 "$pid" 2>/dev/null; then
         echo -e "${YELLOW}already stopped${NC}"

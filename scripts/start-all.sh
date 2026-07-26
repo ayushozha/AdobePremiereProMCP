@@ -31,11 +31,12 @@ echo ""
 echo "Project root: $PROJECT_ROOT"
 echo ""
 
-# Clean up stale PID file
-if [ -f "$PID_FILE" ]; then
-    echo -e "${YELLOW}Cleaning up stale PID file...${NC}"
-    "$SCRIPT_DIR/stop-all.sh" 2>/dev/null || true
-fi
+# Always clean up first. Not just when a PID file exists: it is deleted on
+# every stop, so a service orphaned by a crash still holds its port and the
+# binds below would fail with EADDRINUSE. stop-all.sh sweeps the known ports
+# when it has no PID file to work from.
+echo -e "${YELLOW}Cleaning up any running services...${NC}"
+"$SCRIPT_DIR/stop-all.sh" >/dev/null 2>&1 || true
 
 # Create log directory
 mkdir -p "$LOG_DIR"
@@ -46,8 +47,17 @@ mkdir -p "$LOG_DIR"
 # --- Start Rust Media Engine (port 50052) ---
 echo -e "${CYAN}[1/3] Starting Rust media engine on port 50052...${NC}"
 cd "$PROJECT_ROOT/rust-engine"
-if [ -f "target/release/rust-engine" ]; then
-    ./target/release/rust-engine --port 50052 > "$LOG_DIR/rust-engine.log" 2>&1 &
+# The crate is named premierpro-media-engine; on Windows cargo appends .exe.
+RUST_BIN=""
+for candidate in \
+    "target/release/premierpro-media-engine.exe" \
+    "target/release/premierpro-media-engine" \
+    "target/release/rust-engine.exe" \
+    "target/release/rust-engine"; do
+    if [ -f "$candidate" ]; then RUST_BIN="$candidate"; break; fi
+done
+if [ -n "$RUST_BIN" ]; then
+    "./$RUST_BIN" --port 50052 > "$LOG_DIR/rust-engine.log" 2>&1 &
 else
     cargo run --release -- --port 50052 > "$LOG_DIR/rust-engine.log" 2>&1 &
 fi

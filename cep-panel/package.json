@@ -5,6 +5,7 @@
   "private": true,
   "main": "src/panel.js",
   "scripts": {
+    "build": "echo No build step required - plain JS CEP panel",
     "install-deps": "npm install",
     "setup-csinterface": "node scripts/setup-csinterface.js",
     "link-panel:mac": "ln -sf \"$(pwd)\" \"$HOME/Library/Application Support/Adobe/CEP/extensions/com.premierpro.mcp.bridge\"",

@@ -42,9 +42,37 @@
     var serverPort = DEFAULT_PORT;
     var autoScroll = true;
 
+    /**
+     * Resolve a file inside the extension's src/host directory.
+     *
+     * __dirname is not reliable here: depending on the platform and how CEP
+     * loads panel.js it can point either at the extension root or at src/,
+     * so a fixed relative path silently resolves to a non-existent file and
+     * $.evalFile() fails with a bare "EvalScript error." Probe the known
+     * layouts instead and return the first that exists on disk.
+     */
+    function resolveHostPath(fileName) {
+        var extensionRoot = csInterface.getSystemPath(SystemPath.EXTENSION);
+        var candidates = [
+            path.join(__dirname, "host", fileName),
+            path.join(__dirname, "src", "host", fileName),
+            path.join(extensionRoot, "src", "host", fileName),
+            path.join(extensionRoot, "host", fileName)
+        ];
+        for (var i = 0; i < candidates.length; i++) {
+            try {
+                if (fs.existsSync(candidates[i])) {
+                    return candidates[i].replace(/\\/g, "/");
+                }
+            } catch (e) { /* keep probing */ }
+        }
+        // Nothing found — return the conventional path so the error names it.
+        return candidates[0].replace(/\\/g, "/");
+    }
+
     // Lazy-loading state for the full premiere.jsx ExtendScript library
     var premiereJsxLoaded = false;
-    var premiereJsxPath = path.join(__dirname, "host", "premiere.jsx").replace(/\\/g, "/");
+    var premiereJsxPath = resolveHostPath("premiere.jsx");
 
     // Stats tracking
     var stats = {
@@ -546,7 +574,7 @@
     // Load ExtendScript host functions
     // ---------------------------------------------------------------------------
     function loadHostScript() {
-        var corePath = path.join(__dirname, "host", "core.jsx").replace(/\\/g, "/");
+        var corePath = resolveHostPath("core.jsx");
         log("Loading core ExtendScript: " + corePath);
         csInterface.evalScript('$.evalFile("' + corePath + '")', function (result) {
             if (result === "EvalScript error.") {
