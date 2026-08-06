@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	gomcp "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -148,7 +149,7 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_get_sequence_list
 	s.AddTool(
 		gomcp.NewTool("premiere_get_sequence_list",
-			gomcp.WithDescription("List all sequences in the project with summary information for each: name, index, resolution, frame rate, video/audio track counts, and whether it is the currently active sequence. Use this to find sequence indices for other sequence operations."),
+			gomcp.WithDescription("List all sequences in the project with each sequence's name, index, ID, frame dimensions, timebase, video/audio track counts, and active state. Use this to find sequence indices and IDs for other sequence operations."),
 		),
 		makeGetSequenceListHandler(orch, logger),
 	)
@@ -160,7 +161,7 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_get_playhead_position
 	s.AddTool(
 		gomcp.NewTool("premiere_get_playhead_position",
-			gomcp.WithDescription("Get the current playhead (CTI - Current Time Indicator) position on the active sequence, returned as both timecode (HH:MM:SS:FF) and seconds. Useful for determining where to insert clips or markers relative to the current viewing position."),
+			gomcp.WithDescription("Get the current playhead (CTI) position on the active sequence as seconds and raw Premiere ticks, together with the sequence name and ID. Useful for determining where to insert clips or markers."),
 		),
 		makeGetPlayheadPositionHandler(orch, logger),
 	)
@@ -288,18 +289,34 @@ func registerSequenceTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// premiere_auto_reframe
 	s.AddTool(
 		gomcp.NewTool("premiere_auto_reframe",
-			gomcp.WithDescription("Auto-reframe the active sequence to a new aspect ratio using Premiere Pro's AI-powered motion tracking (Adobe Sensei). Creates a new sequence with the target aspect ratio and intelligently repositions/crops clips to keep the main subject in frame. Common uses: converting 16:9 horizontal to 9:16 vertical (TikTok/Reels/Shorts), 1:1 square (Instagram), or 4:5 (Facebook)."),
+			gomcp.WithDescription("Auto-reframe the active sequence to a new aspect ratio using Premiere Pro's motion tracking. Creates and returns one verified derivative sequence while leaving the source sequence intact. Common uses: converting 16:9 horizontal to 9:16 vertical (TikTok/Reels/Shorts), 1:1 square (Instagram), or 4:5."),
+			gomcp.WithString("source_sequence_id",
+				gomcp.Required(),
+				gomcp.MaxLength(255),
+				gomcp.Description("Exact ID of the sequence that must currently be active. Resolve and activate it with premiere_get_sequence_list and premiere_set_active_sequence before calling Auto Reframe."),
+			),
 			gomcp.WithNumber("numerator",
 				gomcp.Required(),
+				gomcp.Min(1),
+				gomcp.Max(10000),
 				gomcp.Description("Aspect ratio numerator. Examples: 9 (for 9:16 vertical), 1 (for 1:1 square), 4 (for 4:5), 16 (for 16:9 landscape)."),
 			),
 			gomcp.WithNumber("denominator",
 				gomcp.Required(),
+				gomcp.Min(1),
+				gomcp.Max(10000),
 				gomcp.Description("Aspect ratio denominator. Examples: 16 (for 9:16 vertical), 1 (for 1:1 square), 5 (for 4:5), 9 (for 16:9 landscape)."),
 			),
 			gomcp.WithString("motion_preset",
-				gomcp.Description("Motion tracking speed/sensitivity preset (default: 'default'). 'slow' = minimal camera movement reframing, best for interviews. 'default' = balanced. 'fast' = aggressive reframing, best for action footage."),
-				gomcp.Enum("default", "slow", "fast"),
+				gomcp.Description("Premiere Auto Reframe motion preset (default: 'default'). Use 'slower' for limited subject motion, 'default' for typical footage, or 'faster' for action."),
+				gomcp.Enum("slower", "default", "faster"),
+			),
+			gomcp.WithString("new_name",
+				gomcp.MaxLength(255),
+				gomcp.Description("Unique name for the derivative. If omitted, the server creates a unique name from the source sequence and requested ratio."),
+			),
+			gomcp.WithBoolean("use_nested_sequences",
+				gomcp.Description("Whether Auto Reframe should preserve nested sequences as nests (default: false)."),
 			),
 		),
 		makeAutoReframeHandler(orch, logger),
@@ -803,15 +820,27 @@ func makeAutoReframeHandler(orch Orchestrator, logger *zap.Logger) server.ToolHa
 	return func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
 		logger.Debug("handling premiere_auto_reframe")
 
-		numerator := gomcp.ParseInt(req, "numerator", -1)
-		denominator := gomcp.ParseInt(req, "denominator", -1)
-		if numerator <= 0 || denominator <= 0 {
-			return gomcp.NewToolResultError("parameters 'numerator' and 'denominator' are required and must be > 0"), nil
+		arguments, err := objectArguments(req.Params.Arguments)
+		if err != nil {
+			return gomcp.NewToolResultError(fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+		rawNumerator, numeratorOK := arguments["numerator"].(float64)
+		rawDenominator, denominatorOK := arguments["denominator"].(float64)
+		if !numeratorOK || !denominatorOK || rawNumerator != float64(int(rawNumerator)) || rawDenominator != float64(int(rawDenominator)) {
+			return gomcp.NewToolResultError("parameters 'numerator' and 'denominator' are required and must be integers"), nil
+		}
+		numerator := int(rawNumerator)
+		denominator := int(rawDenominator)
 
+		sourceSequenceID := strings.TrimSpace(gomcp.ParseString(req, "source_sequence_id", ""))
+		if sourceSequenceID == "" {
+			return gomcp.NewToolResultError("parameter 'source_sequence_id' is required"), nil
+		}
 		motionPreset := gomcp.ParseString(req, "motion_preset", "default")
+		newName := gomcp.ParseString(req, "new_name", "")
+		useNestedSequences := gomcp.ParseBoolean(req, "use_nested_sequences", false)
 
-		result, err := orch.AutoReframeSequence(ctx, numerator, denominator, motionPreset)
+		result, err := orch.AutoReframeSequence(ctx, sourceSequenceID, numerator, denominator, motionPreset, newName, useNestedSequences)
 		if err != nil {
 			logger.Error("auto reframe failed", zap.Error(err))
 			return gomcp.NewToolResultError(fmt.Sprintf("failed to auto reframe: %v", err)), nil

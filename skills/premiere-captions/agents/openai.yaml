@@ -1,0 +1,4 @@
+interface:
+  display_name: "Premiere Captions"
+  short_description: "Import, validate, and export timed captions"
+  default_prompt: "Use $premiere-captions to import and validate this supplied timed SRT."

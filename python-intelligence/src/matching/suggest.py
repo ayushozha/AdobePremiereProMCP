@@ -131,18 +131,12 @@ def _type_specific_hints(segment: ScriptSegment) -> list[str]:
     hints: list[str] = []
 
     if segment.type == SegmentType.BROLL and segment.visual_direction:
-        hints.append(
-            f"Consider stock footage matching: {segment.visual_direction}"
-        )
+        hints.append(f"Consider stock footage matching: {segment.visual_direction}")
 
     if segment.type in (SegmentType.MUSIC, SegmentType.SFX) and segment.audio_direction:
-        hints.append(
-            f"Audio direction specifies: {segment.audio_direction}"
-        )
+        hints.append(f"Audio direction specifies: {segment.audio_direction}")
 
     if segment.estimated_duration_seconds > 0:
-        hints.append(
-            f"Required duration: ~{segment.estimated_duration_seconds:.1f}s"
-        )
+        hints.append(f"Required duration: ~{segment.estimated_duration_seconds:.1f}s")
 
     return hints

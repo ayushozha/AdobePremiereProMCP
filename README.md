@@ -6,15 +6,15 @@
 [![MCP Protocol](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-blue.svg)](https://modelcontextprotocol.io)
 [![GitHub stars](https://img.shields.io/github/stars/ayushozha/AdobePremiereProMCP?style=social)](https://github.com/ayushozha/AdobePremiereProMCP/stargazers)
 
-**The open-source MCP server for Adobe Premiere Pro.** Control every aspect of video editing -- timeline, color grading, audio mixing, effects, graphics, and export -- through natural language using Claude, GPT, or any AI assistant that supports the [Model Context Protocol](https://modelcontextprotocol.io).
+**An open-source MCP server for Adobe Premiere Pro.** Automate supported timeline, media, audio, effect, caption, graphics-template, and export workflows through Claude, GPT, or another [Model Context Protocol](https://modelcontextprotocol.io) client.
 
-> Give it a script and your footage. It handles the rest.
+> Give it a script and your footage, review the proposed edit, then let it assemble a recoverable rough cut on a duplicated sequence.
 
 ```
 "Edit this 5-minute video using script.pdf with the footage in /media/"
 ```
 
-The server parses your script, scans your media library, generates an edit decision list, and assembles the timeline in Premiere Pro -- all from a single prompt.
+The server can parse a script, scan media, generate an edit decision list, and assemble a Premiere Pro timeline. Mutations are checked with timeline/DOM readback where the host API exposes it.
 
 ---
 
@@ -22,63 +22,45 @@ The server parses your script, scans your media library, generates an edit decis
 
 Video editors spend hours on repetitive tasks: syncing clips, rough cuts, color matching, audio leveling, exporting variants. This MCP server turns Adobe Premiere Pro into an AI-controllable tool, so you can describe edits in plain English and let your AI assistant execute them.
 
-**No plugins. No subscriptions. Fully open source.**
+**No separate MCP subscription. Local CEP bridge. Fully open source.**
 
-## Features -- 1,060 MCP Tools
+## Capabilities and Verification Boundary
 
-This is the most comprehensive MCP server for any NLE (non-linear editor). Every tool maps to real Adobe Premiere Pro ExtendScript and QE DOM operations.
+The source registry contains **1,064 MCP tool schemas** backed by **932 host command names**. The default `standard` profile exposes **72 curated, readback-first tools**, which fits common model function limits and covers normal editing work. The full registry remains available for compatibility and specialist use; schema or symbol presence is not proof that a command works in every Premiere version.
 
-| Category | Tools | What You Can Do |
-|---|---|---|
-| **Core/Foundation** | 14 | Ping, get project state, create sequences, import media, place clips, export |
-| **App Lifecycle** | 3 | Launch, quit, and check Premiere Pro process status |
-| **Project Management** | 23 | Create, open, save, close projects; manage bins, scratch disks, metadata |
-| **Sequence Management** | 26 | Create, duplicate, delete sequences; playhead, in/out points, markers, nesting |
-| **Clip Operations** | 29 | Insert, overwrite, move, trim, split, slip, slide, speed, link/unlink clips |
-| **Effects & Transitions** | 36 | Apply/remove effects and transitions, keyframe animation, motion, Lumetri basics |
-| **Audio (basic)** | 32 | Levels, gain, mute/solo, effects, Essential Sound, track management |
-| **Audio (advanced)** | 30 | Mixer state, EQ, compressor, limiter, de-esser, loudness, sync, waveform analysis |
-| **Color Grading** | 30 | Full Lumetri Color: exposure, contrast, curves, HSL, color wheels, LUTs, vignette |
-| **Graphics & Titles** | 21 | MOGRTs, titles, lower thirds, captions, color mattes, time remapping |
-| **Export (basic)** | 14 | Direct export, AME queue, frame export, AAF/OMF/FCPXML, audio-only export |
-| **Advanced Editing** | 31 | Ripple/roll/slip/slide trims, gap management, grouping, snapping, navigation |
-| **Batch Operations** | 30 | Batch import/export, apply effects to multiple clips, auto-organize, markers |
-| **AI/ML Workflows** | 25 | Smart cut, auto color match, rough cut, B-roll suggestions, social cuts, analysis |
-| **Workspace & Multicam** | 25 | Multicam, proxy management, workspaces, undo/redo, source monitor, cache |
-| **Playback & Navigation** | 30 | Play/pause/stop, shuttle, step, loop, timecode navigation, render status |
-| **Transform & Masking** | 30 | Crop, PIP, fade, stabilizer, noise reduction, blur, sharpen, distortion |
-| **Metadata & Labels** | 30 | XMP metadata, labels, footage interpretation, smart bins, media management |
-| **Preferences** | 30 | Still/transition durations, auto-save, playback resolution, cache, renderer, codecs |
-| **Templates & Presets** | 30 | Sequence/effect/export presets, project templates, batch rename, macros |
-| **Motion Graphics** | 30 | Essential Graphics, scrolling titles, shapes, watermarks, split screen, subtitles |
-| **Collaboration & Review** | 30 | Review comments, version history, snapshots, EDL/AAF/XML import, delivery checks |
-| **VR/Immersive** | 30 | VR projection, HDR, stereoscopic 3D, frame rates, letterboxing, timecode, captions |
-| **App Integration** | 28 | Dynamic Link (AE), Photoshop, Audition, Media Encoder, Team Projects |
-| **Diagnostics** | 30 | Performance metrics, disk space, plugins, render status, health checks, debug logs |
-| **Monitoring & Events** | 30 | Event listeners, playhead/render watchers, state snapshots, notifications |
-| **UI Control** | 30 | Panel management, window control, track display, label filters, dialogs, console |
-| **Compound Operations** | 30 | Montage, slideshow, highlight reel, music bed, social exports, project setup |
-| **Encoding & Formats** | 30 | Codec conversion (ProRes, H.264/265, DNxHR, GIF), thumbnails, render queue |
-| **Timeline Assembly** | 30 | EDL/CSV assembly, clip sorting/shuffling, compositing, generators, timeline reports |
-| **Scripting** | 30 | ExtendScript execution, global variables, conditionals, scheduling, file I/O |
-| **Analytics** | 30 | Project/sequence summaries, codec/resolution breakdowns, pacing, comparison reports |
-| **Effect Chains** | 30 | Effect chain management, visual presets (sepia, vintage, glow), transition control |
+The curated surface includes:
 
-**Total: 907 tools** across 33 source files. [View the full feature plan](docs/feature-plan.md).
+- Project/timeline inspection, sequence versioning, import, placement, trim, ripple, markers, and export.
+- Rust-backed media probe, thumbnail, waveform, silence, scene, and asset-scan operations.
+- Script parsing, asset matching, EDL generation, and pacing analysis.
+- Caption-track creation from validated SRT with count readback.
+- Installed-effect and transition discovery, application, and public-DOM readback.
+- MOGRT-based titles, social derivatives, proxy workflows, and batch-delivery recipes.
+
+The audited caption, transition, effect, and graphics-template routes return
+explicit `unsupported` errors when Premiere cannot perform and read back the
+requested mutation. The broader compatibility catalog still contains legacy
+and experimental handlers that have not completed the same audit, so it must
+not be treated as a certified surface. Arbitrary script, shell, URL, clipboard,
+external-editor, and file-I/O tools are hidden unless `unsafe` is selected. A
+real Premiere session is still required to certify host mutations on a
+particular OS/Premiere build.
 
 ## Supported Premiere Pro Versions
 
 | Version | Year | Support |
 |---|---|---|
-| 14.x | 2020 | Community tested |
-| 15.x | 2021 | Community tested |
-| 22.x | 2022 | Community tested |
-| 23.x | 2023 | Supported |
-| 24.x | 2024 | Supported |
-| 25.x | 2025 | Primary target |
-| 26.x | 2026 | Beta support |
+| 14.x | 2020 | Manifest target; live matrix pending |
+| 15.x | 2021 | Manifest target; live matrix pending |
+| 22.x | 2022 | Manifest target; live matrix pending |
+| 23.x | 2023 | Manifest target; live matrix pending |
+| 24.x | 2024 | Manifest target; live matrix pending |
+| 25.x | 2025 | Primary development target; live matrix pending |
+| 26.x | 2026 | Beta manifest target; live matrix pending |
 
-Works on **macOS** and **Windows**. The bridge uses Adobe's CEP (Common Extensibility Platform) and ExtendScript, which are supported across all modern Premiere Pro versions.
+The CEP bridge targets **macOS** and **Windows** and declares Premiere Pro 14.0+ in its extension manifest.
+
+The manifest range is not a live compatibility certification. Run the host smoke workflow against your exact Premiere build before trusting project mutations.
 
 Help us expand compatibility -- [report your setup](https://github.com/ayushozha/AdobePremiereProMCP/issues/4).
 
@@ -111,7 +93,7 @@ CLI / MCP Client (Claude, GPT, any AI)
 |---|---|---|
 | **Go** | MCP server, orchestration | Goroutines for concurrency, fast startup, low memory |
 | **Rust** | Media processing | Raw performance for scanning, indexing, waveform analysis |
-| **Python** | AI & NLP | Script parsing, edit decisions, shot matching via embeddings |
+| **Python** | Edit intelligence | Deterministic script parsing, asset matching, EDL generation, pacing analysis |
 | **TypeScript** | Premiere Pro bridge | Native access to Adobe's ExtendScript/CEP DOM |
 
 Full architecture diagram: [`docs/architecture.md`](docs/architecture.md)
@@ -123,7 +105,7 @@ PremierProMCP/
 +-- go-orchestrator/          # Go -- MCP server & task orchestrator
 |   +-- cmd/server/           #   Entry point
 |   +-- internal/             #   Core packages
-|   |   +-- mcp/              #     MCP protocol handler (1,060 tool definitions)
+|   |   +-- mcp/              #     MCP protocol handler (1,064 registered schemas)
 |   |   +-- orchestrator/     #     Task orchestration
 |   |   +-- health/           #     Health checks
 |   |   +-- grpc/             #     gRPC client/server
@@ -166,12 +148,13 @@ PremierProMCP/
 
 ## Prerequisites
 
-- [Go](https://go.dev/) 1.22+
-- [Rust](https://rustup.rs/) 1.77+
+- [Go](https://go.dev/) 1.26.1+
+- [Rust](https://rustup.rs/) 1.85+
 - [Python](https://python.org/) 3.12+
 - [Node.js](https://nodejs.org/) 20+
 - [just](https://github.com/casey/just) (command runner)
 - [buf](https://buf.build/) (protobuf toolchain)
+- `rsync` (generated-client synchronization on macOS/Linux)
 - [FFmpeg](https://ffmpeg.org/) (media processing)
 - Adobe Premiere Pro (2020 or later)
 
@@ -180,7 +163,7 @@ PremierProMCP/
 ```bash
 # Clone the repository
 git clone https://github.com/ayushozha/AdobePremiereProMCP.git
-cd PremierProMCP
+cd AdobePremiereProMCP
 
 # Copy env template
 cp .env.example .env
@@ -201,6 +184,11 @@ just test
 just install-panel
 ```
 
+Those commands use a POSIX shell. Native Windows users should follow the
+platform-specific build/start commands in
+[`docs/USER_MANUAL.md`](docs/USER_MANUAL.md#windows-native-setup); the current
+`PremierPro.bat` is a fail-fast CLI launcher, not a service supervisor.
+
 ## Usage
 
 ### As an MCP Server (Claude Code, Claude Desktop, Cursor, etc.)
@@ -211,12 +199,40 @@ Add to your MCP client configuration:
 {
   "mcpServers": {
     "premiere-pro": {
-      "command": "./go-orchestrator/bin/server",
+      "command": "./go-orchestrator/bin/premierpro-mcp",
       "args": ["--transport", "stdio"]
     }
   }
 }
 ```
+
+The complete tool catalog is returned in cursor-paginated pages of 100 by
+default. MCP clients should continue requesting `tools/list` with the returned
+cursor until `nextCursor` is absent. Set `MCP_PAGE_SIZE` to tune the page size.
+
+The default `standard` profile keeps the normal editing surface small enough
+for model tool limits. Set `MCP_TOOL_PROFILE` to `core`, `dialogue`, `captions`,
+`social`, `transitions`, `effects`, `proxies`, `delivery`, `standard`, or a
+comma-separated combination. Specialized profiles always include core
+inspection and duplicate-sequence recovery tools. `all` exposes the safe full catalog; arbitrary
+script, shell, URL, and file-I/O tools additionally require `unsafe` (for
+example `MCP_TOOL_PROFILE=all,unsafe`) and should only be used with trusted
+prompts and explicit human review.
+
+### Workflow Skills
+
+Seven reusable Agent Skills live in [`skills/`](skills/): dialogue cutting,
+captions, social reframing, transition recipes, look/effect chains, proxy
+conform, and batch delivery. Mutation skills preserve an untouched duplicate
+sequence (or a tool-created derivative) as the recovery boundary and require
+readback verification. Timeline snapshots and saved sequence versions are
+audit/comparison records, not whole-sequence rollback points. The same catalog is available to MCP clients through
+the `config://workflow-skills` resource.
+
+The sources evaluated, patterns adopted, and integrations intentionally left
+out are recorded in [`docs/workflow-research.md`](docs/workflow-research.md).
+The exact test matrix and remaining host boundaries are recorded in
+[`docs/repository-audit-2026-08-05.md`](docs/repository-audit-2026-08-05.md).
 
 ### Via CLI
 
@@ -225,16 +241,48 @@ Add to your MCP client configuration:
 just go-run
 
 # Or run directly
-./go-orchestrator/bin/server --transport stdio
+./go-orchestrator/bin/premierpro-mcp --transport stdio
 ```
 
-### One-Click Launchers
+### Platform Launchers
 
-Platform-specific launchers are included for quick setup:
+Platform-specific CLI launchers are included:
 
-- **macOS:** `./PremierPro.command`
-- **Windows:** `PremierPro.bat`
-- **Linux/Universal:** `./PremierPro.sh`
+- **macOS:** `./PremierPro.command` starts the three backends, installs the CEP
+  panel if needed, waits for readiness, and launches the CLI.
+- **Linux/Unix:** `./PremierPro.sh` starts the three backends, waits for
+  readiness, and launches the CLI. Premiere/CEP itself must run on macOS or
+  Windows.
+- **Windows:** `PremierPro.bat` prepares the Node/Go CLI and launches it. Start
+  the Rust, Python, and TypeScript services separately and install the panel
+  with `scripts\install-cep-panel-win.bat`; full Windows supervision is not yet
+  implemented by the batch launcher.
+
+### CEP Bridge Security and Docker
+
+The CEP panel accepts authenticated WebSocket connections only on loopback.
+On first start, the Go orchestrator, TypeScript bridge, or panel creates a
+shared token at `~/.premierpro-mcp/cep-token`. It authenticates both the
+Go-to-TypeScript gRPC hop and the TypeScript-to-CEP WebSocket hop. To override
+it, set `BRIDGE_CEP_TOKEN` or `MCP_CEP_TOKEN` consistently, or point all three
+processes at the same file with `PREMIERE_MCP_TOKEN_FILE`.
+
+Because Premiere Pro and its CEP panel run on the host, do not run the
+TypeScript bridge solely inside Docker: a container cannot reach the panel's
+loopback-only WebSocket. The supported live-editing layout keeps the Go
+orchestrator and TypeScript bridge on the host; Docker Compose runs only the
+Rust and Python analysis backends.
+
+Before `docker compose up`, set `PREMIERE_MEDIA_ROOT` to the narrowest absolute
+directory containing the input media and `PREMIERE_OUTPUT_ROOT` to an absolute
+writable output directory. Compose mounts each directory at the identical
+container path, so file paths sent over gRPC remain meaningful on both sides.
+The input mount is read-only. Service-specific Docker targets avoid building a
+duplicate all-language runtime for each analysis backend.
+
+The SSE transport also binds to `127.0.0.1` by default. It has no application-
+level authentication, so do not set `MCP_SSE_HOST` (or `--host`) to a public or
+LAN interface unless an authenticated TLS reverse proxy protects it.
 
 ## How It Works
 
@@ -243,7 +291,8 @@ Platform-specific launchers are included for quick setup:
    - **Rust engine** scans `/media/`, indexes all assets (codec, duration, resolution, waveforms)
    - **Python intelligence** parses the script, generates an Edit Decision List, matches shots to assets
 3. **Go merges results** and sends the EDL to the TypeScript bridge
-4. **TypeScript bridge** executes in Premiere Pro -- creates sequence, places clips, adds transitions, text
+4. **TypeScript bridge** executes in Premiere Pro -- creates the sequence,
+   places clips, and applies supported transitions and graphics templates
 5. **Premiere Pro renders** the final output
 
 ## Build Commands

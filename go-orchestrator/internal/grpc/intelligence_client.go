@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	commonpb "github.com/anthropics/premierpro-mcp/gen/go/premierpro/common/v1"
-	intelpb "github.com/anthropics/premierpro-mcp/gen/go/premierpro/intelligence/v1"
+	commonpb "github.com/ayushozha/AdobePremiereProMCP/gen/go/premierpro/common/v1"
+	intelpb "github.com/ayushozha/AdobePremiereProMCP/gen/go/premierpro/intelligence/v1"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -23,10 +23,10 @@ type IntelligenceClient struct {
 	logger      *zap.Logger
 }
 
-// newIntelligenceClient dials the intelligence service and returns a ready client.
-func newIntelligenceClient(addr string, dialTimeout, callTimeout time.Duration, logger *zap.Logger) (*IntelligenceClient, error) {
+// newIntelligenceClient creates a lazy intelligence-service client.
+func newIntelligenceClient(addr string, callTimeout time.Duration, logger *zap.Logger) (*IntelligenceClient, error) {
 	logger = logger.With(zap.String("client", "intelligence"), zap.String("addr", addr))
-	logger.Info("connecting to intelligence service")
+	logger.Info("initializing intelligence client")
 
 	conn, err := grpc.NewClient(addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -40,7 +40,7 @@ func newIntelligenceClient(addr string, dialTimeout, callTimeout time.Duration, 
 		return nil, fmt.Errorf("intelligence dial %s: %w", addr, err)
 	}
 
-	logger.Info("connected to intelligence service")
+	logger.Info("intelligence client initialized")
 	return &IntelligenceClient{
 		conn:        conn,
 		client:      intelpb.NewIntelligenceServiceClient(conn),

@@ -10,7 +10,7 @@
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "lint": "tsc --noEmit",
-    "test": "node --test dist/**/*.test.js"
+    "test": "npm run build && node ../scripts/run-node-tests.mjs dist"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.10.0",
@@ -21,7 +21,7 @@
     "ws": "^8.17.0"
   },
   "devDependencies": {
-    "@types/node": "^22.19.15",
+    "@types/node": "^20.19.43",
     "@types/ws": "^8.18.1",
     "ts-proto": "^1.181.2",
     "tsx": "^4.21.0",

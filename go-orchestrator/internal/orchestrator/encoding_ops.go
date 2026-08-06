@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -73,8 +72,8 @@ func (e *Engine) GetAvailableContainers(ctx context.Context) (*GenericResult, er
 func (e *Engine) ConvertToProRes(ctx context.Context, projectItemIndex int, variant, outputPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"variant": variant,
-		"outputPath": outputPath,
+		"variant":          variant,
+		"outputPath":       outputPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "convertToProRes", string(argsJSON))
 	if err != nil {
@@ -87,8 +86,8 @@ func (e *Engine) ConvertToProRes(ctx context.Context, projectItemIndex int, vari
 func (e *Engine) ConvertToH264(ctx context.Context, projectItemIndex int, outputPath string, bitrate int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"outputPath": outputPath,
-		"bitrate": bitrate,
+		"outputPath":       outputPath,
+		"bitrate":          bitrate,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "convertToH264", string(argsJSON))
 	if err != nil {
@@ -101,8 +100,8 @@ func (e *Engine) ConvertToH264(ctx context.Context, projectItemIndex int, output
 func (e *Engine) ConvertToH265(ctx context.Context, projectItemIndex int, outputPath string, bitrate int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"outputPath": outputPath,
-		"bitrate": bitrate,
+		"outputPath":       outputPath,
+		"bitrate":          bitrate,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "convertToH265", string(argsJSON))
 	if err != nil {
@@ -115,8 +114,8 @@ func (e *Engine) ConvertToH265(ctx context.Context, projectItemIndex int, output
 func (e *Engine) ConvertToDNxHR(ctx context.Context, projectItemIndex int, outputPath, profile string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"outputPath": outputPath,
-		"profile": profile,
+		"outputPath":       outputPath,
+		"profile":          profile,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "convertToDNxHR", string(argsJSON))
 	if err != nil {
@@ -129,9 +128,9 @@ func (e *Engine) ConvertToDNxHR(ctx context.Context, projectItemIndex int, outpu
 func (e *Engine) ConvertToGIF(ctx context.Context, sequenceIndex int, outputPath string, width, fps int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"outputPath": outputPath,
-		"width": width,
-		"fps": fps,
+		"outputPath":    outputPath,
+		"width":         width,
+		"fps":           fps,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "convertToGIF", string(argsJSON))
 	if err != nil {
@@ -148,8 +147,8 @@ func (e *Engine) ConvertToGIF(ctx context.Context, sequenceIndex int, outputPath
 func (e *Engine) GenerateClipThumbnail(ctx context.Context, projectItemIndex int, timeOffset float64, outputPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"timeOffset": timeOffset,
-		"outputPath": outputPath,
+		"timeOffset":       timeOffset,
+		"outputPath":       outputPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "generateClipThumbnail", string(argsJSON))
 	if err != nil {
@@ -162,8 +161,8 @@ func (e *Engine) GenerateClipThumbnail(ctx context.Context, projectItemIndex int
 func (e *Engine) GenerateSequenceThumbnail(ctx context.Context, sequenceIndex int, timeOffset float64, outputPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"timeOffset": timeOffset,
-		"outputPath": outputPath,
+		"timeOffset":    timeOffset,
+		"outputPath":    outputPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "generateSequenceThumbnail", string(argsJSON))
 	if err != nil {
@@ -176,9 +175,9 @@ func (e *Engine) GenerateSequenceThumbnail(ctx context.Context, sequenceIndex in
 func (e *Engine) GenerateContactSheet(ctx context.Context, projectItemIndex int, outputPath string, cols, rows int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"outputPath": outputPath,
-		"cols": cols,
-		"rows": rows,
+		"outputPath":       outputPath,
+		"cols":             cols,
+		"rows":             rows,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "generateContactSheet", string(argsJSON))
 	if err != nil {
@@ -191,8 +190,8 @@ func (e *Engine) GenerateContactSheet(ctx context.Context, projectItemIndex int,
 func (e *Engine) GenerateStoryboard(ctx context.Context, sequenceIndex int, outputPath string, interval float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"outputPath": outputPath,
-		"interval": interval,
+		"outputPath":    outputPath,
+		"interval":      interval,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "generateStoryboard", string(argsJSON))
 	if err != nil {
@@ -286,7 +285,7 @@ func (e *Engine) IsVariableFrameRate(ctx context.Context, projectItemIndex int) 
 func (e *Engine) GetFileHash(ctx context.Context, projectItemIndex int, algorithm string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"algorithm": algorithm,
+		"algorithm":        algorithm,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "getFileHash", string(argsJSON))
 	if err != nil {
@@ -311,7 +310,7 @@ func (e *Engine) GetFileDates(ctx context.Context, projectItemIndex int) (*Gener
 func (e *Engine) MoveMediaFile(ctx context.Context, projectItemIndex int, newDirectory string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"newDirectory": newDirectory,
+		"newDirectory":     newDirectory,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "moveMediaFile", string(argsJSON))
 	if err != nil {
@@ -324,7 +323,7 @@ func (e *Engine) MoveMediaFile(ctx context.Context, projectItemIndex int, newDir
 func (e *Engine) CopyMediaFile(ctx context.Context, projectItemIndex int, destDirectory string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"destDirectory": destDirectory,
+		"destDirectory":    destDirectory,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "copyMediaFile", string(argsJSON))
 	if err != nil {
@@ -337,7 +336,7 @@ func (e *Engine) CopyMediaFile(ctx context.Context, projectItemIndex int, destDi
 func (e *Engine) RenameMediaFile(ctx context.Context, projectItemIndex int, newName string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"newName": newName,
+		"newName":          newName,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "renameMediaFile", string(argsJSON))
 	if err != nil {
@@ -354,8 +353,8 @@ func (e *Engine) RenameMediaFile(ctx context.Context, projectItemIndex int, newN
 func (e *Engine) AddToRenderQueue(ctx context.Context, sequenceIndex int, presetPath, outputPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"presetPath": presetPath,
-		"outputPath": outputPath,
+		"presetPath":    presetPath,
+		"outputPath":    outputPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "addToRenderQueue", string(argsJSON))
 	if err != nil {

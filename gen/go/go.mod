@@ -1,4 +1,4 @@
-module github.com/anthropics/premierpro-mcp/gen/go
+module github.com/ayushozha/AdobePremiereProMCP/gen/go
 
 go 1.26.1
 

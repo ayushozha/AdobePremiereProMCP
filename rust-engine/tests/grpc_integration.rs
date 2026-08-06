@@ -43,9 +43,7 @@ async fn start_server() -> SocketAddr {
 }
 
 /// Helper: connect a client to the given address.
-async fn connect_client(
-    addr: SocketAddr,
-) -> MediaEngineServiceClient<tonic::transport::Channel> {
+async fn connect_client(addr: SocketAddr) -> MediaEngineServiceClient<tonic::transport::Channel> {
     let url = format!("http://{addr}");
     MediaEngineServiceClient::connect(url)
         .await
@@ -63,11 +61,10 @@ async fn scan_assets_returns_files() {
 
     // Point the scanner at the project's docs/ directory, which we know exists
     // and contains at least a couple of files.
-    let docs_dir =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join("docs");
+    let docs_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("docs");
 
     let request = ScanAssetsRequest {
         directory: docs_dir.to_string_lossy().to_string(),
@@ -97,9 +94,18 @@ async fn scan_assets_returns_files() {
 
     // Verify that every returned asset has basic fields populated.
     for asset in &inner.assets {
-        assert!(!asset.file_path.is_empty(), "asset file_path should not be empty");
-        assert!(!asset.file_name.is_empty(), "asset file_name should not be empty");
-        assert!(asset.file_size_bytes > 0, "asset file_size_bytes should be > 0");
+        assert!(
+            !asset.file_path.is_empty(),
+            "asset file_path should not be empty"
+        );
+        assert!(
+            !asset.file_name.is_empty(),
+            "asset file_name should not be empty"
+        );
+        assert!(
+            asset.file_size_bytes > 0,
+            "asset file_size_bytes should be > 0"
+        );
     }
 }
 
@@ -111,8 +117,7 @@ async fn probe_media_returns_metadata_for_known_file() {
     // Use the Cargo.toml as a known file that exists.  The probe will
     // fail on ffprobe (it is not a media file) but we want to verify the
     // RPC round-trip completes and returns an informative error.
-    let cargo_toml = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("Cargo.toml");
+    let cargo_toml = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
 
     let request = ProbeMediaRequest {
         file_path: cargo_toml.to_string_lossy().to_string(),

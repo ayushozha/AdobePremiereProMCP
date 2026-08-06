@@ -16,6 +16,8 @@ Track layout convention (matching the TypeScript bridge expectations):
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from src.models import (
     ScriptSegment,
     SegmentType,
@@ -34,19 +36,18 @@ class TrackAssigner:
 
     # Default mapping from segment type to (TrackType, track_index).
     # Track indices are zero-based to match Premiere Pro's internal model.
-    _DEFAULT_TRACK_MAP: dict[SegmentType, TrackTarget] = {
+    _DEFAULT_TRACK_MAP: ClassVar[dict[SegmentType, TrackTarget]] = {
         # Video tracks
-        SegmentType.DIALOGUE:    TrackTarget(type=TrackType.VIDEO, track_index=0),   # V1
-        SegmentType.ACTION:      TrackTarget(type=TrackType.VIDEO, track_index=0),   # V1
-        SegmentType.BROLL:       TrackTarget(type=TrackType.VIDEO, track_index=1),   # V2
-        SegmentType.TITLE:       TrackTarget(type=TrackType.VIDEO, track_index=2),   # V3
-        SegmentType.LOWER_THIRD: TrackTarget(type=TrackType.VIDEO, track_index=2),   # V3
-        SegmentType.TRANSITION:  TrackTarget(type=TrackType.VIDEO, track_index=0),   # V1
-
+        SegmentType.DIALOGUE: TrackTarget(type=TrackType.VIDEO, track_index=0),  # V1
+        SegmentType.ACTION: TrackTarget(type=TrackType.VIDEO, track_index=0),  # V1
+        SegmentType.BROLL: TrackTarget(type=TrackType.VIDEO, track_index=1),  # V2
+        SegmentType.TITLE: TrackTarget(type=TrackType.VIDEO, track_index=2),  # V3
+        SegmentType.LOWER_THIRD: TrackTarget(type=TrackType.VIDEO, track_index=2),  # V3
+        SegmentType.TRANSITION: TrackTarget(type=TrackType.VIDEO, track_index=0),  # V1
         # Audio tracks
-        SegmentType.VOICEOVER:   TrackTarget(type=TrackType.AUDIO, track_index=1),   # A2
-        SegmentType.MUSIC:       TrackTarget(type=TrackType.AUDIO, track_index=2),   # A3
-        SegmentType.SFX:         TrackTarget(type=TrackType.AUDIO, track_index=3),   # A4
+        SegmentType.VOICEOVER: TrackTarget(type=TrackType.AUDIO, track_index=1),  # A2
+        SegmentType.MUSIC: TrackTarget(type=TrackType.AUDIO, track_index=2),  # A3
+        SegmentType.SFX: TrackTarget(type=TrackType.AUDIO, track_index=3),  # A4
     }
 
     def __init__(
@@ -207,7 +208,4 @@ class TrackAssigner:
         end: float,
     ) -> bool:
         """Return True if (start, end) overlaps any existing interval."""
-        for s, e in intervals:
-            if start < e and end > s:
-                return True
-        return False
+        return any(start < e and end > s for s, e in intervals)

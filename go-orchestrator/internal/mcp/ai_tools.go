@@ -8,38 +8,38 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 	"go.uber.org/zap"
 
-	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/orchestrator"
+	"github.com/ayushozha/AdobePremiereProMCP/go-orchestrator/internal/orchestrator"
 )
 
 // Re-export AI types used by tool handlers.
 type (
-	SmartCutParams         = orchestrator.SmartCutParams
-	SmartCutResult         = orchestrator.SmartCutResult
-	SmartTrimParams        = orchestrator.SmartTrimParams
-	SmartTrimResult        = orchestrator.SmartTrimResult
-	AutoColorMatchParams   = orchestrator.AutoColorMatchParams
-	AutoColorMatchResult   = orchestrator.AutoColorMatchResult
-	AutoAudioLevelsParams  = orchestrator.AutoAudioLevelsParams
-	AutoAudioLevelsResult  = orchestrator.AutoAudioLevelsResult
-	ClipAnalysis           = orchestrator.ClipAnalysis
-	SequenceAnalysis       = orchestrator.SequenceAnalysis
-	SequenceStatistics     = orchestrator.SequenceStatistics
-	JumpCutResult          = orchestrator.JumpCutResult
-	AudioIssuesResult      = orchestrator.AudioIssuesResult
-	RoughCutParams         = orchestrator.RoughCutParams
-	RoughCutResult         = orchestrator.RoughCutResult
-	RefineEditParams       = orchestrator.RefineEditParams
-	RefineEditResult       = orchestrator.RefineEditResult
-	GenerateTrailerParams  = orchestrator.GenerateTrailerParams
-	GenerateTrailerResult  = orchestrator.GenerateTrailerResult
-	SocialCutParams        = orchestrator.SocialCutParams
-	SocialCutResult        = orchestrator.SocialCutResult
-	AutoOrganizeParams     = orchestrator.AutoOrganizeParams
-	AutoOrganizeResult     = orchestrator.AutoOrganizeResult
-	TagClipsResult         = orchestrator.TagClipsResult
-	FindSimilarResult      = orchestrator.FindSimilarResult
-	DeliverySpecResult     = orchestrator.DeliverySpecResult
-	ProjectReportResult    = orchestrator.ProjectReportResult
+	SmartCutParams        = orchestrator.SmartCutParams
+	SmartCutResult        = orchestrator.SmartCutResult
+	SmartTrimParams       = orchestrator.SmartTrimParams
+	SmartTrimResult       = orchestrator.SmartTrimResult
+	AutoColorMatchParams  = orchestrator.AutoColorMatchParams
+	AutoColorMatchResult  = orchestrator.AutoColorMatchResult
+	AutoAudioLevelsParams = orchestrator.AutoAudioLevelsParams
+	AutoAudioLevelsResult = orchestrator.AutoAudioLevelsResult
+	ClipAnalysis          = orchestrator.ClipAnalysis
+	SequenceAnalysis      = orchestrator.SequenceAnalysis
+	SequenceStatistics    = orchestrator.SequenceStatistics
+	JumpCutResult         = orchestrator.JumpCutResult
+	AudioIssuesResult     = orchestrator.AudioIssuesResult
+	RoughCutParams        = orchestrator.RoughCutParams
+	RoughCutResult        = orchestrator.RoughCutResult
+	RefineEditParams      = orchestrator.RefineEditParams
+	RefineEditResult      = orchestrator.RefineEditResult
+	GenerateTrailerParams = orchestrator.GenerateTrailerParams
+	GenerateTrailerResult = orchestrator.GenerateTrailerResult
+	SocialCutParams       = orchestrator.SocialCutParams
+	SocialCutResult       = orchestrator.SocialCutResult
+	AutoOrganizeParams    = orchestrator.AutoOrganizeParams
+	AutoOrganizeResult    = orchestrator.AutoOrganizeResult
+	TagClipsResult        = orchestrator.TagClipsResult
+	FindSimilarResult     = orchestrator.FindSimilarResult
+	DeliverySpecResult    = orchestrator.DeliverySpecResult
+	ProjectReportResult   = orchestrator.ProjectReportResult
 )
 
 // aiH is a handler wrapper for AI tools (mirrors advH / efxH pattern).

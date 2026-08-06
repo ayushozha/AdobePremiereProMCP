@@ -11,6 +11,7 @@
 import { createLogger, format, transports, type Logger } from "winston";
 import WebSocket from "ws";
 
+import { resolveSharedToken } from "../auth/token.js";
 import type { BridgeConfig } from "../config.js";
 import type { PremiereBridge } from "./interface.js";
 import { CepBridge } from "./cep-bridge.js";
@@ -109,12 +110,15 @@ export async function createBridgeAutoDetect(
  */
 function probeCepPanel(config: BridgeConfig, log: Logger): Promise<boolean> {
   const port = config.cepWsPort || 9801;
-  const url = `ws://localhost:${port}`;
+  const url = `ws://127.0.0.1:${port}`;
+  const token = resolveSharedToken(config.cepToken);
 
   return new Promise<boolean>((resolve) => {
     log.debug(`Probing CEP panel at ${url}...`);
 
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     let settled = false;
 
     const timer = setTimeout(() => {

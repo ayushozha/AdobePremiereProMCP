@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -241,7 +240,7 @@ func (e *Engine) GetUnusedTracksReport(ctx context.Context, sequenceIndex int) (
 func (e *Engine) ExportProjectReport(ctx context.Context, outputPath, format string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"outputPath": outputPath,
-		"format": format,
+		"format":     format,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "exportProjectReport", string(argsJSON))
 	if err != nil {
@@ -254,7 +253,7 @@ func (e *Engine) ExportProjectReport(ctx context.Context, outputPath, format str
 func (e *Engine) ExportTimelineAsText(ctx context.Context, sequenceIndex int, outputPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"outputPath": outputPath,
+		"outputPath":    outputPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "exportTimelineAsText", string(argsJSON))
 	if err != nil {
@@ -267,8 +266,8 @@ func (e *Engine) ExportTimelineAsText(ctx context.Context, sequenceIndex int, ou
 func (e *Engine) ExportClipList(ctx context.Context, sequenceIndex int, outputPath, format string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"outputPath": outputPath,
-		"format": format,
+		"outputPath":    outputPath,
+		"format":        format,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "exportClipList", string(argsJSON))
 	if err != nil {
@@ -281,7 +280,7 @@ func (e *Engine) ExportClipList(ctx context.Context, sequenceIndex int, outputPa
 func (e *Engine) ExportEffectsList(ctx context.Context, sequenceIndex int, outputPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"outputPath": outputPath,
+		"outputPath":    outputPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "exportEffectsList", string(argsJSON))
 	if err != nil {
@@ -294,7 +293,7 @@ func (e *Engine) ExportEffectsList(ctx context.Context, sequenceIndex int, outpu
 func (e *Engine) ExportMediaList(ctx context.Context, outputPath, format string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"outputPath": outputPath,
-		"format": format,
+		"format":     format,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "exportMediaList", string(argsJSON))
 	if err != nil {
@@ -323,12 +322,12 @@ func (e *Engine) CompareSequences(ctx context.Context, seqIndex1, seqIndex2 int)
 // CompareClips compares two clips by their track type, track index, and clip index.
 func (e *Engine) CompareClips(ctx context.Context, clip1TrackType string, clip1TrackIndex, clip1ClipIndex int, clip2TrackType string, clip2TrackIndex, clip2ClipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"clip1TrackType": clip1TrackType,
+		"clip1TrackType":  clip1TrackType,
 		"clip1TrackIndex": clip1TrackIndex,
-		"clip1ClipIndex": clip1ClipIndex,
-		"clip2TrackType": clip2TrackType,
+		"clip1ClipIndex":  clip1ClipIndex,
+		"clip2TrackType":  clip2TrackType,
 		"clip2TrackIndex": clip2TrackIndex,
-		"clip2ClipIndex": clip2ClipIndex,
+		"clip2ClipIndex":  clip2ClipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "compareClips", string(argsJSON))
 	if err != nil {

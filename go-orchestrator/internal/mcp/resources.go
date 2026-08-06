@@ -28,7 +28,17 @@ func registerResources(s *server.MCPServer) {
 			gomcp.WithResourceDescription("List of all tool categories with descriptions"),
 			gomcp.WithMIMEType("text/plain"),
 		),
-		handleToolCategories,
+		handleCurrentToolCategories,
+	)
+
+	s.AddResource(
+		gomcp.NewResource(
+			"config://workflow-skills",
+			"Workflow Skills",
+			gomcp.WithResourceDescription("Reusable Premiere workflow packs and matching tool profiles"),
+			gomcp.WithMIMEType("text/markdown"),
+		),
+		handleWorkflowSkills,
 	)
 
 	s.AddResource(
@@ -52,6 +62,78 @@ func registerResources(s *server.MCPServer) {
 	)
 }
 
+func handleCurrentToolCategories(
+	_ context.Context,
+	_ gomcp.ReadResourceRequest,
+) ([]gomcp.ResourceContents, error) {
+	return []gomcp.ResourceContents{
+		gomcp.TextResourceContents{
+			URI:      "config://tool-categories",
+			MIMEType: "text/plain",
+			Text: `PremierPro MCP Tool Categories
+==============================
+
+The source registry contains 1,064 tools and is cursor-paginated. Treat the
+live tools/list response as authoritative. The default standard profile
+exposes a compact everyday-editing set. MCP_TOOL_PROFILE can expose a smaller
+union of the following workflow groups; every group also includes core
+inspection/versioning tools.
+
+Core
+  Host, project, timeline, sequence hash, duplicate-sequence recovery, audit
+  snapshots, and verified save operations.
+  Examples: premiere_ping, premiere_get_project, premiere_get_timeline,
+            premiere_get_sequence_hash, premiere_duplicate_sequence,
+            premiere_snapshot_timeline.
+
+dialogue
+  Source-path inspection, decoded waveform/silence analysis, reviewable cut
+  plans, trims, razors, gaps, audio levels, and crossfades.
+
+captions
+  Supplied timed-SRT import, structural validation, readback, and
+  identity-checked active-sequence sidecar export. Speech transcription,
+  portable styling, and FCC certification are not provided by the CEP backend.
+  Examples: premiere_add_subtitles_from_srt, premiere_get_captions,
+            premiere_validate_closed_captions, premiere_export_captions.
+
+social
+  Auto Reframe, verified vertical/square derivatives, and direct/AME export
+  with post-export media probing. Safe-zone and visual crop review remain human
+  steps.
+
+transitions
+  Installed transition discovery, video transitions, and audio crossfades.
+
+effects
+  Installed-effect discovery and generic, readable effect-chain mutation.
+  Visual quality still requires frame review.
+
+proxies
+  Source/proxy media inspection, creation, attachment, detachment, path, and
+  status readback.
+
+delivery
+  Confirmed presets, blocking direct exports, AME queue submission, and
+  post-export media probing. Caption sidecars require exact active-sequence
+  identity. CEP cannot poll individual AME jobs to completion.
+
+unsafe
+  Arbitrary ExtendScript, host shell, URL, and filesystem access. This is
+  intentionally opt-in and must only be used with trusted input and review.
+
+The all profile exposes the legacy catalog except for the explicitly classified
+arbitrary execution and host-filesystem tools. It still contains destructive
+Premiere operations, so inspect each tool and preserve an untouched duplicate
+sequence before use. Timeline snapshots and saved sequence versions are audit
+records, not whole-sequence rollback points.
+Use all,unsafe only when arbitrary execution and filesystem access are intended.
+
+Read config://workflow-skills for scoped, fail-closed workflow recipes.`,
+		},
+	}, nil
+}
+
 // ---------------------------------------------------------------------------
 // Resource handlers
 // ---------------------------------------------------------------------------
@@ -72,12 +154,12 @@ Available tool categories:
 - Clip Operations: Insert, overwrite, trim, split, move clips
 - Effects & Transitions: Apply effects, transitions, keyframes
 - Audio: Set levels, apply audio effects, mix tracks
-- Color Grading: Full Lumetri Color control (exposure, contrast, temperature, etc.)
-- Titles & Graphics: Add text, MOGRTs, captions, lower thirds
-- Export: Export in any format via AME or direct export
+- Color Grading: Discover effects and edit supported Lumetri parameters
+- Titles & Graphics: Import MOGRTs, edit exposed properties, import SRT captions
+- Export: Use supported direct/AME presets; probe completed output files
 - Workspace: Manage panels, workspaces, and UI layout
 - Playback: Control playback, scrub timeline, set playhead
-- AI Tools: Scan assets, parse scripts, auto-edit
+- Planning Tools: Scan assets, parse scripts, match shots, and validate EDLs
 - Batch Operations: Bulk operations across multiple clips
 - Advanced Editing: Multi-camera, nesting, compound clips
 - Diagnostics: Check system state and troubleshoot issues
@@ -93,163 +175,53 @@ Tips:
 - Track indices are zero-based (first video track = 0)
 - Time positions are specified in seconds (floating point)
 - Use premiere_scan_assets to discover media files in a directory
-- Use premiere_auto_edit for fully automated script-to-edit pipeline`,
+- Prefer a reviewable EDL and an untouched duplicate sequence before assembly;
+  use timeline snapshots only as audit/comparison records
+- Treat a queued export as pending until a stable output file is independently
+  observed and validated with premiere_probe_media`,
 		},
 	}, nil
 }
 
-func handleToolCategories(
+func handleWorkflowSkills(
 	_ context.Context,
 	_ gomcp.ReadResourceRequest,
 ) ([]gomcp.ResourceContents, error) {
 	return []gomcp.ResourceContents{
 		gomcp.TextResourceContents{
-			URI:      "config://tool-categories",
-			MIMEType: "text/plain",
-			Text: `PremierPro MCP Tool Categories
-==============================
+			URI:      "config://workflow-skills",
+			MIMEType: "text/markdown",
+			Text: `# Premiere workflow skills
 
-1. Application (app_tools)
-   Launch, close, and check if Premiere Pro is running.
-   Tools: premiere_open, premiere_close, premiere_is_running
+The repository ships reusable Agent Skills under skills/. Each skill states its
+required preflight, recovery-copy, and readback boundaries. A workflow must not
+treat a queued or attempted command as success.
 
-2. Project Management (project_tools)
-   Inspect and manage the current project state.
-   Tools: premiere_ping, premiere_get_project, premiere_get_project_info,
-          premiere_list_project_items, premiere_get_item_metadata,
-          premiere_create_bin, premiere_move_items, premiere_consolidate,
-          premiere_get_project_settings
+| Skill | Tool profile | Purpose |
+|---|---|---|
+| premiere-dialogue-cut | dialogue | Decoded-waveform, review-first spoken-word tightening |
+| premiere-captions | captions | Import, structurally validate, and export supplied timed captions |
+| premiere-social-reframe | social | Verified vertical and square derivatives |
+| premiere-transition-pack | transitions | Restrained video/audio transition recipes |
+| premiere-look-effects | effects | Parameterized effect chains and visual looks on a recovery copy |
+| premiere-proxy-conform | proxies | Proxy creation, attachment, and final conform |
+| premiere-batch-delivery | delivery | Sequential direct export, AME submission, and post-file media probing |
 
-3. Sequence / Timeline (sequence_tools)
-   Create, configure, and navigate sequences.
-   Tools: premiere_create_sequence, premiere_list_sequences,
-          premiere_set_active_sequence, premiere_get_sequence_settings,
-          premiere_set_sequence_settings, premiere_get_playhead,
-          premiere_set_playhead, premiere_get_in_out_points,
-          premiere_set_in_out_points, premiere_clear_in_out_points,
-          premiere_add_marker, premiere_list_markers
+Set MCP_TOOL_PROFILE to a comma-separated list of profile names before server
+startup, for example captions,effects. Specialized profiles always include the
+small core inspection/versioning set. The default is standard. The all profile
+excludes classified arbitrary execution/filesystem tools but still contains
+destructive Premiere operations. Use all,unsafe only with trusted input when
+arbitrary host execution and filesystem access are explicitly intended.
+Unknown-only profile values fall back to standard to avoid hiding tools because
+of a typo.
 
-4. Clip Operations (clip_tools)
-   Place, move, trim, split, and remove clips on the timeline.
-   Tools: premiere_place_clip, premiere_remove_clip, premiere_import_media,
-          premiere_move_clip, premiere_trim_clip, premiere_split_clip,
-          premiere_get_clip_properties, premiere_set_clip_enabled
-
-5. Effects & Transitions (effects_tools)
-   Apply video/audio effects, transitions, and keyframes.
-   Tools: premiere_add_transition, premiere_apply_effect,
-          premiere_list_effects, premiere_get_effect_properties,
-          premiere_set_effect_property, premiere_remove_effect,
-          premiere_add_keyframe, premiere_list_keyframes
-
-6. Audio (audio_tools, audio_advanced_tools)
-   Control audio levels, effects, and mixing.
-   Tools: premiere_set_audio_level, premiere_apply_audio_effect,
-          premiere_get_audio_mix, premiere_set_audio_pan,
-          premiere_mute_track, premiere_solo_track,
-          premiere_normalize_audio, premiere_set_audio_gain
-
-7. Color Grading (color_tools)
-   Full Lumetri Color control panel.
-   Tools: premiere_lumetri_get_all, premiere_lumetri_set_exposure,
-          premiere_lumetri_set_contrast, premiere_lumetri_set_highlights,
-          premiere_lumetri_set_shadows, premiere_lumetri_set_whites,
-          premiere_lumetri_set_blacks, premiere_lumetri_set_temperature,
-          premiere_lumetri_set_tint, premiere_lumetri_set_saturation,
-          premiere_lumetri_set_vibrance, premiere_lumetri_apply_lut
-
-8. Titles & Graphics (graphics_tools, motion_graphics_tools)
-   Add text overlays, titles, MOGRTs, and captions.
-   Tools: premiere_add_text, premiere_add_mogrt,
-          premiere_set_mogrt_property, premiere_add_caption,
-          premiere_add_lower_third
-
-9. Export (export_tools, encoding_tools, delivery_tools)
-   Export sequences in various formats.
-   Tools: premiere_export, premiere_export_direct,
-          premiere_export_via_ame, premiere_export_frame,
-          premiere_export_aaf, premiere_export_omf,
-          premiere_export_audio_only, premiere_render_preview,
-          premiere_list_exporters, premiere_list_presets
-
-10. Workspace & UI (workspace_tools, ui_tools, panel_ops_tools)
-    Manage workspace layout, panels, and UI state.
-    Tools: premiere_set_workspace, premiere_open_panel,
-           premiere_get_workspace, premiere_resize_panel
-
-11. Playback (playback_tools)
-    Control playback and transport.
-    Tools: premiere_play, premiere_pause, premiere_stop,
-           premiere_step_forward, premiere_step_backward,
-           premiere_shuttle
-
-12. AI-Powered (ai_tools)
-    Automated editing using AI intelligence.
-    Tools: premiere_scan_assets, premiere_parse_script,
-           premiere_auto_edit
-
-13. Transform (transform_tools)
-    Position, scale, rotate, and opacity of clips.
-    Tools: premiere_set_position, premiere_set_scale,
-           premiere_set_rotation, premiere_set_opacity,
-           premiere_set_anchor_point
-
-14. Metadata (metadata_tools)
-    Read and write clip and project metadata.
-    Tools: premiere_get_metadata, premiere_set_metadata
-
-15. Batch Operations (batch_tools)
-    Bulk operations across multiple clips or tracks.
-    Tools: premiere_batch_apply_effect, premiere_batch_set_property,
-           premiere_batch_export
-
-16. Advanced Editing (advanced_edit_tools)
-    Multi-cam, nesting, and compound clips.
-    Tools: premiere_nest_clips, premiere_create_multicam,
-           premiere_flatten_multicam, premiere_create_subclip
-
-17. Templates (template_tools)
-    Project and sequence templates.
-    Tools: premiere_apply_template, premiere_save_template,
-           premiere_list_templates
-
-18. Preferences (preferences_tools)
-    Application preferences and settings.
-    Tools: premiere_get_preferences, premiere_set_preference
-
-19. Collaboration (collaboration_tools)
-    Team workflows and shared projects.
-    Tools: premiere_lock_project, premiere_unlock_project
-
-20. Diagnostics & Monitoring (diagnostics_tools, monitoring_tools)
-    System health checks and performance monitoring.
-    Tools: premiere_diagnostics, premiere_get_system_info,
-           premiere_get_performance_stats
-
-21. Scripting (scripting_tools)
-    Execute custom ExtendScript in Premiere Pro.
-    Tools: premiere_run_extendscript
-
-22. Analytics (analytics_tools)
-    Project analytics and statistics.
-    Tools: premiere_get_project_stats, premiere_get_timeline_stats
-
-23. Integration (integration_tools)
-    Integrations with After Effects, Audition, etc.
-    Tools: premiere_dynamic_link_ae, premiere_send_to_audition
-
-24. Camera & Immersive (camera_tools, immersive_tools)
-    VR/360 video and camera metadata.
-    Tools: premiere_set_vr_projection, premiere_get_camera_metadata
-
-25. Versioning (versioning_tools)
-    Project versioning and snapshots.
-    Tools: premiere_create_snapshot, premiere_list_snapshots,
-           premiere_restore_snapshot
-
-26. Media Browser (media_browser_tools)
-    Browse and search for media.
-    Tools: premiere_browse_media, premiere_search_stock`,
+Do not claim that an operation succeeded solely because it was attempted. Stop
+on explicit unsupported errors, verify mutations with state readback, and treat
+queued exports as pending until stable files are observed outside CEP and then
+validated with premiere_probe_media. For timeline mutation, preserve an
+untouched duplicate sequence or tool-created derivative. Treat timeline
+snapshots and saved sequence versions as audit/comparison records only.`,
 		},
 	}, nil
 }
@@ -382,13 +354,13 @@ Sequence Defaults:
   Audio Sample Rate: 48000 Hz
   Audio Bit Depth:   16-bit
 
-Export Presets:
-  h264_1080p    H.264, 1920x1080, ~20 Mbps VBR
-  h264_4k       H.264, 3840x2160, ~50 Mbps VBR
-  prores_422    Apple ProRes 422
-  prores_4444   Apple ProRes 4444 (with alpha)
-  dnxhd         Avid DNxHR HQX
-  gif           Animated GIF (low res)
+Named Export Presets:
+  h264_1080p, h264_4k, prores_422, prores_4444, and dnxhd are aliases.
+  Each alias must be mapped to a real Adobe Media Encoder .epr file through
+  its PREMIERE_EXPORT_PRESET_* bridge setting. The selected .epr file—not the
+  alias—defines the actual codec, dimensions, bitrate, and audio settings.
+  Use premiere_export_direct or premiere_export_via_ame when supplying an
+  explicit preset_path per export.
 
 Supported Media Formats (Import):
   Video:  .mp4, .mov, .avi, .mkv, .mxf, .r3d, .braw, .ari
@@ -415,7 +387,8 @@ Timecode:
 Speed:
   Default playback speed is 1.0 (100%).
   Values < 1.0 create slow motion, > 1.0 create fast motion.
-  Negative values reverse playback.`,
+  Typed placement accepts positive speed values only; use a separately
+  verified reverse-clip workflow for reverse playback.`,
 		},
 	}, nil
 }

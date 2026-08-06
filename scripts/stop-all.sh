@@ -14,6 +14,11 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 TIMEOUT=5  # Seconds to wait before SIGKILL
+UNVERIFIED=false
+
+process_start_stamp() {
+    ps -p "$1" -o lstart= 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+}
 
 echo -e "${CYAN}========================================${NC}"
 echo -e "${CYAN}  PremierPro MCP — Stopping All Services${NC}"
@@ -26,13 +31,20 @@ if [ ! -f "$PID_FILE" ]; then
     exit 0
 fi
 
-while IFS=: read -r name pid port; do
+while IFS=: read -r name pid port expected_start; do
     [ -z "$name" ] && continue
 
     echo -n "Stopping $name (PID $pid, port $port)... "
 
     if ! kill -0 "$pid" 2>/dev/null; then
         echo -e "${YELLOW}already stopped${NC}"
+        continue
+    fi
+
+    current_start="$(process_start_stamp "$pid")"
+    if [ -z "$expected_start" ] || [ "$current_start" != "$expected_start" ]; then
+        echo -e "${RED}SKIPPED (PID identity could not be verified)${NC}"
+        UNVERIFIED=true
         continue
     fi
 
@@ -61,7 +73,13 @@ while IFS=: read -r name pid port; do
     fi
 done < "$PID_FILE"
 
-# Clean up the PID file
-rm -f "$PID_FILE"
 echo ""
-echo -e "${GREEN}All services stopped. PID file cleaned up.${NC}"
+if [ "$UNVERIFIED" = true ]; then
+    echo -e "${RED}Some PID records were not verified and were not signaled.${NC}"
+    echo "Inspect $PID_FILE before removing it manually."
+    exit 1
+fi
+
+# Every live PID was identity-checked before it was signaled.
+rm -f "$PID_FILE"
+echo -e "${GREEN}All verified services stopped. PID file cleaned up.${NC}"

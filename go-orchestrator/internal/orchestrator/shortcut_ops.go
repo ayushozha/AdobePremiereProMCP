@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -101,7 +100,7 @@ func (e *Engine) GetAllShortcuts(ctx context.Context) (*GenericResult, error) {
 
 func (e *Engine) SimulateKeyPress(ctx context.Context, key string, modifiers string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"key": key,
+		"key":       key,
 		"modifiers": modifiers,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "simulateKeyPress", string(argsJSON))
@@ -253,9 +252,9 @@ func (e *Engine) GetLinkedSelectionState(ctx context.Context) (*GenericResult, e
 
 func (e *Engine) EnableInsertAndOverwrite(ctx context.Context, trackType string, trackIndex int, enabled bool) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"enabled": enabled,
+		"enabled":    enabled,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "enableInsertAndOverwrite", string(argsJSON))
 	if err != nil {
@@ -324,7 +323,7 @@ func (e *Engine) GetTimelineViewExtents(ctx context.Context) (*GenericResult, er
 func (e *Engine) SetTimelineViewExtents(ctx context.Context, startSeconds, endSeconds float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"startSeconds": startSeconds,
-		"endSeconds": endSeconds,
+		"endSeconds":   endSeconds,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setTimelineViewExtents", string(argsJSON))
 	if err != nil {

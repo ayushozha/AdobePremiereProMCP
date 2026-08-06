@@ -21,6 +21,10 @@ class IntelligenceSettings(BaseSettings):
     )
 
     # ── Server ──────────────────────────────────────────────────────────────────
+    grpc_host: str = Field(
+        default="127.0.0.1",
+        description="Host/IP the gRPC server binds to",
+    )
     grpc_port: int = Field(
         default=50053,
         description="Port the gRPC server listens on",

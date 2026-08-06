@@ -37,6 +37,17 @@ echo -e "${CYAN}Installing CEP panel for PremierPro MCP...${NC}"
 echo -e "${CYAN}Detected OS: $OS${NC}"
 echo ""
 
+# Install the production build. The source tree contains a development-only
+# .debug file that opens a Chrome DevTools port and must not be linked into a
+# normal installation.
+cd "$PROJECT_ROOT/cep-panel"
+if [ ! -d "node_modules/ws" ]; then
+    echo -e "${YELLOW}Installing CEP runtime dependency...${NC}"
+    npm ci --omit=dev
+fi
+npm run build
+PANEL_SOURCE="$PROJECT_ROOT/cep-panel/dist"
+
 # Ensure the parent directory exists
 mkdir -p "$(dirname "$PANEL_DIR")"
 
@@ -46,10 +57,10 @@ if [ -e "$PANEL_DIR" ] || [ -L "$PANEL_DIR" ]; then
     rm -rf "$PANEL_DIR"
 fi
 
-# Symlink to our cep-panel directory
-ln -s "$PROJECT_ROOT/cep-panel" "$PANEL_DIR"
+# Symlink to the production CEP build
+ln -s "$PANEL_SOURCE" "$PANEL_DIR"
 echo -e "${GREEN}Symlinked:${NC}"
-echo "  $PROJECT_ROOT/cep-panel"
+echo "  $PANEL_SOURCE"
 echo "  -> $PANEL_DIR"
 echo ""
 

@@ -221,7 +221,7 @@ func registerClipTools(s *server.MCPServer, orch Orchestrator, logger *zap.Logge
 	// premiere_get_clip_info
 	s.AddTool(
 		gomcp.NewTool("premiere_get_clip_info",
-			gomcp.WithDescription("Get detailed information about a specific clip on the timeline, including: clip name, source media path, timeline in/out points, source in/out points, duration, playback speed, direction (forward/reverse), enabled state, and a list of all applied effects with their parameters. This is the most detailed clip inspection tool."),
+			gomcp.WithDescription("Get detailed information about a specific clip: name, source media path, timeline start/end, source in/out, duration, enabled state, and applied component/effect names with readable parameter values."),
 			gomcp.WithString("track_type",
 				gomcp.Required(),
 				gomcp.Description("Type of track the clip is on: 'video' or 'audio'."),

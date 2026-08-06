@@ -10,12 +10,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from src.models import AssetInfo, ScriptSegment
-
 from .scoring import ScoredMatch, cosine_similarity, normalize_text
 
 if TYPE_CHECKING:
     import openai
+
+    from src.models import AssetInfo, ScriptSegment
 
 log = logging.getLogger(__name__)
 
@@ -125,7 +125,7 @@ class EmbeddingMatcher:
             return self._available
 
         try:
-            import openai as _openai  # noqa: F811
+            import openai as _openai
         except ImportError:
             log.warning("openai package is not installed; embedding matching disabled")
             self._available = False
@@ -152,13 +152,11 @@ class EmbeddingMatcher:
             return None
 
         try:
-            import openai as _openai  # noqa: F811
-
             response = self._client.embeddings.create(
                 model=self.model_name,
                 input=text,
             )
-            vector = response.data[0].embedding
+            vector = [float(value) for value in response.data[0].embedding]
             self._cache[text] = vector
             return vector
         except Exception:
@@ -173,26 +171,33 @@ class EmbeddingMatcher:
         assets: list[AssetInfo],
     ) -> list[ScoredMatch]:
         """Simple token-overlap fallback when embeddings are unavailable."""
-        seg_tokens = set(normalize_text(
-            " ".join(
-                filter(None, [
-                    segment.visual_direction,
-                    segment.scene_description,
-                    segment.content,
-                    *segment.asset_hints,
-                ])
+        seg_tokens = set(
+            normalize_text(
+                " ".join(
+                    filter(
+                        None,
+                        [
+                            segment.visual_direction,
+                            segment.scene_description,
+                            segment.content,
+                            *segment.asset_hints,
+                        ],
+                    )
+                )
             )
-        ))
+        )
         if not seg_tokens:
             return []
 
         scored: list[ScoredMatch] = []
         for asset in assets:
-            asset_tokens = set(normalize_text(
-                " ".join(
-                    filter(None, [asset.file_name, asset.file_path, *asset.metadata.values()])
+            asset_tokens = set(
+                normalize_text(
+                    " ".join(
+                        filter(None, [asset.file_name, asset.file_path, *asset.metadata.values()])
+                    )
                 )
-            ))
+            )
             if not asset_tokens:
                 continue
             overlap = seg_tokens & asset_tokens

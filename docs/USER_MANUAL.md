@@ -23,61 +23,38 @@
 
 PremierPro MCP is an open-source server that implements the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) for Adobe Premiere Pro. It turns Premiere Pro into an AI-controllable video editing application, allowing you to describe edits in plain English and have them executed automatically.
 
-The server accepts natural-language instructions from any MCP-compatible AI assistant -- such as Claude, GPT, or Codex -- and translates them into real Premiere Pro operations: creating sequences, importing media, placing clips on the timeline, applying effects and color grading, mixing audio, adding graphics, and exporting finished videos.
+The server accepts tool calls from MCP-compatible AI assistants such as Claude, GPT, or Codex and translates supported workflows into Premiere Pro operations. Mutating tools should be treated as successful only when their returned state can be read back from Premiere.
 
-No plugins. No subscriptions. Fully open source under the MIT license.
+The MCP implementation is open source under the MIT license and uses a local CEP extension inside Premiere Pro.
 
 ### What can it do?
 
-PremierPro MCP provides **907 tools** organized across 36 source files, covering every major aspect of Premiere Pro:
+The source registry contains **1,064 tool schemas**. The default `standard`
+profile exposes **72 curated, readback-first tools** for project/timeline
+inspection, asset analysis, editing, SRT captions, installed effects and
+transitions, MOGRT titles, audio, and export. Select specialized profiles for
+dialogue, captions, social reframing, transitions, effects, proxies, or
+delivery.
 
-| Category | Tools | What You Can Do |
-|---|---|---|
-| **Core/Foundation** | 14 | Ping, get project state, create sequences, import media, place clips, export |
-| **App Lifecycle** | 3 | Launch, quit, and check Premiere Pro process status |
-| **Project Management** | 23 | Create, open, save, close projects; manage bins, scratch disks, metadata |
-| **Sequence Management** | 26 | Create, duplicate, delete sequences; playhead, in/out points, markers, nesting |
-| **Clip Operations** | 29 | Insert, overwrite, move, trim, split, slip, slide, speed, link/unlink clips |
-| **Effects & Transitions** | 36 | Apply/remove effects and transitions, keyframe animation, motion, Lumetri basics |
-| **Audio (basic)** | 32 | Levels, gain, mute/solo, effects, Essential Sound, track management |
-| **Audio (advanced)** | 30 | Mixer state, EQ, compressor, limiter, de-esser, loudness, sync, waveform analysis |
-| **Color Grading** | 30 | Full Lumetri Color: exposure, contrast, curves, HSL, color wheels, LUTs, vignette |
-| **Graphics & Titles** | 21 | MOGRTs, titles, lower thirds, captions, color mattes, time remapping |
-| **Export (basic)** | 14 | Direct export, AME queue, frame export, AAF/OMF/FCPXML, audio-only export |
-| **Advanced Editing** | 31 | Ripple/roll/slip/slide trims, gap management, grouping, snapping, navigation |
-| **Batch Operations** | 30 | Batch import/export, apply effects to multiple clips, auto-organize, markers |
-| **AI/ML Workflows** | 25 | Smart cut, auto color match, rough cut, B-roll suggestions, social cuts, analysis |
-| **Workspace & Multicam** | 25 | Multicam, proxy management, workspaces, undo/redo, source monitor, cache |
-| **Playback & Navigation** | 30 | Play/pause/stop, shuttle, step, loop, timecode navigation, render status |
-| **Transform & Masking** | 30 | Crop, PIP, fade, stabilizer, noise reduction, blur, sharpen, distortion |
-| **Metadata & Labels** | 30 | XMP metadata, labels, footage interpretation, smart bins, media management |
-| **Preferences** | 30 | Still/transition durations, auto-save, playback resolution, cache, renderer, codecs |
-| **Templates & Presets** | 30 | Sequence/effect/export presets, project templates, batch rename, macros |
-| **Motion Graphics** | 30 | Essential Graphics, scrolling titles, shapes, watermarks, split screen, subtitles |
-| **Collaboration & Review** | 30 | Review comments, version history, snapshots, EDL/AAF/XML import, delivery checks |
-| **VR/Immersive** | 30 | VR projection, HDR, stereoscopic 3D, frame rates, letterboxing, timecode, captions |
-| **App Integration** | 28 | Dynamic Link (After Effects), Photoshop, Audition, Media Encoder, Team Projects |
-| **Diagnostics** | 30 | Performance metrics, disk space, plugins, render status, health checks, debug logs |
-| **Monitoring & Events** | 30 | Event listeners, playhead/render watchers, state snapshots, notifications |
-| **UI Control** | 30 | Panel management, window control, track display, label filters, dialogs, console |
-| **Compound Operations** | 30 | Montage, slideshow, highlight reel, music bed, social exports, project setup |
-| **Encoding & Formats** | 30 | Codec conversion (ProRes, H.264/265, DNxHR, GIF), thumbnails, render queue |
-| **Timeline Assembly** | 30 | EDL/CSV assembly, clip sorting/shuffling, compositing, generators, timeline reports |
-| **Scripting** | 30 | ExtendScript execution, global variables, conditionals, scheduling, file I/O |
-| **Analytics** | 30 | Project/sequence summaries, codec/resolution breakdowns, pacing, comparison reports |
-| **Effect Chains** | 30 | Effect chain management, visual presets (sepia, vintage, glow), transition control |
+The complete registry includes experimental and legacy commands. Tool
+discovery or a matching host function is not a guarantee of runtime support on
+every Premiere version. Audited routes return explicit errors when they cannot
+perform and read back an operation; unaudited legacy handlers in the full
+catalog are not certified. Unsafe script/shell/file capabilities require an
+opt-in profile, and final compatibility must be checked in a real Premiere
+session.
 
 ### Supported Premiere Pro Versions
 
 | Version | Year | Support Level |
 |---|---|---|
-| 14.x | 2020 | Community tested |
-| 15.x | 2021 | Community tested |
-| 22.x | 2022 | Community tested |
-| 23.x | 2023 | Supported |
-| 24.x | 2024 | Supported |
-| 25.x | 2025 | Primary target |
-| 26.x | 2026 | Beta support |
+| 14.x | 2020 | Manifest target; live matrix pending |
+| 15.x | 2021 | Manifest target; live matrix pending |
+| 22.x | 2022 | Manifest target; live matrix pending |
+| 23.x | 2023 | Manifest target; live matrix pending |
+| 24.x | 2024 | Manifest target; live matrix pending |
+| 25.x | 2025 | Primary development target; live matrix pending |
+| 26.x | 2026 | Beta manifest target; live matrix pending |
 
 The CEP extension manifest declares compatibility from Premiere Pro version 14.0 (2020) onward.
 
@@ -102,8 +79,8 @@ Install the following before setting up PremierPro MCP:
 
 | Tool | Minimum Version | Purpose | Install |
 |---|---|---|---|
-| [Go](https://go.dev/) | 1.22+ | MCP server and orchestrator | [go.dev/dl](https://go.dev/dl/) |
-| [Rust](https://rustup.rs/) | 1.77+ | Media processing engine | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| [Go](https://go.dev/) | 1.26.1+ | MCP server and orchestrator | [go.dev/dl](https://go.dev/dl/) |
+| [Rust](https://rustup.rs/) | 1.85+ | Media processing engine | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
 | [Python](https://python.org/) | 3.12+ | AI intelligence layer | [python.org/downloads](https://python.org/downloads/) |
 | [Node.js](https://nodejs.org/) | 20+ | TypeScript bridge and CLI | [nodejs.org](https://nodejs.org/) |
 | [just](https://github.com/casey/just) | latest | Unified build system | `cargo install just` or `brew install just` |
@@ -114,7 +91,7 @@ Install the following before setting up PremierPro MCP:
 You also need an API key from one of the supported AI providers:
 
 - **Anthropic** -- for Claude models (recommended)
-- **OpenAI** -- for GPT/Codex models
+- **OpenAI** -- for GPT/Codex models; set an explicit `OPENAI_API_KEY`
 
 ---
 
@@ -125,7 +102,7 @@ You also need an API key from one of the supported AI providers:
 ```bash
 # Clone the repository
 git clone https://github.com/ayushozha/AdobePremiereProMCP.git
-cd PremierProMCP
+cd AdobePremiereProMCP
 
 # Copy the environment template
 cp .env.example .env
@@ -133,19 +110,22 @@ cp .env.example .env
 # Install dependencies (Python + Node.js)
 just install
 
-# Generate protobuf stubs for all languages
+# Generate Go and Python protobuf stubs
 just proto
 
-# Build all components (Go, Rust, TypeScript, CEP panel)
+# Build all components (Go, Rust, TypeScript bridge, CEP panel, CLI)
 just build
 ```
 
 The `just build` command runs the following in sequence:
-1. `buf generate` -- generates protobuf stubs for Go, Rust, Python, and TypeScript
-2. `go build` -- compiles the Go orchestrator to `go-orchestrator/bin/server`
+1. `buf generate` -- generates Go and Python stubs. Rust generates its service
+   code in `build.rs`; TypeScript loads the versioned `.proto` definitions
+   directly with `@grpc/proto-loader`.
+2. `go build` -- compiles the Go orchestrator to `go-orchestrator/bin/premierpro-mcp`
 3. `cargo build --release` -- compiles the Rust media engine
 4. `npm run build` -- bundles the TypeScript bridge
-5. `npm run build` -- bundles the CEP panel
+5. `npm run build` -- assembles the static CEP panel in `cep-panel/dist`
+6. `npm run build` -- compiles the interactive CLI
 
 To verify everything compiled correctly:
 
@@ -159,13 +139,19 @@ just test
 just install-panel
 ```
 
-This script does two things:
+This script builds the production panel and installs it for the current user:
 
-1. **Symlinks** the `cep-panel/` directory into Premiere Pro's CEP extensions folder:
+1. Builds and symlinks the production `cep-panel/dist/` directory on macOS.
+   The Windows installer tries a directory symlink and falls back to a checked
+   file copy. The production build omits the development-only `.debug` DevTools
+   endpoint:
    - macOS: `~/Library/Application Support/Adobe/CEP/extensions/com.premierpro.mcp.bridge`
    - Windows: `%APPDATA%\Adobe\CEP\extensions\com.premierpro.mcp.bridge`
 
-2. **Enables unsigned extensions** by setting `PlayerDebugMode=1` on the CSXS.11 registry/preference, which is required for development extensions to load.
+2. **Enables unsigned extensions** by setting `PlayerDebugMode=1` for CSXS
+   11-13, which is required for this unsigned local extension. This is a
+   persistent per-user CEP developer setting; install only trusted CEP
+   extensions and turn it off when you no longer need unsigned extensions.
 
 After running this command, restart Premiere Pro if it is already open.
 
@@ -197,6 +183,43 @@ To stop all services:
 just stop
 ```
 
+### Windows Native Setup
+
+The POSIX `just start` supervisor is not a native Windows service manager yet.
+From **Command Prompt**, prepare a clean checkout with:
+
+```bat
+copy .env.example .env
+buf generate
+py -3.12 -m venv .venv
+.venv\Scripts\python -m pip install --constraint python-intelligence\constraints.txt -e "python-intelligence[dev]"
+cargo build --locked --release --manifest-path rust-engine\Cargo.toml
+npm ci --prefix ts-bridge
+npm run build --prefix ts-bridge
+npm ci --prefix cli
+scripts\install-cep-panel-win.bat
+```
+
+Then keep these three commands open in separate terminals:
+
+```bat
+rust-engine\target\release\premierpro-media-engine.exe --port 50052
+```
+
+```bat
+cd python-intelligence
+set PYTHONPATH=..\gen\python;.
+..\.venv\Scripts\python -m src.main --port 50053
+```
+
+```bat
+npm start --prefix ts-bridge
+```
+
+After the ports are listening, run `PremierPro.bat` to regenerate missing Go
+protobufs, rebuild the Go MCP binary through its cache, and launch the CLI. The
+batch file fails fast but does not own, monitor, or stop the three services.
+
 ### 3.4 Open Premiere Pro
 
 1. Open **Adobe Premiere Pro**.
@@ -225,10 +248,12 @@ You can open or create a project in one of two ways:
 
 ### 4.1 Interactive CLI (Recommended)
 
-The simplest way to get started is the one-click launcher for your platform:
+The simplest way to get started on macOS/Unix is the platform launcher:
 
 - **macOS:** Double-click `PremierPro.command` (or run `./PremierPro.command` in Terminal)
-- **Windows:** Double-click `PremierPro.bat`
+- **Windows:** `PremierPro.bat` builds/launches the CLI only; first start the
+  Rust, Python, and TypeScript services and run
+  `scripts\install-cep-panel-win.bat`
 - **Linux:** Run `./PremierPro.sh`
 
 Alternatively, run directly from the terminal:
@@ -237,9 +262,15 @@ Alternatively, run directly from the terminal:
 npx --prefix cli tsx cli/src/index.ts
 ```
 
-The launcher performs the following steps automatically:
+`PremierPro.command` performs the following steps automatically. The Unix
+launcher performs the same backend/CLI steps without installing a local
+Premiere panel. The Windows batch launcher currently performs only dependency,
+Go binary, and CLI startup steps.
 
-1. **Resolves authentication** -- checks for API keys in environment variables, Claude Code auth, Codex CLI auth, or config files.
+1. **Resolves authentication** -- checks explicit provider API keys and the
+   PremierPro MCP config file. Claude/Codex subscription or OAuth sessions
+   cannot be reused as API keys; set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
+   explicitly when the config file has no key.
 2. **Installs dependencies** if missing (CLI and bridge `node_modules`).
 3. **Builds the MCP server binary** if it does not exist.
 4. **Starts backend services** if they are not already running.
@@ -283,7 +314,7 @@ To use PremierPro MCP as a tool server for Claude Code, Cursor, or any MCP-compa
 {
   "mcpServers": {
     "premiere-pro": {
-      "command": "/path/to/AdobePremiereProMCP/go-orchestrator/bin/server",
+      "command": "/path/to/AdobePremiereProMCP/go-orchestrator/bin/premierpro-mcp",
       "args": ["--transport", "stdio"]
     }
   }
@@ -292,15 +323,17 @@ To use PremierPro MCP as a tool server for Claude Code, Cursor, or any MCP-compa
 
 Replace `/path/to/AdobePremiereProMCP` with the actual path to your clone of the repository.
 
-The binary name is `server` (built by `just go-build`) or `premierpro-mcp` (built by the launcher scripts). Either binary works -- they are built from the same source (`go-orchestrator/cmd/server/main.go`).
+The binary is `go-orchestrator/bin/premierpro-mcp`, built from `go-orchestrator/cmd/server/main.go` by `just go-build`.
 
 **SSE transport** is also available if your client supports it:
 
 ```bash
-./go-orchestrator/bin/server --transport sse --port 8080
+./go-orchestrator/bin/premierpro-mcp --transport sse --port 8080
 ```
 
 This starts an HTTP server at `http://localhost:8080` with Server-Sent Events for the MCP protocol.
+It binds to `127.0.0.1` by default. SSE has no application-level authentication;
+never expose it on a LAN or public interface without an authenticated TLS reverse proxy.
 
 ### 4.3 Authentication
 
@@ -308,11 +341,14 @@ The system supports multiple authentication methods, checked in this priority or
 
 | Priority | Method | How to Set Up |
 |---|---|---|
-| 1 | `ANTHROPIC_API_KEY` environment variable | `export ANTHROPIC_API_KEY="sk-ant-..."` |
-| 2 | `OPENAI_API_KEY` environment variable | `export OPENAI_API_KEY="sk-..."` |
-| 3 | Claude Code CLI auth | Run `claude auth login --console` |
-| 4 | Codex CLI auth | Run `codex login` |
-| 5 | Config files | Create `~/.premierpro-mcp/config.json` with your key |
+| 1 | `ANTHROPIC_API_KEY` process environment | `export ANTHROPIC_API_KEY="sk-ant-..."` |
+| 2 | `OPENAI_API_KEY` process environment | `export OPENAI_API_KEY="sk-..."` |
+| 3 | Repository `.env` | Set either key in the root `.env`; existing process values win |
+| 4 | Config file | Create `~/.premierpro-mcp/config.json` with your key |
+
+Claude and Codex subscription/OAuth logins authenticate those applications;
+they do not expose provider API keys to this SDK-based CLI. Set an explicit
+provider key in the process environment, root `.env`, or config file below.
 
 **Config file format** (`~/.premierpro-mcp/config.json`):
 
@@ -342,7 +378,8 @@ Override the model by setting the `MODEL` environment variable:
 export MODEL="claude-opus-4-20250514"
 ```
 
-**Note on OAuth:** If you are logged into Claude via `claude.ai` OAuth (browser-based login), the system cannot extract an API key. You will need to either set `ANTHROPIC_API_KEY` manually or re-authenticate with `claude auth login --console` which uses API-key-based auth.
+**Note on OAuth:** Claude/Codex application OAuth is intentionally not scraped
+or reused. This CLI requires an explicit provider API key.
 
 ---
 
@@ -373,12 +410,12 @@ CLI / MCP Client (Claude, GPT, any AI)
 
 ### Go -- MCP Server and Orchestrator
 
-The Go layer is the entry point for the system. It implements the MCP protocol (JSON-RPC 2.0 over stdio or SSE), registers all 907 tools, and orchestrates requests by fanning out to the downstream services via gRPC. It uses goroutines for concurrency, implements retry logic and circuit breakers, and handles graceful shutdown.
+The Go layer is the entry point for the system. It implements the MCP protocol (JSON-RPC 2.0 over stdio or SSE), registers 1,064 source schemas, applies the selected tool profile, and orchestrates requests across downstream gRPC services. Discovery is cursor-paginated and defaults to the 72-tool `standard` profile.
 
 - **Directory:** `go-orchestrator/`
 - **Entry point:** `cmd/server/main.go`
 - **Tool definitions:** `internal/mcp/*_tools.go` (36 files)
-- **Default gRPC port:** 50051 (inbound, when used with SSE)
+- **Default SSE HTTP port:** 8080 (the stdio transport does not open a port)
 
 ### Rust -- Media Processing Engine
 
@@ -390,7 +427,7 @@ The Rust layer handles performance-critical media operations: scanning directori
 
 ### Python -- Intelligence Layer
 
-The Python layer handles AI and NLP tasks: parsing scripts (screenplay, YouTube, podcast formats), generating Edit Decision Lists (EDLs), matching script segments to media assets using AI embeddings, and analyzing pacing and timing. It uses LLMs, embedding models, and scene detection algorithms.
+The Python layer handles deterministic edit-intelligence tasks: parsing screenplay, YouTube, podcast, and narration formats; generating Edit Decision Lists (EDLs); matching script segments to supplied asset metadata; and analyzing pacing and timing. Optional provider SDKs are packaged as an extra, but the current service does not call an LLM as part of its normal pipeline.
 
 - **Directory:** `python-intelligence/`
 - **Modules:** `parser/`, `edl/`, `matching/`, `analysis/`
@@ -402,9 +439,11 @@ The TypeScript layer is the bridge between the Go orchestrator and Adobe Premier
 
 1. **CEP Panel (primary):** Runs inside Premiere Pro as an extension panel. Has direct access to the Premiere Pro DOM. Lowest latency. Communicates with the Go orchestrator over a local WebSocket/HTTP connection.
 
-2. **Standalone Node.js (fallback):** Runs as an external process. Sends commands to Premiere Pro via `osascript` (macOS) or COM automation (Windows). Higher latency but works without the panel installed.
+2. **Standalone Node.js (macOS only):** Runs as an external process and sends commands to Premiere Pro through `osascript`. Higher latency, but it can work without the panel installed. Windows users must use the CEP panel bridge.
 
-The Go orchestrator auto-detects which bridge mode is available and falls back gracefully.
+Select the bridge explicitly with `BRIDGE_MODE=cep` (the default) or, on macOS,
+`BRIDGE_MODE=standalone`. The service does not automatically switch mutation
+backends when the selected bridge is unavailable.
 
 - **Directory:** `ts-bridge/`
 - **Modules:** `extendscript/`, `cep/`, `standalone/`, `timeline/`
@@ -414,10 +453,48 @@ The Go orchestrator auto-detects which bridge mode is available and falls back g
 
 The CEP panel is an Adobe Common Extensibility Platform extension that runs inside Premiere Pro. It provides a small UI panel and, more importantly, acts as the host for ExtendScript execution. The panel's WebSocket server listens for commands from the TypeScript bridge and executes them against Premiere Pro's scripting DOM.
 
+The WebSocket listens on loopback and requires a shared authentication token.
+The CEP panel and TypeScript bridge create/read
+`~/.premierpro-mcp/cep-token` automatically. Keep that file private. Use
+`PREMIERE_MCP_TOKEN_FILE` to select another shared path, or set the same
+`BRIDGE_CEP_TOKEN`/`MCP_CEP_TOKEN` value in both processes.
+
 - **Directory:** `cep-panel/`
 - **Panel menu name:** PremierPro MCP Bridge
 - **Extension ID:** `com.premierpro.mcp.bridge`
 - **CSXS version:** 11.0
+
+### Tool Profiles and Workflow Skills
+
+By default the server exposes the 72-tool `standard` catalog. Set
+`MCP_TOOL_PROFILE` to select another workflow-sized surface:
+
+| Profile | Focus |
+|---|---|
+| `core` | Host, project, timeline, duplicate-sequence recovery, audit snapshots, and verified save operations |
+| `dialogue` | Rust waveform/silence analysis, reviewable trims, gaps, levels, and crossfades |
+| `captions` | Verified SRT import/readback, structural validation, and export |
+| `social` | Vertical/square reframing, safe-zone review, and explicit-preset export |
+| `transitions` | Video transitions and audio crossfades |
+| `effects` | Installed-effect discovery, verified attachment, parameter updates, and readback |
+| `proxies` | Proxy creation, attachment, status, and conform |
+| `delivery` | Direct/AME export with explicit presets plus external media verification |
+| `standard` | Curated, readback-first editing set (default; 72 tools) |
+| `all` | Complete catalog except unsafe arbitrary execution/file tools |
+| `unsafe` | Explicit opt-in for arbitrary scripts, shell commands, URLs, clipboard, external editors, and file I/O |
+
+Profiles may be combined with commas, such as `captions,effects`; every
+specialized selection also includes `core`. Use `all,unsafe` only with trusted
+inputs and human review. The repository includes matching
+skills under `skills/premiere-dialogue-cut`, `skills/premiere-captions`,
+`skills/premiere-social-reframe`, `skills/premiere-transition-pack`,
+`skills/premiere-look-effects`, `skills/premiere-proxy-conform`, and
+`skills/premiere-batch-delivery`. MCP clients can also read their summary from
+`config://workflow-skills`.
+
+Tool discovery is cursor-paginated. The default `MCP_PAGE_SIZE` is 100; clients
+must follow `nextCursor` until it is absent rather than assuming the first page
+is the complete catalog.
 
 ### Inter-Service Communication
 
@@ -508,8 +585,8 @@ If `just start` fails or services die immediately:
 
 - **Make sure all prerequisites are installed.** Verify each one:
   ```bash
-  go version        # Should be 1.22+
-  rustc --version   # Should be 1.77+
+  go version        # Should be 1.26.1+
+  rustc --version   # Should be 1.85+
   python3 --version # Should be 3.12+
   node --version    # Should be 20+
   ffmpeg -version   # Should be installed
@@ -520,27 +597,29 @@ If `just start` fails or services die immediately:
 The TypeScript bridge communicates with the CEP panel over a local WebSocket connection.
 
 - **Make sure the CEP panel is open** in Premiere Pro (Window > Extensions > PremierPro MCP Bridge). The panel must be visible for its WebSocket server to be active.
+- **Make sure both processes use the same token.** Normally they share `~/.premierpro-mcp/cep-token`; if you set `BRIDGE_CEP_TOKEN`, `MCP_CEP_TOKEN`, or `PREMIERE_MCP_TOKEN_FILE`, apply the same configuration to the panel and bridge.
 - **Check the bridge log** for connection errors:
   ```bash
   cat scripts/logs/ts-bridge.log
   ```
-- If using the standalone (non-CEP) bridge mode, ensure the `FALLBACK_TO_STANDALONE=true` setting is in your `.env` file.
+- On macOS, if using the standalone (non-CEP) bridge mode, set `BRIDGE_MODE=standalone` in your environment.
+
+If the orchestrator runs in Docker, keep the TypeScript bridge on the host.
+The CEP WebSocket is intentionally loopback-only, so it is not directly
+reachable from a container. Point `TS_BRIDGE_ADDR` in the container at the
+host bridge's gRPC endpoint, such as `host.docker.internal:50054` where that
+hostname is available.
 
 ### Python service fails to start
 
 - **Install Python dependencies manually:**
   ```bash
-  cd python-intelligence
-  pip install -e ".[dev]"
+  python3 -m pip install \
+    --constraint python-intelligence/constraints.txt \
+    -e "./python-intelligence[dev]"
   ```
-  Or install specific packages:
-  ```bash
-  pip install grpcio protobuf pydantic structlog numpy scikit-learn pypdf python-docx
-  ```
-- **Make sure protobuf is up to date:**
-  ```bash
-  pip install "protobuf>=5.0.0"
-  ```
+  Do not install an ad-hoc protobuf version over this environment; generated
+  clients and runtime packages are pinned together by `constraints.txt`.
 - **Check the Python version.** Python 3.12 or later is required:
   ```bash
   python3 --version
@@ -569,11 +648,12 @@ If the launcher shows "No API key found":
   ```bash
   export ANTHROPIC_API_KEY="sk-ant-..."
   ```
-- Or authenticate via CLI:
+- Or add the key to the root `.env`:
   ```bash
-  claude auth login --console   # For Anthropic
-  codex login                   # For OpenAI
+  ANTHROPIC_API_KEY="sk-ant-..."
   ```
+- Claude/Codex logins cannot supply provider API keys. OpenAI users must set
+  `OPENAI_API_KEY` explicitly or add `openai_api_key` to the config file.
 - Or create a config file at `~/.premierpro-mcp/config.json` (see [Authentication](#43-authentication) for format).
 
 ### MCP server binary not found
@@ -608,14 +688,14 @@ These are natural-language commands you can type in the interactive CLI. The AI 
 | Place a clip | `premiere_place_clip` | "Put the first clip on track V1 at 0 seconds" |
 | Remove a clip | `premiere_remove_clip` | "Remove the clip at the beginning of track V1" |
 | Add a transition | `premiere_add_transition` | "Add a cross dissolve between clips 1 and 2" |
-| Add text overlay | `premiere_add_text` | "Add title text saying Hello World at 5 seconds" |
+| Add a title | `premiere_import_mogrt` + `premiere_set_mogrt_text` | "Place this title MOGRT at 5 seconds and set its text to Hello World" |
 | Set audio level | `premiere_set_audio_level` | "Set the audio on this clip to -6 dB" |
 | Color grading | `premiere_lumetri_set_*` | "Increase the contrast to 30" |
 | Apply an effect | `premiere_apply_effect` | "Apply Gaussian Blur to this clip" |
 | Scan media assets | `premiere_scan_assets` | "Scan /Users/me/footage/ for media files" |
 | Parse a script | `premiere_parse_script` | "Parse the script at /Users/me/script.pdf" |
 | Auto-edit from script | `premiere_auto_edit` | "Edit using script.pdf with footage from /media/" |
-| Export video | `premiere_export` | "Export as H.264 1080p to /Users/me/output.mp4" |
+| Export video | `premiere_export` | "Export sequence seq-abc with my configured H.264 1080p `.epr` alias to /Users/me/output.mp4" |
 | Close Premiere Pro | `premiere_close` | "Close Premiere Pro" |
 
 ---
@@ -628,28 +708,28 @@ All build commands use `just` as the unified build system. Run `just` with no ar
 
 | Command | Description |
 |---|---|
-| `just build` | Build all components (proto, Go, Rust, TypeScript, CEP) |
+| `just build` | Build all components (proto, Go, Rust, TypeScript, CEP, CLI) |
 | `just test` | Run all test suites |
 | `just lint` | Lint all code (Go, Rust, Python, TypeScript, proto) |
 | `just ci` | Full CI pipeline: lint, build, then test |
 | `just clean` | Remove all build artifacts |
-| `just install` | Install all dependencies (Python + Node.js) |
+| `just install` | Install Python, bridge, CEP panel, and CLI dependencies |
 
 ### Protobuf
 
 | Command | Description |
 |---|---|
-| `just proto` | Generate protobuf stubs for all languages |
+| `just proto` | Generate Go/Python protobuf stubs |
 | `just proto-lint` | Lint protobuf definitions |
 
 ### Go Orchestrator
 
 | Command | Description |
 |---|---|
-| `just go-build` | Build the Go orchestrator to `go-orchestrator/bin/server` |
+| `just go-build` | Build the Go orchestrator to `go-orchestrator/bin/premierpro-mcp` |
 | `just go-run` | Run the Go orchestrator directly |
 | `just go-test` | Run Go tests |
-| `just go-lint` | Lint Go code with `golangci-lint` |
+| `just go-lint` | Run `go vet` over all Go packages |
 
 ### Rust Engine
 
@@ -682,6 +762,13 @@ All build commands use `just` as the unified build system. Run `just` with no ar
 |---|---|
 | `just cep-build` | Build the CEP panel |
 | `just cep-package` | Package the CEP panel for distribution |
+
+### CLI
+
+| Command | Description |
+|---|---|
+| `just cli-install` | Install CLI dependencies |
+| `just cli-build` | Build the interactive CLI |
 
 ### Services
 
@@ -716,8 +803,11 @@ Configuration is managed through environment variables. Copy `.env.example` to `
 | Variable | Default | Description |
 |---|---|---|
 | `MCP_TRANSPORT` | `stdio` | MCP transport type: `stdio` or `sse` |
+| `MCP_SSE_HOST` | `127.0.0.1` | SSE bind host; keep loopback unless protected by authenticated TLS |
 | `MCP_SSE_PORT` | `8080` | Port for the SSE HTTP server (only used with `sse` transport) |
 | `MCP_LOG_LEVEL` | `info` | Log level for the Go orchestrator: `debug`, `info`, `warn`, `error` |
+| `MCP_PAGE_SIZE` | `100` | Maximum tools returned per cursor-paginated `tools/list` page |
+| `MCP_TOOL_PROFILE` | `standard` | Comma-separated profiles; `all` is safe-only and `unsafe` explicitly enables arbitrary script/shell/file tools |
 
 ### Service Addresses
 
@@ -739,24 +829,35 @@ Configuration is managed through environment variables. Copy `.env.example` to `
 
 | Variable | Default | Description |
 |---|---|---|
-| `RUST_GRPC_PORT` | `50052` | gRPC port for the Rust media engine |
-| `FFMPEG_PATH` | `/usr/local/bin/ffmpeg` | Path to the FFmpeg binary |
-| `ASSET_CACHE_DIR` | `./tmp/asset-cache` | Directory for cached asset metadata |
+| `MEDIA_ENGINE_HOST` | `127.0.0.1` | Bind interface for the Rust gRPC service |
+| `MEDIA_ENGINE_PORT` | `50052` | gRPC port for the Rust media engine |
+| `MEDIA_ENGINE_LOG_LEVEL` | `info` | Rust engine log level |
+| `MEDIA_ENGINE_LOG_JSON` | `false` | Emit structured JSON logs when `true` |
 
 ### Python Intelligence
 
 | Variable | Default | Description |
 |---|---|---|
-| `PYTHON_GRPC_PORT` | `50053` | gRPC port for the Python intelligence service |
+| `PYTHON_BIN` | `python3` | Python 3.12+ executable used by local start scripts |
+| `INTEL_GRPC_HOST` | `127.0.0.1` | Bind interface for the Python gRPC service |
+| `INTEL_GRPC_PORT` | `50053` | gRPC port for the Python intelligence service |
+| `INTEL_LOG_LEVEL` | `INFO` | Python intelligence log level |
+| `INTEL_OPENAI_API_KEY` | (none) | Optional OpenAI key used by the intelligence service |
+| `INTEL_ANTHROPIC_API_KEY` | (none) | Optional Anthropic key used by the intelligence service |
 
 ### TypeScript Bridge
 
 | Variable | Default | Description |
 |---|---|---|
-| `TS_BRIDGE_PORT` | `50054` | gRPC port for the TypeScript bridge |
-| `PREMIERE_PRO_PATH` | `/Applications/Adobe Premiere Pro 2025/Adobe Premiere Pro 2025.app` | Path to the Premiere Pro application |
-| `CEP_PANEL_MODE` | `true` | Whether to use the CEP panel as the primary bridge |
-| `FALLBACK_TO_STANDALONE` | `true` | Whether to fall back to standalone Node.js bridge if CEP is unavailable |
+| `BRIDGE_GRPC_HOST` | `127.0.0.1` | Interface used by the TypeScript gRPC server |
+| `BRIDGE_GRPC_PORT` | `50054` | gRPC port for the TypeScript bridge |
+| `PREMIERE_PATH` | `/Applications/Adobe Premiere Pro 2025/Adobe Premiere Pro 2025.app` | Path to the Premiere Pro application |
+| `BRIDGE_MODE` | `cep` | Bridge implementation: `cep`, or macOS-only `standalone` |
+| `BRIDGE_LOG_LEVEL` | `info` | TypeScript bridge log level |
+| `BRIDGE_CEP_WS_PORT` | `9801` | Local CEP panel WebSocket port |
+| `BRIDGE_CEP_TOKEN` | (generated) | Explicit shared bridge token; must be at least 32 characters |
+| `MCP_CEP_TOKEN` | (generated) | Alternate name for the explicit shared bridge token |
+| `PREMIERE_MCP_TOKEN_FILE` | `~/.premierpro-mcp/cep-token` | Private token-file path shared by Go, TypeScript, and the CEP panel |
 
 ### Authentication
 
@@ -810,7 +911,7 @@ PremierProMCP/
 +-- go-orchestrator/          # Go -- MCP server & task orchestrator
 |   +-- cmd/server/           #   Entry point (main.go)
 |   +-- internal/             #   Core packages
-|   |   +-- mcp/              #     MCP protocol handler (907 tool definitions, 36 files)
+|   |   +-- mcp/              #     MCP protocol handler (1,064 registered schemas)
 |   |   +-- orchestrator/     #     Task orchestration
 |   |   +-- health/           #     Health checks
 |   |   +-- grpc/             #     gRPC client/server
@@ -837,7 +938,7 @@ PremierProMCP/
 |   +-- src/
 |       +-- extendscript/     #   ExtendScript API layer
 |       +-- cep/              #   CEP Panel bridge (primary)
-|       +-- standalone/       #   Node.js fallback bridge
+|       +-- standalone/       #   macOS-only Node.js bridge
 |       +-- timeline/         #   Timeline operations
 |
 +-- cep-panel/                # CEP Panel -- Premiere Pro extension

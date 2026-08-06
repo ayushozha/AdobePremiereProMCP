@@ -16,10 +16,17 @@
  *   5. Throws a typed error on failure.
  */
 
-import { execSync, type ExecSyncOptionsWithStringEncoding } from "node:child_process";
+import {
+  execFileSync,
+  type ExecFileSyncOptionsWithStringEncoding,
+} from "node:child_process";
 import { createLogger, format, transports, type Logger } from "winston";
 
-import type { BridgeConfig } from "../config.js";
+import {
+  resolveExportPresetPath,
+  type BridgeConfig,
+  type ExportPresetPaths,
+} from "../config.js";
 import type {
   PremiereBridge,
   ProjectState,
@@ -80,11 +87,13 @@ export class StandaloneBridge implements PremiereBridge {
   private readonly log: Logger;
   private readonly premierePath: string;
   private readonly timeoutMs: number;
+  private readonly exportPresetPaths: ExportPresetPaths;
   private connected = false;
 
   constructor(config: BridgeConfig) {
     this.premierePath = config.premierePath;
     this.timeoutMs = DEFAULT_TIMEOUT_MS;
+    this.exportPresetPaths = config.exportPresetPaths ?? {};
 
     this.log = createLogger({
       level: config.logLevel,
@@ -263,7 +272,11 @@ export class StandaloneBridge implements PremiereBridge {
     outputPath: string;
     preset: ExportPreset;
   }): Promise<ExportResult> {
-    const script = ES.exportSequence(params);
+    const script = ES.exportSequence({
+      sequenceId: params.sequenceId,
+      outputPath: params.outputPath,
+      presetPath: resolveExportPresetPath(this.exportPresetPaths, params.preset),
+    });
     return this.execute<ExportResult>(script, "exportSequence");
   }
 
@@ -301,7 +314,10 @@ export class StandaloneBridge implements PremiereBridge {
         script = `(function(){ try { var r = ${functionName}(); return JSON.stringify({result: r}); } catch(e) { return JSON.stringify({error: e.message || String(e)}); } })()`;
       }
 
-      const raw = this.execute<Record<string, unknown>>(script, `evalCommand:${functionName}`);
+      const raw = await this.execute<Record<string, unknown>>(
+        script,
+        `evalCommand:${functionName}`,
+      );
 
       if (typeof raw === "object" && raw !== null && typeof raw["error"] === "string") {
         return {
@@ -363,18 +379,18 @@ export class StandaloneBridge implements PremiereBridge {
     this.log.debug(`Executing command: ${command}`);
 
     const appName = this.resolveAppName();
-    const escapedScript = this.escapeForAppleScript(script);
+    // Pass ExtendScript as an argv value instead of interpolating it into an
+    // AppleScript string literal. This avoids a second quoting language and
+    // handles JSON, quotes, and newlines without corruption.
+    const appleScript = [
+      "on run argv",
+      `tell application "${appName}"`,
+      "DoScript (item 1 of argv)",
+      "end tell",
+      "end run",
+    ].join("\n");
 
-    // Build the AppleScript:
-    //   tell application "Adobe Premiere Pro 2025" to DoScript "..."
-    const appleScript =
-      `tell application "${appName}" to DoScript "${escapedScript}"`;
-
-    // Wrap in a shell-safe osascript invocation
-    const shellCommand =
-      `osascript -e ${this.shellQuote(appleScript)}`;
-
-    const execOpts: ExecSyncOptionsWithStringEncoding = {
+    const execOpts: ExecFileSyncOptionsWithStringEncoding = {
       encoding: "utf-8",
       timeout: this.timeoutMs,
       maxBuffer: MAX_OUTPUT_BUFFER,
@@ -383,7 +399,11 @@ export class StandaloneBridge implements PremiereBridge {
 
     let rawOutput: string;
     try {
-      rawOutput = execSync(shellCommand, execOpts).trim();
+      rawOutput = execFileSync(
+        "osascript",
+        ["-e", appleScript, script],
+        execOpts,
+      ).trim();
     } catch (err: unknown) {
       const detail = err instanceof Error ? err.message : String(err);
       this.log.error(`osascript failed for ${command}: ${detail}`);
@@ -441,26 +461,4 @@ export class StandaloneBridge implements PremiereBridge {
     return "Adobe Premiere Pro 2025";
   }
 
-  /**
-   * Escape a string so it can be embedded inside double-quoted AppleScript
-   * string literals.
-   */
-  private escapeForAppleScript(s: string): string {
-    return s
-      .replace(/\\/g, "\\\\")
-      .replace(/"/g, '\\"')
-      .replace(/\n/g, "\\n")
-      .replace(/\r/g, "\\r")
-      .replace(/\t/g, "\\t");
-  }
-
-  /**
-   * Safely quote a string for use as a single shell argument.
-   * Uses the $'...' quoting form which handles internal single quotes.
-   */
-  private shellQuote(s: string): string {
-    // Simple approach: wrap in single quotes and escape internal single quotes
-    // using the '\'' idiom (end quote, escaped quote, start quote).
-    return "'" + s.replace(/'/g, "'\\''") + "'";
-  }
 }

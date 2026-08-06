@@ -24,14 +24,10 @@ _SECTION_RE = re.compile(
 )
 
 # Timestamp ranges: 0:00 - 0:30, 1:30-2:45, (0:00 - 0:30)
-_TIMESTAMP_RANGE_RE = re.compile(
-    r"^\s*\(?\s*(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s*\)?\s*$"
-)
+_TIMESTAMP_RANGE_RE = re.compile(r"^\s*\(?\s*(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s*\)?\s*$")
 
 # Inline timestamp prefix: (0:00) or 0:00 -
-_TIMESTAMP_PREFIX_RE = re.compile(
-    r"^\s*\(?(\d{1,2}:\d{2})\)?\s*[-:]?\s*"
-)
+_TIMESTAMP_PREFIX_RE = re.compile(r"^\s*\(?(\d{1,2}:\d{2})\)?\s*[-:]?\s*")
 
 # B-ROLL: description
 _BROLL_RE = re.compile(r"^\s*B-?ROLL\s*:\s*(.+)", re.IGNORECASE)
@@ -109,12 +105,14 @@ def parse_youtube(text: str) -> list[ScriptSegment]:
         nonlocal idx, dialogue_buffer
         joined = " ".join(dialogue_buffer).strip()
         if joined:
-            segments.append(ScriptSegment(
-                index=idx,
-                type=SegmentType.DIALOGUE,
-                content=joined,
-                scene_description=current_section,
-            ))
+            segments.append(
+                ScriptSegment(
+                    index=idx,
+                    type=SegmentType.DIALOGUE,
+                    content=joined,
+                    scene_description=current_section,
+                )
+            )
             idx += 1
         dialogue_buffer = []
 
@@ -143,12 +141,14 @@ def parse_youtube(text: str) -> list[ScriptSegment]:
             # Some sections like [CTA] produce a title segment
             seg_type = _SECTION_TYPES.get(section_name.lower(), SegmentType.DIALOGUE)
             if seg_type == SegmentType.TITLE and section_detail:
-                segments.append(ScriptSegment(
-                    index=idx,
-                    type=SegmentType.TITLE,
-                    content=section_detail,
-                    scene_description=section_name,
-                ))
+                segments.append(
+                    ScriptSegment(
+                        index=idx,
+                        type=SegmentType.TITLE,
+                        content=section_detail,
+                        scene_description=section_name,
+                    )
+                )
                 idx += 1
             continue
 
@@ -156,13 +156,15 @@ def parse_youtube(text: str) -> list[ScriptSegment]:
         m = _BROLL_RE.match(stripped)
         if m:
             _flush_dialogue()
-            segments.append(ScriptSegment(
-                index=idx,
-                type=SegmentType.BROLL,
-                content=m.group(1).strip(),
-                visual_direction=m.group(1).strip(),
-                scene_description=current_section,
-            ))
+            segments.append(
+                ScriptSegment(
+                    index=idx,
+                    type=SegmentType.BROLL,
+                    content=m.group(1).strip(),
+                    visual_direction=m.group(1).strip(),
+                    scene_description=current_section,
+                )
+            )
             idx += 1
             continue
 
@@ -170,12 +172,14 @@ def parse_youtube(text: str) -> list[ScriptSegment]:
         m = _ON_CAMERA_RE.match(stripped)
         if m:
             _flush_dialogue()
-            segments.append(ScriptSegment(
-                index=idx,
-                type=SegmentType.DIALOGUE,
-                content=m.group(1).strip(),
-                scene_description=current_section,
-            ))
+            segments.append(
+                ScriptSegment(
+                    index=idx,
+                    type=SegmentType.DIALOGUE,
+                    content=m.group(1).strip(),
+                    scene_description=current_section,
+                )
+            )
             idx += 1
             continue
 
@@ -183,13 +187,15 @@ def parse_youtube(text: str) -> list[ScriptSegment]:
         m = _TEXT_SCREEN_RE.match(stripped)
         if m:
             _flush_dialogue()
-            segments.append(ScriptSegment(
-                index=idx,
-                type=SegmentType.TITLE,
-                content=m.group(1).strip(),
-                visual_direction=m.group(1).strip(),
-                scene_description=current_section,
-            ))
+            segments.append(
+                ScriptSegment(
+                    index=idx,
+                    type=SegmentType.TITLE,
+                    content=m.group(1).strip(),
+                    visual_direction=m.group(1).strip(),
+                    scene_description=current_section,
+                )
+            )
             idx += 1
             continue
 
@@ -197,13 +203,15 @@ def parse_youtube(text: str) -> list[ScriptSegment]:
         m = _LOWER_THIRD_RE.match(stripped)
         if m:
             _flush_dialogue()
-            segments.append(ScriptSegment(
-                index=idx,
-                type=SegmentType.LOWER_THIRD,
-                content=m.group(1).strip(),
-                visual_direction=m.group(1).strip(),
-                scene_description=current_section,
-            ))
+            segments.append(
+                ScriptSegment(
+                    index=idx,
+                    type=SegmentType.LOWER_THIRD,
+                    content=m.group(1).strip(),
+                    visual_direction=m.group(1).strip(),
+                    scene_description=current_section,
+                )
+            )
             idx += 1
             continue
 
@@ -211,13 +219,15 @@ def parse_youtube(text: str) -> list[ScriptSegment]:
         m = _MUSIC_RE.match(stripped)
         if m:
             _flush_dialogue()
-            segments.append(ScriptSegment(
-                index=idx,
-                type=SegmentType.MUSIC,
-                content=m.group(1).strip(),
-                audio_direction=m.group(1).strip(),
-                scene_description=current_section,
-            ))
+            segments.append(
+                ScriptSegment(
+                    index=idx,
+                    type=SegmentType.MUSIC,
+                    content=m.group(1).strip(),
+                    audio_direction=m.group(1).strip(),
+                    scene_description=current_section,
+                )
+            )
             idx += 1
             continue
 
@@ -225,13 +235,15 @@ def parse_youtube(text: str) -> list[ScriptSegment]:
         m = _SFX_RE.match(stripped)
         if m:
             _flush_dialogue()
-            segments.append(ScriptSegment(
-                index=idx,
-                type=SegmentType.SFX,
-                content=m.group(1).strip(),
-                audio_direction=m.group(1).strip(),
-                scene_description=current_section,
-            ))
+            segments.append(
+                ScriptSegment(
+                    index=idx,
+                    type=SegmentType.SFX,
+                    content=m.group(1).strip(),
+                    audio_direction=m.group(1).strip(),
+                    scene_description=current_section,
+                )
+            )
             idx += 1
             continue
 
@@ -239,12 +251,14 @@ def parse_youtube(text: str) -> list[ScriptSegment]:
         m = _TRANSITION_RE.match(stripped)
         if m:
             _flush_dialogue()
-            segments.append(ScriptSegment(
-                index=idx,
-                type=SegmentType.TRANSITION,
-                content=m.group(1).strip(),
-                scene_description=current_section,
-            ))
+            segments.append(
+                ScriptSegment(
+                    index=idx,
+                    type=SegmentType.TRANSITION,
+                    content=m.group(1).strip(),
+                    scene_description=current_section,
+                )
+            )
             idx += 1
             continue
 
@@ -252,12 +266,14 @@ def parse_youtube(text: str) -> list[ScriptSegment]:
         m = _VO_RE.match(stripped)
         if m:
             _flush_dialogue()
-            segments.append(ScriptSegment(
-                index=idx,
-                type=SegmentType.VOICEOVER,
-                content=m.group(1).strip(),
-                scene_description=current_section,
-            ))
+            segments.append(
+                ScriptSegment(
+                    index=idx,
+                    type=SegmentType.VOICEOVER,
+                    content=m.group(1).strip(),
+                    scene_description=current_section,
+                )
+            )
             idx += 1
             continue
 
@@ -265,12 +281,14 @@ def parse_youtube(text: str) -> list[ScriptSegment]:
         m = _CTA_RE.match(stripped)
         if m:
             _flush_dialogue()
-            segments.append(ScriptSegment(
-                index=idx,
-                type=SegmentType.TITLE,
-                content=m.group(1).strip(),
-                scene_description=current_section,
-            ))
+            segments.append(
+                ScriptSegment(
+                    index=idx,
+                    type=SegmentType.TITLE,
+                    content=m.group(1).strip(),
+                    scene_description=current_section,
+                )
+            )
             idx += 1
             continue
 

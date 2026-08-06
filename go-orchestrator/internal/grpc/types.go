@@ -6,10 +6,11 @@
 // between proto types and these Go-native types.
 //
 // Proto packages to import once generated:
-//   commonpb "github.com/anthropics/premierpro-mcp/gen/go/premierpro/common/v1"
-//   mediapb  "github.com/anthropics/premierpro-mcp/gen/go/premierpro/media/v1"
-//   intelpb  "github.com/anthropics/premierpro-mcp/gen/go/premierpro/intelligence/v1"
-//   prempb   "github.com/anthropics/premierpro-mcp/gen/go/premierpro/premiere/v1"
+//
+//	commonpb "github.com/ayushozha/AdobePremiereProMCP/gen/go/premierpro/common/v1"
+//	mediapb  "github.com/ayushozha/AdobePremiereProMCP/gen/go/premierpro/media/v1"
+//	intelpb  "github.com/ayushozha/AdobePremiereProMCP/gen/go/premierpro/intelligence/v1"
+//	prempb   "github.com/ayushozha/AdobePremiereProMCP/gen/go/premierpro/premiere/v1"
 package grpc
 
 // ---------------------------------------------------------------------------
@@ -61,10 +62,10 @@ type AssetType int
 
 const (
 	AssetTypeUnspecified AssetType = 0
-	AssetTypeVideo      AssetType = 1
-	AssetTypeAudio      AssetType = 2
-	AssetTypeImage      AssetType = 3
-	AssetTypeGraphics   AssetType = 4
+	AssetTypeVideo       AssetType = 1
+	AssetTypeAudio       AssetType = 2
+	AssetTypeImage       AssetType = 3
+	AssetTypeGraphics    AssetType = 4
 )
 
 // Asset is a media asset with full metadata.
@@ -86,8 +87,8 @@ type TrackType int
 
 const (
 	TrackTypeUnspecified TrackType = 0
-	TrackTypeVideo      TrackType = 1
-	TrackTypeAudio      TrackType = 2
+	TrackTypeVideo       TrackType = 1
+	TrackTypeAudio       TrackType = 2
 )
 
 // TrackTarget identifies a specific track on the timeline.
@@ -123,11 +124,11 @@ type EDLEntry struct {
 
 // EditDecisionList is a full EDL.
 type EditDecisionList struct {
-	ID                string
-	Name              string
+	ID                 string
+	Name               string
 	SequenceResolution Resolution
-	SequenceFrameRate float64
-	Entries           []EDLEntry
+	SequenceFrameRate  float64
+	Entries            []EDLEntry
 }
 
 // TextStyle defines a text overlay appearance.
@@ -152,10 +153,10 @@ type OperationStatus int
 
 const (
 	OperationStatusUnspecified OperationStatus = 0
-	OperationStatusPending    OperationStatus = 1
-	OperationStatusRunning    OperationStatus = 2
-	OperationStatusCompleted  OperationStatus = 3
-	OperationStatusFailed     OperationStatus = 4
+	OperationStatusPending     OperationStatus = 1
+	OperationStatusRunning     OperationStatus = 2
+	OperationStatusCompleted   OperationStatus = 3
+	OperationStatusFailed      OperationStatus = 4
 )
 
 // ---------------------------------------------------------------------------
@@ -252,15 +253,15 @@ type SegmentType int
 
 const (
 	SegmentTypeUnspecified SegmentType = 0
-	SegmentTypeDialogue   SegmentType = 1
-	SegmentTypeAction     SegmentType = 2
-	SegmentTypeBRoll      SegmentType = 3
-	SegmentTypeTransition SegmentType = 4
-	SegmentTypeTitle      SegmentType = 5
-	SegmentTypeLowerThird SegmentType = 6
-	SegmentTypeVoiceover  SegmentType = 7
-	SegmentTypeMusic      SegmentType = 8
-	SegmentTypeSFX        SegmentType = 9
+	SegmentTypeDialogue    SegmentType = 1
+	SegmentTypeAction      SegmentType = 2
+	SegmentTypeBRoll       SegmentType = 3
+	SegmentTypeTransition  SegmentType = 4
+	SegmentTypeTitle       SegmentType = 5
+	SegmentTypeLowerThird  SegmentType = 6
+	SegmentTypeVoiceover   SegmentType = 7
+	SegmentTypeMusic       SegmentType = 8
+	SegmentTypeSFX         SegmentType = 9
 )
 
 // ScriptSegment is a parsed section of a script.
@@ -303,9 +304,9 @@ type MatchStrategy int
 
 const (
 	MatchStrategyUnspecified MatchStrategy = 0
-	MatchStrategyKeyword    MatchStrategy = 1
-	MatchStrategyEmbedding  MatchStrategy = 2
-	MatchStrategyHybrid     MatchStrategy = 3
+	MatchStrategyKeyword     MatchStrategy = 1
+	MatchStrategyEmbedding   MatchStrategy = 2
+	MatchStrategyHybrid      MatchStrategy = 3
 )
 
 // AssetMatch pairs a script segment with a matched asset.
@@ -342,19 +343,19 @@ type PacingPreset int
 
 const (
 	PacingPresetUnspecified PacingPreset = 0
-	PacingPresetSlow       PacingPreset = 1
-	PacingPresetModerate   PacingPreset = 2
-	PacingPresetFast       PacingPreset = 3
-	PacingPresetDynamic    PacingPreset = 4
+	PacingPresetSlow        PacingPreset = 1
+	PacingPresetModerate    PacingPreset = 2
+	PacingPresetFast        PacingPreset = 3
+	PacingPresetDynamic     PacingPreset = 4
 )
 
 // EDLSettings control EDL generation parameters.
 type EDLSettings struct {
-	Resolution                 Resolution
-	FrameRate                  float64
-	DefaultTransition          string
-	DefaultTransitionDuration  float64
-	Pacing                     PacingPreset
+	Resolution                Resolution
+	FrameRate                 float64
+	DefaultTransition         string
+	DefaultTransitionDuration float64
+	Pacing                    PacingPreset
 }
 
 // GenerateEDLParams are the inputs for the GenerateEDL RPC.
@@ -450,10 +451,10 @@ type TimelineClip struct {
 
 // TimelineTrack is a single track with its clips.
 type TimelineTrack struct {
-	Index   uint32
-	Type    TrackType
-	Clips   []TimelineClip
-	IsMuted bool
+	Index    uint32
+	Type     TrackType
+	Clips    []TimelineClip
+	IsMuted  bool
 	IsLocked bool
 }
 
@@ -504,10 +505,10 @@ type RemoveClipParams struct {
 
 // AddTransitionParams are the inputs for the AddTransition RPC.
 type AddTransitionParams struct {
-	SequenceID     string
-	Track          TrackTarget
-	Position       Timecode
-	TransitionType string
+	SequenceID      string
+	Track           TrackTarget
+	Position        Timecode
+	TransitionType  string
 	DurationSeconds float64
 }
 
@@ -550,12 +551,12 @@ type ExportPreset int
 
 const (
 	ExportPresetUnspecified ExportPreset = 0
-	ExportPresetH264_1080P ExportPreset = 1
-	ExportPresetH264_4K    ExportPreset = 2
-	ExportPresetProRes422  ExportPreset = 3
-	ExportPresetProRes4444 ExportPreset = 4
-	ExportPresetDNxHR      ExportPreset = 5
-	ExportPresetCustom     ExportPreset = 6
+	ExportPresetH264_1080P  ExportPreset = 1
+	ExportPresetH264_4K     ExportPreset = 2
+	ExportPresetProRes422   ExportPreset = 3
+	ExportPresetProRes4444  ExportPreset = 4
+	ExportPresetDNxHR       ExportPreset = 5
+	ExportPresetCustom      ExportPreset = 6
 )
 
 // ExportSequenceParams are the inputs for the ExportSequence RPC.

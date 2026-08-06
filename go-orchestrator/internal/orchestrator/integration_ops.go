@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -26,8 +25,8 @@ func (e *Engine) SendToAfterEffects(ctx context.Context, projectItemIndex int) (
 // ImportAEComp imports an After Effects composition from a .aep file via Dynamic Link.
 func (e *Engine) ImportAEComp(ctx context.Context, aepPath, compName, targetBin string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"aepPath": aepPath,
-		"compName": compName,
+		"aepPath":   aepPath,
+		"compName":  compName,
 		"targetBin": targetBin,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "importAEComp", string(argsJSON))
@@ -40,7 +39,7 @@ func (e *Engine) ImportAEComp(ctx context.Context, aepPath, compName, targetBin 
 // ImportAllAEComps imports all After Effects compositions from a .aep file.
 func (e *Engine) ImportAllAEComps(ctx context.Context, aepPath, targetBin string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"aepPath": aepPath,
+		"aepPath":   aepPath,
 		"targetBin": targetBin,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "importAllAEComps", string(argsJSON))
@@ -81,8 +80,8 @@ func (e *Engine) EditInPhotoshop(ctx context.Context, projectItemIndex int) (*Ge
 // ImportPSDLayers imports a Photoshop PSD file with layer support.
 func (e *Engine) ImportPSDLayers(ctx context.Context, psdPath, targetBin string, asSequence bool) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"psdPath": psdPath,
-		"targetBin": targetBin,
+		"psdPath":    psdPath,
+		"targetBin":  targetBin,
 		"asSequence": asSequence,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "importPSDLayers", string(argsJSON))
@@ -100,7 +99,7 @@ func (e *Engine) ImportPSDLayers(ctx context.Context, psdPath, targetBin string,
 func (e *Engine) EditInAudition(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "editInAudition", string(argsJSON))
 	if err != nil {
@@ -113,7 +112,7 @@ func (e *Engine) EditInAudition(ctx context.Context, trackIndex, clipIndex int) 
 func (e *Engine) RefreshAuditionEdit(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "refreshAuditionEdit", string(argsJSON))
 	if err != nil {
@@ -130,7 +129,7 @@ func (e *Engine) RefreshAuditionEdit(ctx context.Context, trackIndex, clipIndex 
 func (e *Engine) QueueInMediaEncoder(ctx context.Context, sequenceIndex int, presetPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"presetPath": presetPath,
+		"presetPath":    presetPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "queueInMediaEncoder", string(argsJSON))
 	if err != nil {
@@ -203,8 +202,8 @@ func (e *Engine) GetCodecInfo(ctx context.Context, projectItemIndex int) (*Gener
 func (e *Engine) TranscodeClip(ctx context.Context, projectItemIndex int, outputPath, presetPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"outputPath": outputPath,
-		"presetPath": presetPath,
+		"outputPath":       outputPath,
+		"presetPath":       presetPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "transcodeClip", string(argsJSON))
 	if err != nil {
@@ -217,8 +216,8 @@ func (e *Engine) TranscodeClip(ctx context.Context, projectItemIndex int, output
 func (e *Engine) ConformMedia(ctx context.Context, projectItemIndex int, targetFps float64, targetCodec string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"targetFps": targetFps,
-		"targetCodec": targetCodec,
+		"targetFps":        targetFps,
+		"targetCodec":      targetCodec,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "conformMedia", string(argsJSON))
 	if err != nil {
@@ -234,7 +233,7 @@ func (e *Engine) ConformMedia(ctx context.Context, projectItemIndex int, targetF
 // ImportOMFFile imports an OMF file into the project.
 func (e *Engine) ImportOMFFile(ctx context.Context, omfPath, targetBin string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"omfPath": omfPath,
+		"omfPath":   omfPath,
 		"targetBin": targetBin,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "importOMFFile", string(argsJSON))
@@ -247,7 +246,7 @@ func (e *Engine) ImportOMFFile(ctx context.Context, omfPath, targetBin string) (
 // ImportAAFFile imports an AAF file into the project.
 func (e *Engine) ImportAAFFile(ctx context.Context, aafPath, targetBin string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"aafPath": aafPath,
+		"aafPath":   aafPath,
 		"targetBin": targetBin,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "importAAFFile", string(argsJSON))
@@ -291,7 +290,7 @@ func (e *Engine) GetFromSystemClipboard(ctx context.Context) (*GenericResult, er
 func (e *Engine) OpenInExternalEditor(ctx context.Context, projectItemIndex int, editorPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"editorPath": editorPath,
+		"editorPath":       editorPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "openInExternalEditor", string(argsJSON))
 	if err != nil {
@@ -304,7 +303,7 @@ func (e *Engine) OpenInExternalEditor(ctx context.Context, projectItemIndex int,
 func (e *Engine) ImportFromExternalSource(ctx context.Context, sourcePath, format string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sourcePath": sourcePath,
-		"format": format,
+		"format":     format,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "importFromExternalSource", string(argsJSON))
 	if err != nil {

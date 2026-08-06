@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -15,10 +14,10 @@ import (
 
 func (e *Engine) CreateMontage(ctx context.Context, clipIndices []int, transitionName string, transitionDuration float64, musicPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"clipIndices": clipIndices,
-		"transitionName": transitionName,
+		"clipIndices":        clipIndices,
+		"transitionName":     transitionName,
 		"transitionDuration": transitionDuration,
-		"musicPath": musicPath,
+		"musicPath":          musicPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createMontage", string(argsJSON))
 	if err != nil {
@@ -29,10 +28,10 @@ func (e *Engine) CreateMontage(ctx context.Context, clipIndices []int, transitio
 
 func (e *Engine) CreateSlideshow(ctx context.Context, imageIndices []int, slideDuration float64, transitionName string, musicPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"imageIndices": imageIndices,
-		"slideDuration": slideDuration,
+		"imageIndices":   imageIndices,
+		"slideDuration":  slideDuration,
 		"transitionName": transitionName,
-		"musicPath": musicPath,
+		"musicPath":      musicPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createSlideshow", string(argsJSON))
 	if err != nil {
@@ -44,8 +43,8 @@ func (e *Engine) CreateSlideshow(ctx context.Context, imageIndices []int, slideD
 func (e *Engine) CreateHighlightReel(ctx context.Context, sequenceIndex int, markerColor string, outputName string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"markerColor": markerColor,
-		"outputName": outputName,
+		"markerColor":   markerColor,
+		"outputName":    outputName,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createHighlightReel", string(argsJSON))
 	if err != nil {
@@ -66,7 +65,7 @@ func (e *Engine) RippleDeleteEmptySpaces(ctx context.Context) (*GenericResult, e
 func (e *Engine) AlignAllClipsToTrack(ctx context.Context, sourceTrack, destTrack int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sourceTrack": sourceTrack,
-		"destTrack": destTrack,
+		"destTrack":   destTrack,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "alignAllClipsToTrack", string(argsJSON))
 	if err != nil {
@@ -89,8 +88,8 @@ func (e *Engine) SyncAllAudioToVideo(ctx context.Context) (*GenericResult, error
 func (e *Engine) ReplaceAudio(ctx context.Context, videoTrackIndex, videoClipIndex int, audioPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"videoTrackIndex": videoTrackIndex,
-		"videoClipIndex": videoClipIndex,
-		"audioPath": audioPath,
+		"videoClipIndex":  videoClipIndex,
+		"audioPath":       audioPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "replaceAudio", string(argsJSON))
 	if err != nil {
@@ -101,13 +100,13 @@ func (e *Engine) ReplaceAudio(ctx context.Context, videoTrackIndex, videoClipInd
 
 func (e *Engine) AddMusicBed(ctx context.Context, audioPath string, trackIndex int, startTime, endTime, fadeIn, fadeOut, volume float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"audioPath": audioPath,
+		"audioPath":  audioPath,
 		"trackIndex": trackIndex,
-		"startTime": startTime,
-		"endTime": endTime,
-		"fadeIn": fadeIn,
-		"fadeOut": fadeOut,
-		"volume": volume,
+		"startTime":  startTime,
+		"endTime":    endTime,
+		"fadeIn":     fadeIn,
+		"fadeOut":    fadeOut,
+		"volume":     volume,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "addMusicBed", string(argsJSON))
 	if err != nil {
@@ -118,9 +117,9 @@ func (e *Engine) AddMusicBed(ctx context.Context, audioPath string, trackIndex i
 
 func (e *Engine) DuckMusicUnderDialogue(ctx context.Context, musicTrackIndex, dialogueTrackIndex int, duckAmount float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"musicTrackIndex": musicTrackIndex,
+		"musicTrackIndex":    musicTrackIndex,
 		"dialogueTrackIndex": dialogueTrackIndex,
-		"duckAmount": duckAmount,
+		"duckAmount":         duckAmount,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "duckMusicUnderDialogue", string(argsJSON))
 	if err != nil {
@@ -131,10 +130,10 @@ func (e *Engine) DuckMusicUnderDialogue(ctx context.Context, musicTrackIndex, di
 
 func (e *Engine) AddSoundEffect(ctx context.Context, sfxPath string, trackIndex int, time, volume float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"sfxPath": sfxPath,
+		"sfxPath":    sfxPath,
 		"trackIndex": trackIndex,
-		"time": time,
-		"volume": volume,
+		"time":       time,
+		"volume":     volume,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "addSoundEffect", string(argsJSON))
 	if err != nil {
@@ -147,10 +146,10 @@ func (e *Engine) AddSoundEffect(ctx context.Context, sfxPath string, trackIndex 
 
 func (e *Engine) MatchColorBetweenClips(ctx context.Context, srcTrackIndex, srcClipIndex, destTrackIndex, destClipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"srcTrackIndex": srcTrackIndex,
-		"srcClipIndex": srcClipIndex,
+		"srcTrackIndex":  srcTrackIndex,
+		"srcClipIndex":   srcClipIndex,
 		"destTrackIndex": destTrackIndex,
-		"destClipIndex": destClipIndex,
+		"destClipIndex":  destClipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "matchColorBetweenClips", string(argsJSON))
 	if err != nil {
@@ -162,7 +161,7 @@ func (e *Engine) MatchColorBetweenClips(ctx context.Context, srcTrackIndex, srcC
 func (e *Engine) ApplyColorPreset(ctx context.Context, trackIndex, clipIndex int, presetName string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 		"presetName": presetName,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "applyColorPreset", string(argsJSON))
@@ -174,11 +173,11 @@ func (e *Engine) ApplyColorPreset(ctx context.Context, trackIndex, clipIndex int
 
 func (e *Engine) CreateColorGradient(ctx context.Context, trackIndex, startClipIndex, endClipIndex int, startTemp, endTemp float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackIndex": trackIndex,
+		"trackIndex":     trackIndex,
 		"startClipIndex": startClipIndex,
-		"endClipIndex": endClipIndex,
-		"startTemp": startTemp,
-		"endTemp": endTemp,
+		"endClipIndex":   endClipIndex,
+		"startTemp":      startTemp,
+		"endTemp":        endTemp,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createColorGradient", string(argsJSON))
 	if err != nil {
@@ -202,7 +201,7 @@ func (e *Engine) AutoCorrectAllClips(ctx context.Context, trackIndex int) (*Gene
 
 func (e *Engine) AddSubtitlesFromSRT(ctx context.Context, srtPath string, trackIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"srtPath": srtPath,
+		"srtPath":    srtPath,
 		"trackIndex": trackIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "addSubtitlesFromSRT", string(argsJSON))
@@ -214,10 +213,10 @@ func (e *Engine) AddSubtitlesFromSRT(ctx context.Context, srtPath string, trackI
 
 func (e *Engine) AddEndCredits(ctx context.Context, creditsJSON string, trackIndex int, scrollDuration float64, style string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"creditsJSON": creditsJSON,
-		"trackIndex": trackIndex,
+		"creditsJSON":    creditsJSON,
+		"trackIndex":     trackIndex,
 		"scrollDuration": scrollDuration,
-		"style": style,
+		"style":          style,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "addEndCredits", string(argsJSON))
 	if err != nil {
@@ -252,8 +251,8 @@ func (e *Engine) GenerateChaptersFromMarkers(ctx context.Context, outputPath str
 
 func (e *Engine) ExportForYouTube(ctx context.Context, outputPath, title, description string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"outputPath": outputPath,
-		"title": title,
+		"outputPath":  outputPath,
+		"title":       title,
 		"description": description,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "exportForYouTube", string(argsJSON))
@@ -265,7 +264,7 @@ func (e *Engine) ExportForYouTube(ctx context.Context, outputPath, title, descri
 
 func (e *Engine) ExportForInstagram(ctx context.Context, outputPath, aspectRatio string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"outputPath": outputPath,
+		"outputPath":  outputPath,
 		"aspectRatio": aspectRatio,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "exportForInstagram", string(argsJSON))
@@ -300,7 +299,7 @@ func (e *Engine) ExportForTwitter(ctx context.Context, outputPath string) (*Gene
 func (e *Engine) ExportMultipleFormats(ctx context.Context, outputDir string, formats []string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"outputDir": outputDir,
-		"formats": formats,
+		"formats":   formats,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "exportMultipleFormats", string(argsJSON))
 	if err != nil {
@@ -313,10 +312,10 @@ func (e *Engine) ExportMultipleFormats(ctx context.Context, outputDir string, fo
 
 func (e *Engine) SetupNewProject(ctx context.Context, name, path, resolution string, fps float64, audioSampleRate int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"name": name,
-		"path": path,
-		"resolution": resolution,
-		"fps": fps,
+		"name":            name,
+		"path":            path,
+		"resolution":      resolution,
+		"fps":             fps,
 		"audioSampleRate": audioSampleRate,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setupNewProject", string(argsJSON))
@@ -328,8 +327,8 @@ func (e *Engine) SetupNewProject(ctx context.Context, name, path, resolution str
 
 func (e *Engine) SetupEditingWorkspace(ctx context.Context, projectPath, mediaFolder, sequenceName string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"projectPath": projectPath,
-		"mediaFolder": mediaFolder,
+		"projectPath":  projectPath,
+		"mediaFolder":  mediaFolder,
 		"sequenceName": sequenceName,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setupEditingWorkspace", string(argsJSON))
@@ -341,7 +340,7 @@ func (e *Engine) SetupEditingWorkspace(ctx context.Context, projectPath, mediaFo
 
 func (e *Engine) ImportAndOrganize(ctx context.Context, mediaFolder string, autoCreateBins bool) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"mediaFolder": mediaFolder,
+		"mediaFolder":    mediaFolder,
 		"autoCreateBins": autoCreateBins,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "importAndOrganize", string(argsJSON))
@@ -366,8 +365,8 @@ func (e *Engine) PrepareForDelivery(ctx context.Context, specsJSON string) (*Gen
 
 func (e *Engine) ArchiveProject(ctx context.Context, outputPath string, includeMedia, includeRenders bool) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"outputPath": outputPath,
-		"includeMedia": includeMedia,
+		"outputPath":     outputPath,
+		"includeMedia":   includeMedia,
 		"includeRenders": includeRenders,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "archiveProject", string(argsJSON))
@@ -389,8 +388,8 @@ func (e *Engine) TrimProject(ctx context.Context) (*GenericResult, error) {
 func (e *Engine) ConsolidateAndTranscode(ctx context.Context, outputDir, codec, quality string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"outputDir": outputDir,
-		"codec": codec,
-		"quality": quality,
+		"codec":     codec,
+		"quality":   quality,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "consolidateAndTranscode", string(argsJSON))
 	if err != nil {

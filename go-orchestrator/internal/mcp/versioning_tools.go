@@ -28,10 +28,13 @@ func registerVersioningTools(s *server.MCPServer, orch Orchestrator, logger *zap
 
 	// 1. premiere_snapshot_timeline
 	s.AddTool(gomcp.NewTool("premiere_snapshot_timeline",
-		gomcp.WithDescription("Create a JSON snapshot of a timeline's current state for later comparison."),
-		gomcp.WithNumber("sequence_index", gomcp.Description("Zero-based sequence index (default: active sequence, 0)")),
+		gomcp.WithDescription("Create a JSON audit record of a timeline's current state for later comparison. This does not create a restorable sequence; use premiere_duplicate_sequence before mutation when a recovery copy is required."),
+		gomcp.WithNumber("sequence_index",
+			gomcp.Description("Zero-based sequence index. Omit or pass -1 to use the active sequence."),
+			gomcp.DefaultNumber(-1),
+		),
 	), verH(orch, logger, "snapshot_timeline", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
-		result, err := orch.SnapshotTimeline(ctx, gomcp.ParseInt(req, "sequence_index", 0))
+		result, err := orch.SnapshotTimeline(ctx, gomcp.ParseInt(req, "sequence_index", -1))
 		if err != nil {
 			return gomcp.NewToolResultError(fmt.Sprintf("failed: %v", err)), nil
 		}
@@ -62,7 +65,7 @@ func registerVersioningTools(s *server.MCPServer, orch Orchestrator, logger *zap
 	// 3. premiere_get_timeline_changes
 	s.AddTool(gomcp.NewTool("premiere_get_timeline_changes",
 		gomcp.WithDescription("Get changes to a timeline since a given ISO-8601 timestamp."),
-		gomcp.WithNumber("sequence_index", gomcp.Description("Zero-based sequence index (default: 0)")),
+		gomcp.WithNumber("sequence_index", gomcp.Description("Zero-based sequence index. Omit (or pass -1) to record the active sequence.")),
 		gomcp.WithString("since_timestamp", gomcp.Required(), gomcp.Description("ISO-8601 timestamp to compare against")),
 	), verH(orch, logger, "get_timeline_changes", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
 		ts := gomcp.ParseString(req, "since_timestamp", "")
@@ -122,8 +125,11 @@ func registerVersioningTools(s *server.MCPServer, orch Orchestrator, logger *zap
 
 	// 6. premiere_save_sequence_version
 	s.AddTool(gomcp.NewTool("premiere_save_sequence_version",
-		gomcp.WithDescription("Save a named version of a sequence with optional notes."),
-		gomcp.WithNumber("sequence_index", gomcp.Description("Zero-based sequence index (default: 0)")),
+		gomcp.WithDescription("Persist a named JSON audit record of a sequence with optional notes. This does not create or restore a full sequence; use premiere_duplicate_sequence for a recoverable editing copy."),
+		gomcp.WithNumber("sequence_index",
+			gomcp.Description("Zero-based sequence index. Omit or pass -1 to use the active sequence."),
+			gomcp.DefaultNumber(-1),
+		),
 		gomcp.WithString("version_name", gomcp.Required(), gomcp.Description("Name for this version")),
 		gomcp.WithString("notes", gomcp.Description("Optional notes describing this version")),
 	), verH(orch, logger, "save_sequence_version", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
@@ -132,7 +138,7 @@ func registerVersioningTools(s *server.MCPServer, orch Orchestrator, logger *zap
 			return gomcp.NewToolResultError("parameter 'version_name' is required"), nil
 		}
 		result, err := orch.SaveSequenceVersion(ctx,
-			gomcp.ParseInt(req, "sequence_index", 0),
+			gomcp.ParseInt(req, "sequence_index", -1),
 			name,
 			gomcp.ParseString(req, "notes", ""))
 		if err != nil {
@@ -155,7 +161,7 @@ func registerVersioningTools(s *server.MCPServer, orch Orchestrator, logger *zap
 
 	// 8. premiere_load_sequence_version
 	s.AddTool(gomcp.NewTool("premiere_load_sequence_version",
-		gomcp.WithDescription("Load a previously saved version of a sequence."),
+		gomcp.WithDescription("Load a previously saved JSON sequence audit record. Loading the record does not restore the full timeline."),
 		gomcp.WithNumber("sequence_index", gomcp.Description("Zero-based sequence index (default: 0)")),
 		gomcp.WithString("version_name", gomcp.Required(), gomcp.Description("Name of the version to load")),
 	), verH(orch, logger, "load_sequence_version", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {

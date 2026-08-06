@@ -29,9 +29,8 @@ type Clients struct {
 	logger *zap.Logger
 }
 
-// NewClients creates gRPC connections to all three backend services and returns
-// a Clients manager. If any connection fails, already-opened connections are
-// closed before returning the error.
+// NewClients creates lazy gRPC clients for all three backend services. Network
+// readiness is established by each bounded RPC, not by construction.
 func NewClients(cfg *ClientsConfig, logger *zap.Logger) (*Clients, error) {
 	if cfg == nil {
 		cfg = DefaultConfig()
@@ -46,26 +45,25 @@ func NewClients(cfg *ClientsConfig, logger *zap.Logger) (*Clients, error) {
 		zap.String("premiere_addr", cfg.PremiereAddr),
 	)
 
-	// Connect to each service sequentially so we get clear error attribution.
-	media, err := newMediaEngineClient(cfg.MediaAddr, cfg.DialTimeout, cfg.CallTimeout, logger)
+	media, err := newMediaEngineClient(cfg.MediaAddr, cfg.MediaCallTimeout, logger)
 	if err != nil {
 		return nil, fmt.Errorf("create media engine client: %w", err)
 	}
 
-	intel, err := newIntelligenceClient(cfg.IntelAddr, cfg.DialTimeout, cfg.CallTimeout, logger)
+	intel, err := newIntelligenceClient(cfg.IntelAddr, cfg.IntelCallTimeout, logger)
 	if err != nil {
 		_ = media.close()
 		return nil, fmt.Errorf("create intelligence client: %w", err)
 	}
 
-	premiere, err := newPremiereBridgeClient(cfg.PremiereAddr, cfg.DialTimeout, cfg.CallTimeout, logger)
+	premiere, err := newPremiereBridgeClient(cfg.PremiereAddr, cfg.PremiereCallTimeout, logger)
 	if err != nil {
 		_ = media.close()
 		_ = intel.close()
 		return nil, fmt.Errorf("create premiere bridge client: %w", err)
 	}
 
-	logger.Info("all gRPC clients connected")
+	logger.Info("gRPC clients initialized; backends are checked on first RPC")
 
 	return &Clients{
 		Media:    media,

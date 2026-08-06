@@ -1,5 +1,9 @@
 # PremierPro MCP Server -- Comprehensive Feature Plan
 
+> **Historical planning document:** names marked implemented here describe the
+> original roadmap, not current live verification. Use `tools/list`, the
+> default curated profile, and host readback as the current authority.
+
 Master plan for every MCP tool the PremierPro MCP Server will expose. Each tool maps to one or more Adobe Premiere Pro ExtendScript/QE DOM operations, orchestrated through the four-language stack (Go orchestration, Rust media processing, Python intelligence, TypeScript ExtendScript bridge).
 
 **Current state:** 16 tools implemented (Phase 0). This plan adds ~230 additional tools across 7 phases.
@@ -33,7 +37,7 @@ Already shipped. These tools form the baseline.
 | 8 | `premiere_place_clip` | Place a clip on timeline at track/position with speed | Go -> TS |
 | 9 | `premiere_remove_clip` | Remove a clip from a sequence | Go -> TS |
 | 10 | `premiere_add_transition` | Add a transition at a position on a track | Go -> TS |
-| 11 | `premiere_add_text` | Add a text overlay via .mogrt | Go -> TS |
+| 11 | `premiere_add_text` | Removed unsupported legacy schema; use `premiere_import_mogrt` plus `premiere_set_mogrt_text` | Go -> TS |
 | 12 | `premiere_set_audio_level` | Set audio level of a clip in dB | Go -> TS |
 | 13 | `premiere_get_timeline` | Get full timeline state (tracks, clips, durations) | Go -> TS |
 | 14 | `premiere_export` | Export a sequence with a preset | Go -> TS |
@@ -334,7 +338,7 @@ Text/graphics, captions, track operations, and advanced export.
 | # | Tool Name | Description | Parameters | Language |
 |---|---|---|---|---|
 | 143 | `premiere_import_captions` | Import SRT, VTT, or SCC caption file | `file_path` (string, required): path to caption file; `sequence_id` (string): sequence ID (default: active); `format` (string): "srt", "vtt", "scc" (auto-detected if omitted) | Go -> TS |
-| 144 | `premiere_export_captions` | Export captions to SRT, VTT, or SCC | `sequence_id` (string): sequence ID (default: active); `output_path` (string, required): output file path; `format` (string, required): "srt", "vtt", "scc" | Go -> TS |
+| 144 | `premiere_export_captions` | Export captions from the identity-verified active sequence | `sequence_id` (string, required): exact active sequence ID; `output_path` (string, required): output file path; `format` (string): "SRT" or "VTT" | Go -> TS |
 | 145 | `premiere_create_caption_track` | Create a new caption track on the sequence | `sequence_id` (string): sequence ID (default: active); `name` (string): track name (default: "Subtitles"); `format` (string): "subtitle", "open_caption" | Go -> TS |
 | 146 | `premiere_add_caption` | Add a single caption entry | `sequence_id` (string): sequence ID (default: active); `start_seconds` (float, required): caption start time; `end_seconds` (float, required): caption end time; `text` (string, required): caption text; `track_index` (int): caption track index (default: 0) | Go -> TS |
 | 147 | `premiere_edit_caption` | Edit an existing caption's text or timing | `sequence_id` (string): sequence ID (default: active); `caption_index` (int, required): index of caption to edit; `text` (string): new text; `start_seconds` (float): new start time; `end_seconds` (float): new end time | Go -> TS |
@@ -385,7 +389,7 @@ Advanced workflows, AI-powered features, and application settings.
 
 | # | Tool Name | Description | Parameters | Language |
 |---|---|---|---|---|
-| 169 | `premiere_auto_reframe` | Automatically reframe a sequence for a different aspect ratio | `sequence_id` (string): sequence ID (default: active); `target_aspect` (string, required): target aspect ratio ("9:16", "1:1", "4:5", "16:9"); `motion_tracking` (string): "default", "slower", "faster" (default: "default") | Go -> TS |
+| 169 | `premiere_auto_reframe` | Automatically reframe and activate a verified derivative | `source_sequence_id` (string, required): exact ID that must be active; `numerator` and `denominator` (positive integers, required); `motion_preset` (string): "default", "slower", or "faster"; `new_name` (string); `use_nested_sequences` (bool) | Go -> TS |
 | 170 | `premiere_scene_edit_detection` | Detect scene edits/cuts in a clip and add markers or cut points | `item_id` (string, required): project item ID of the source clip; `sensitivity` (float): detection sensitivity 0-1 (default: 0.5); `action` (string): "markers" or "cuts" (default: "markers") | Go -> Rust + TS |
 | 171 | `premiere_auto_color_match` | Automatically match color between clips | `reference_clip_id` (string, required): reference clip ID; `target_clip_ids` (string[], required): clips to color match; `sequence_id` (string, required): sequence ID; `intensity` (float): match intensity 0-1 (default: 0.8) | Go -> TS |
 | 172 | `premiere_detect_silence` | Detect silence in audio clips and optionally remove | `sequence_id` (string): sequence ID (default: active); `threshold_db` (float): silence threshold (default: -40); `min_duration_seconds` (float): minimum silence duration (default: 0.5); `action` (string): "detect", "mark", "ripple_delete" (default: "detect") | Go -> Rust + TS |

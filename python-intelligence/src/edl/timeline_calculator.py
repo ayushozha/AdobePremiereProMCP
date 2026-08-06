@@ -161,7 +161,6 @@ class TimelineCalculator:
             return list(entries)
 
         half_transition = self.snap_to_frame(transition_duration / 2.0)
-        adjusted: list[EDLEntry] = []
 
         # Group entries by track key so we only overlap clips on the same track.
         track_groups: dict[str, list[int]] = {}

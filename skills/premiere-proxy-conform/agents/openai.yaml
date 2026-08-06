@@ -1,0 +1,4 @@
+interface:
+  display_name: "Premiere Proxy Conform"
+  short_description: "Create proxies and audit original-media readiness"
+  default_prompt: "Use $premiere-proxy-conform to speed editing with proxies and safely return to originals."

@@ -7,6 +7,4 @@
 pub mod analyzer;
 
 // Re-export key types for convenience.
-pub use analyzer::{
-    SilenceRegion, WaveformAnalyzer, WaveformOptions, WaveformResult,
-};
+pub use analyzer::{SilenceRegion, WaveformAnalyzer, WaveformOptions, WaveformResult};

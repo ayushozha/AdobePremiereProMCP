@@ -3,7 +3,7 @@
 use tonic::{Request, Response, Status};
 use tracing::{info, instrument, warn};
 
-use crate::assets::scanner::{AssetScanner, ScanOptions};
+use crate::assets::scanner::{AssetScanner, ScanOptions, ScannedAsset};
 use crate::media::probe::{self as probe_types, MediaProber};
 use crate::media::scenes::{SceneDetectionOptions, SceneDetector};
 use crate::thumbnails::generator::{ThumbnailGenerator, ThumbnailOptions};
@@ -74,11 +74,37 @@ fn media_info_to_proto_asset(info: &probe_types::MediaInfo) -> Asset {
     }
 }
 
+/// Probe one scanned asset on Tokio's blocking pool, falling back to the
+/// scanner metadata when ffprobe cannot inspect the file.
+fn probe_scanned_asset(scanned: ScannedAsset) -> Asset {
+    match MediaProber::probe(&scanned.file_path) {
+        Ok(info) => {
+            let mut asset = media_info_to_proto_asset(&info);
+            asset.id = scanned.id;
+            asset.fingerprint = scanned.fingerprint;
+            asset
+        }
+        Err(error) => {
+            warn!(path = %scanned.file_path, error = %error, "probe failed, using scanner metadata");
+            Asset {
+                id: scanned.id,
+                file_path: scanned.file_path,
+                file_name: scanned.file_name,
+                file_size_bytes: scanned.file_size,
+                mime_type: scanned.mime_type,
+                asset_type: AssetType::Unspecified.into(),
+                video: None,
+                audio: None,
+                metadata: std::collections::HashMap::new(),
+                fingerprint: scanned.fingerprint,
+            }
+        }
+    }
+}
+
 /// Convert a proto `Timecode` to seconds.
 fn timecode_to_seconds(tc: &Timecode) -> f64 {
-    let base = (tc.hours as f64) * 3600.0
-        + (tc.minutes as f64) * 60.0
-        + (tc.seconds as f64);
+    let base = (tc.hours as f64) * 3600.0 + (tc.minutes as f64) * 60.0 + (tc.seconds as f64);
     let frame_rate = if tc.frame_rate > 0.0 {
         tc.frame_rate
     } else {
@@ -128,35 +154,34 @@ impl MediaEngineService for MediaEngineServiceImpl {
             .map_err(|e| Status::internal(format!("scan task panicked: {e}")))?
             .map_err(|e| Status::internal(format!("asset scan failed: {e}")))?;
 
-        // For each scanned asset, probe it with MediaProber to get full metadata.
-        let mut proto_assets = Vec::with_capacity(scan_result.assets.len());
-        for scanned in &scan_result.assets {
-            match MediaProber::probe(&scanned.file_path) {
-                Ok(info) => {
-                    let mut asset = media_info_to_proto_asset(&info);
-                    asset.id = scanned.id.clone();
-                    asset.fingerprint = scanned.fingerprint.clone();
-                    proto_assets.push(asset);
-                }
-                Err(e) => {
-                    // Probing may fail for non-media files or when ffprobe is
-                    // unavailable.  Fall back to the basic metadata from the scanner.
-                    warn!(path = %scanned.file_path, error = %e, "probe failed, using scanner metadata");
-                    proto_assets.push(Asset {
-                        id: scanned.id.clone(),
-                        file_path: scanned.file_path.clone(),
-                        file_name: scanned.file_name.clone(),
-                        file_size_bytes: scanned.file_size,
-                        mime_type: scanned.mime_type.clone(),
-                        asset_type: AssetType::Unspecified.into(),
-                        video: None,
-                        audio: None,
-                        metadata: std::collections::HashMap::new(),
-                        fingerprint: scanned.fingerprint.clone(),
-                    });
-                }
+        // ffprobe is synchronous and process-backed. Keep it off async worker
+        // threads and bound concurrency so large directories get parallel
+        // metadata extraction without spawning one process per asset at once.
+        let asset_count = scan_result.assets.len();
+        let probe_concurrency = std::thread::available_parallelism()
+            .map(|parallelism| parallelism.get())
+            .unwrap_or(4)
+            .clamp(1, 8)
+            .min(asset_count.max(1));
+        let mut remaining = scan_result.assets.into_iter().enumerate();
+        let mut probes = tokio::task::JoinSet::new();
+        for _ in 0..probe_concurrency {
+            if let Some((index, scanned)) = remaining.next() {
+                probes.spawn_blocking(move || (index, probe_scanned_asset(scanned)));
             }
         }
+
+        let mut completed = Vec::with_capacity(asset_count);
+        while let Some(joined) = probes.join_next().await {
+            let (index, asset) = joined
+                .map_err(|error| Status::internal(format!("probe task panicked: {error}")))?;
+            completed.push((index, asset));
+            if let Some((next_index, scanned)) = remaining.next() {
+                probes.spawn_blocking(move || (next_index, probe_scanned_asset(scanned)));
+            }
+        }
+        completed.sort_unstable_by_key(|(index, _)| *index);
+        let proto_assets = completed.into_iter().map(|(_, asset)| asset).collect();
 
         let response = ScanAssetsResponse {
             assets: proto_assets,

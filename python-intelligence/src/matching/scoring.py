@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass(slots=True)
@@ -16,7 +16,7 @@ class ScoredMatch:
     """A single candidate match with its numeric score and explanation."""
 
     asset_id: str
-    score: float  # 0.0 – 1.0
+    score: float  # 0.0 - 1.0
     reasoning: str
     method: str  # "keyword" | "embedding" | "hybrid"
 
@@ -34,9 +34,9 @@ def combine_scores(
     Parameters
     ----------
     keyword_score:
-        Score from keyword matching (0.0–1.0).
+        Score from keyword matching (0.0-1.0).
     embedding_score:
-        Score from embedding similarity (0.0–1.0).
+        Score from embedding similarity (0.0-1.0).
     keyword_weight:
         Weight given to the keyword score.  The embedding score receives
         ``1.0 - keyword_weight``.
@@ -57,7 +57,7 @@ def normalize_text(text: str) -> list[str]:
     """Normalise *text* into a list of lowercase tokens.
 
     Handles:
-    * File extensions – stripped (``"sunset.mp4"`` -> ``["sunset"]``)
+    * File extensions - stripped (``"sunset.mp4"`` -> ``["sunset"]``)
     * camelCase / PascalCase splitting
     * Underscores, hyphens, dots, spaces as delimiters
     * Common video naming patterns (``"B-roll_sunset_001"`` -> ``["broll", "sunset", "001"]``)
@@ -92,10 +92,8 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     numpy so the module can be used without heavy dependencies.
     """
     if len(a) != len(b):
-        raise ValueError(
-            f"Vectors must have equal length, got {len(a)} and {len(b)}"
-        )
-    dot = sum(x * y for x, y in zip(a, b))
+        raise ValueError(f"Vectors must have equal length, got {len(a)} and {len(b)}")
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
     mag_a = math.sqrt(sum(x * x for x in a))
     mag_b = math.sqrt(sum(y * y for y in b))
     if mag_a == 0.0 or mag_b == 0.0:

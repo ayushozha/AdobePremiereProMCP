@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
+use std::net::{IpAddr, SocketAddr};
 use tokio::signal;
 use tonic::transport::Server;
 use tracing::{info, warn};
@@ -13,6 +14,10 @@ use premierpro_media_engine::proto::media::media_engine_service_server::MediaEng
 #[command(name = "premierpro-media-engine")]
 #[command(about = "High-performance media processing engine for PremierPro")]
 struct Args {
+    /// gRPC server bind address.
+    #[arg(long, default_value = "127.0.0.1", env = "MEDIA_ENGINE_HOST")]
+    host: IpAddr,
+
     /// gRPC server port.
     #[arg(long, default_value_t = 50052, env = "MEDIA_ENGINE_PORT")]
     port: u16,
@@ -31,21 +36,15 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // Initialize tracing subscriber.
-    let env_filter = EnvFilter::try_new(&args.log_level)
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let env_filter = EnvFilter::try_new(&args.log_level).unwrap_or_else(|_| EnvFilter::new("info"));
 
     if args.log_json {
-        fmt()
-            .json()
-            .with_env_filter(env_filter)
-            .init();
+        fmt().json().with_env_filter(env_filter).init();
     } else {
-        fmt()
-            .with_env_filter(env_filter)
-            .init();
+        fmt().with_env_filter(env_filter).init();
     }
 
-    info!(port = args.port, "Starting PremierPro Media Engine");
+    info!(host = %args.host, port = args.port, "Starting PremierPro Media Engine");
 
     #[cfg(feature = "ffmpeg")]
     info!("FFmpeg support: enabled");
@@ -53,7 +52,7 @@ async fn main() -> Result<()> {
     #[cfg(not(feature = "ffmpeg"))]
     info!("FFmpeg support: disabled (using Symphonia for audio)");
 
-    let addr = format!("0.0.0.0:{}", args.port).parse()?;
+    let addr = SocketAddr::new(args.host, args.port);
     let service = MediaEngineServiceImpl::new();
 
     info!(%addr, "gRPC server listening");

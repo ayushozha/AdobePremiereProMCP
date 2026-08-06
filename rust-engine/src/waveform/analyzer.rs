@@ -110,8 +110,7 @@ impl WaveformAnalyzer {
         let duration_seconds = samples.len() as f64 / DECODE_SAMPLE_RATE as f64;
 
         let (peak_db, rms_db) = Self::compute_levels(&samples);
-        let silence_regions =
-            Self::detect_silence(&samples, DECODE_SAMPLE_RATE, options);
+        let silence_regions = Self::detect_silence(&samples, DECODE_SAMPLE_RATE, options);
         let waveform_samples = Self::downsample_waveform(&samples, WAVEFORM_VIS_SAMPLES);
 
         info!(

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -224,7 +223,7 @@ func (e *Engine) GetCurrentTimecode(ctx context.Context) (*GenericResult, error)
 func (e *Engine) SelectClipsInRange(ctx context.Context, startSeconds, endSeconds float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"startSeconds": startSeconds,
-		"endSeconds": endSeconds,
+		"endSeconds":   endSeconds,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "selectClipsInRange", string(argsJSON))
 	if err != nil {
@@ -235,7 +234,7 @@ func (e *Engine) SelectClipsInRange(ctx context.Context, startSeconds, endSecond
 
 func (e *Engine) SelectAllOnTrack(ctx context.Context, trackType string, trackIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "selectAllOnTrack", string(argsJSON))
@@ -300,7 +299,7 @@ func (e *Engine) GetSequenceMetadata(ctx context.Context) (*GenericResult, error
 
 func (e *Engine) SetSequenceMetadata(ctx context.Context, key, value string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"key": key,
+		"key":   key,
 		"value": value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setSequenceMetadata", string(argsJSON))

@@ -1,9 +1,15 @@
 package mcp
 
 import (
+	"os"
+	"strconv"
+	"strings"
+
 	"github.com/mark3labs/mcp-go/server"
 	"go.uber.org/zap"
 )
+
+const defaultMCPPageSize = 100
 
 // NewMCPServer creates and configures an MCP server that exposes all
 // Premiere Pro editing tools to AI clients. The returned server is ready
@@ -23,7 +29,9 @@ func NewMCPServer(orchestrator Orchestrator, version string, logger *zap.Logger)
 		server.WithResourceCapabilities(false, true),
 		server.WithPromptCapabilities(true),
 		server.WithRecovery(),
+		server.WithToolHandlerMiddleware(requiredToolArgumentsMiddleware),
 		server.WithLogging(),
+		server.WithPaginationLimit(mcpPageSize(logger)),
 		server.WithInstructions("PremierPro MCP orchestrator — controls Adobe Premiere Pro through natural language. "+
 			"Available tool categories: project inspection, media scanning, timeline editing, "+
 			"script-to-edit pipeline, and export. "+
@@ -31,6 +39,7 @@ func NewMCPServer(orchestrator Orchestrator, version string, logger *zap.Logger)
 	)
 
 	registerTools(s, orchestrator, logger)
+	applyToolProfiles(s, logger)
 	registerResources(s)
 	registerPrompts(s)
 
@@ -40,4 +49,21 @@ func NewMCPServer(orchestrator Orchestrator, version string, logger *zap.Logger)
 	)
 
 	return s
+}
+
+func mcpPageSize(logger *zap.Logger) int {
+	raw := strings.TrimSpace(os.Getenv("MCP_PAGE_SIZE"))
+	if raw == "" {
+		return defaultMCPPageSize
+	}
+
+	pageSize, err := strconv.Atoi(raw)
+	if err != nil || pageSize <= 0 {
+		logger.Warn("ignoring invalid MCP_PAGE_SIZE",
+			zap.String("value", raw),
+			zap.Int("default", defaultMCPPageSize),
+		)
+		return defaultMCPPageSize
+	}
+	return pageSize
 }

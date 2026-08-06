@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -13,10 +16,10 @@ import (
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/config"
-	grpcclients "github.com/anthropics/premierpro-mcp/go-orchestrator/internal/grpc"
-	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/mcp"
-	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/orchestrator"
+	"github.com/ayushozha/AdobePremiereProMCP/go-orchestrator/internal/config"
+	grpcclients "github.com/ayushozha/AdobePremiereProMCP/go-orchestrator/internal/grpc"
+	"github.com/ayushozha/AdobePremiereProMCP/go-orchestrator/internal/mcp"
+	"github.com/ayushozha/AdobePremiereProMCP/go-orchestrator/internal/orchestrator"
 )
 
 // Build-time variables set via -ldflags.
@@ -37,6 +40,7 @@ func run() error {
 	// ── Flags ──────────────────────────────────────────────────────────
 	var (
 		transport = flag.String("transport", "", `MCP transport: "stdio" (default) or "sse"`)
+		host      = flag.String("host", "", "SSE HTTP bind host (only used with --transport=sse; default 127.0.0.1)")
 		port      = flag.Int("port", 0, "SSE HTTP port (only used with --transport=sse)")
 		logLevel  = flag.String("log-level", "", `Log level: "debug", "info", "warn", "error"`)
 	)
@@ -54,6 +58,9 @@ func run() error {
 	}
 	if *port != 0 {
 		cfg.SSEPort = *port
+	}
+	if *host != "" {
+		cfg.SSEHost = *host
 	}
 	if *logLevel != "" {
 		cfg.LogLevel = *logLevel
@@ -75,18 +82,19 @@ func run() error {
 
 	// ── gRPC client connections ───────────────────────────────────────
 	clients, err := grpcclients.NewClients(&grpcclients.ClientsConfig{
-		MediaAddr:    cfg.RustEngineAddr,
-		IntelAddr:    cfg.PythonIntelAddr,
-		PremiereAddr: cfg.TypeScriptBridgeAddr,
-		DialTimeout:  cfg.RustEngineTimeout,
-		CallTimeout:  cfg.TypeScriptBridgeTimeout,
+		MediaAddr:           cfg.RustEngineAddr,
+		IntelAddr:           cfg.PythonIntelAddr,
+		PremiereAddr:        cfg.TypeScriptBridgeAddr,
+		MediaCallTimeout:    cfg.RustEngineTimeout,
+		IntelCallTimeout:    cfg.PythonIntelTimeout,
+		PremiereCallTimeout: cfg.TypeScriptBridgeTimeout,
 	}, logger)
 	if err != nil {
 		return fmt.Errorf("connecting gRPC clients: %w", err)
 	}
 	defer clients.Close()
 
-	logger.Info("all gRPC clients connected",
+	logger.Info("gRPC clients initialized",
 		zap.String("media", cfg.RustEngineAddr),
 		zap.String("intel", cfg.PythonIntelAddr),
 		zap.String("premiere", cfg.TypeScriptBridgeAddr),
@@ -116,19 +124,29 @@ func run() error {
 }
 
 // serveStdio runs the MCP server over stdin/stdout.
-func serveStdio(_ context.Context, mcpSrv *mcpserver.MCPServer, logger *zap.Logger) error {
+func serveStdio(ctx context.Context, mcpSrv *mcpserver.MCPServer, logger *zap.Logger) error {
 	logger.Info("serving MCP over stdio")
-	return mcpserver.ServeStdio(mcpSrv)
+	err := mcpserver.NewStdioServer(mcpSrv).Listen(ctx, os.Stdin, os.Stdout)
+	if errors.Is(err, context.Canceled) {
+		logger.Info("MCP stdio server stopped")
+		return nil
+	}
+	return err
 }
 
 // serveSSE runs the MCP server as an HTTP SSE endpoint.
 func serveSSE(ctx context.Context, mcpSrv *mcpserver.MCPServer, cfg config.Config, logger *zap.Logger) error {
-	addr := fmt.Sprintf(":%d", cfg.SSEPort)
+	addr := net.JoinHostPort(cfg.SSEHost, strconv.Itoa(cfg.SSEPort))
 	logger.Info("serving MCP over SSE", zap.String("addr", addr))
+	baseHost := cfg.SSEHost
+	if baseHost == "0.0.0.0" || baseHost == "::" {
+		baseHost = "localhost"
+	}
+	baseAddr := net.JoinHostPort(baseHost, strconv.Itoa(cfg.SSEPort))
 
 	sseSrv := mcpserver.NewSSEServer(
 		mcpSrv,
-		mcpserver.WithBaseURL(fmt.Sprintf("http://localhost:%d", cfg.SSEPort)),
+		mcpserver.WithBaseURL("http://"+baseAddr),
 	)
 
 	g, ctx := errgroup.WithContext(ctx)

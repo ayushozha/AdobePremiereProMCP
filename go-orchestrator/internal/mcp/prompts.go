@@ -13,102 +13,144 @@ import (
 // Prompts are reusable workflow templates that guide the AI assistant
 // through common video editing tasks step by step.
 func registerPrompts(s *server.MCPServer) {
-	s.AddPrompt(
-		gomcp.NewPrompt("rough-cut",
-			gomcp.WithPromptDescription("Create a rough cut from raw footage"),
-			gomcp.WithArgument("footage_path",
-				gomcp.ArgumentDescription("Absolute path to the directory containing raw footage"),
-				gomcp.RequiredArgument(),
+	if hasRegisteredTools(s,
+		"premiere_scan_assets", "premiere_is_running", "premiere_open",
+		"premiere_create_sequence", "premiere_import_media", "premiere_parse_script",
+		"premiere_place_clip", "premiere_set_audio_level", "premiere_get_timeline",
+	) {
+		addValidatedPrompt(s,
+			gomcp.NewPrompt("rough-cut",
+				gomcp.WithPromptDescription("Create a rough cut from raw footage"),
+				gomcp.WithArgument("footage_path",
+					gomcp.ArgumentDescription("Absolute path to the directory containing raw footage"),
+					gomcp.RequiredArgument(),
+				),
+				gomcp.WithArgument("project_name",
+					gomcp.ArgumentDescription("Name for the new project/sequence"),
+					gomcp.RequiredArgument(),
+				),
+				gomcp.WithArgument("script",
+					gomcp.ArgumentDescription("Script or shot list to guide the edit (optional)"),
+				),
+				gomcp.WithArgument("duration_target",
+					gomcp.ArgumentDescription("Target duration in minutes, e.g. '5' (optional)"),
+				),
 			),
-			gomcp.WithArgument("project_name",
-				gomcp.ArgumentDescription("Name for the new project/sequence"),
-				gomcp.RequiredArgument(),
-			),
-			gomcp.WithArgument("script",
-				gomcp.ArgumentDescription("Script or shot list to guide the edit (optional)"),
-			),
-			gomcp.WithArgument("duration_target",
-				gomcp.ArgumentDescription("Target duration in minutes, e.g. '5' (optional)"),
-			),
-		),
-		handleRoughCutPrompt,
-	)
+			handleRoughCutPrompt,
+		)
+	}
 
-	s.AddPrompt(
-		gomcp.NewPrompt("color-grade",
-			gomcp.WithPromptDescription("Apply color grading to a sequence"),
-			gomcp.WithArgument("style",
-				gomcp.ArgumentDescription("Color grading style: cinematic, warm, cool, desaturated, vintage, high-contrast"),
-				gomcp.RequiredArgument(),
+	if hasRegisteredTools(s,
+		"premiere_get_timeline", "premiere_lumetri_get_all",
+		"premiere_lumetri_set_contrast", "premiere_lumetri_set_shadows",
+		"premiere_lumetri_set_highlights", "premiere_lumetri_set_temperature",
+		"premiere_lumetri_set_tint", "premiere_lumetri_set_saturation",
+		"premiere_lumetri_set_vibrance", "premiere_lumetri_set_blacks",
+		"premiere_lumetri_set_whites", "premiere_lumetri_apply_lut",
+	) {
+		addValidatedPrompt(s,
+			gomcp.NewPrompt("color-grade",
+				gomcp.WithPromptDescription("Apply color grading to a sequence"),
+				gomcp.WithArgument("style",
+					gomcp.ArgumentDescription("Color grading style: cinematic, warm, cool, desaturated, vintage, high-contrast"),
+					gomcp.RequiredArgument(),
+				),
+				gomcp.WithArgument("sequence_id",
+					gomcp.ArgumentDescription("Sequence ID to grade (defaults to active sequence)"),
+				),
+				gomcp.WithArgument("lut_path",
+					gomcp.ArgumentDescription("Path to a .cube LUT file to apply (optional)"),
+				),
 			),
-			gomcp.WithArgument("sequence_id",
-				gomcp.ArgumentDescription("Sequence ID to grade (defaults to active sequence)"),
-			),
-			gomcp.WithArgument("lut_path",
-				gomcp.ArgumentDescription("Path to a .cube LUT file to apply (optional)"),
-			),
-		),
-		handleColorGradePrompt,
-	)
+			handleColorGradePrompt,
+		)
+	}
 
-	s.AddPrompt(
-		gomcp.NewPrompt("social-export",
-			gomcp.WithPromptDescription("Export for social media platforms"),
-			gomcp.WithArgument("platform",
-				gomcp.ArgumentDescription("Target platform: youtube, instagram, tiktok, twitter, linkedin"),
-				gomcp.RequiredArgument(),
+	if hasRegisteredTools(s, "premiere_get_timeline", "premiere_export") {
+		addValidatedPrompt(s,
+			gomcp.NewPrompt("social-export",
+				gomcp.WithPromptDescription("Export for social media platforms"),
+				gomcp.WithArgument("platform",
+					gomcp.ArgumentDescription("Target platform: youtube, instagram, tiktok, twitter, linkedin"),
+					gomcp.RequiredArgument(),
+				),
+				gomcp.WithArgument("output_directory",
+					gomcp.ArgumentDescription("Directory to save exported files"),
+					gomcp.RequiredArgument(),
+				),
+				gomcp.WithArgument("sequence_id",
+					gomcp.ArgumentDescription("Sequence ID to export. If omitted, the workflow first resolves the active sequence ID."),
+				),
 			),
-			gomcp.WithArgument("output_directory",
-				gomcp.ArgumentDescription("Directory to save exported files"),
-				gomcp.RequiredArgument(),
-			),
-			gomcp.WithArgument("sequence_id",
-				gomcp.ArgumentDescription("Sequence ID to export (defaults to active sequence)"),
-			),
-		),
-		handleSocialExportPrompt,
-	)
+			handleSocialExportPrompt,
+		)
+	}
 
-	s.AddPrompt(
-		gomcp.NewPrompt("audio-mix",
-			gomcp.WithPromptDescription("Mix and master audio for a sequence"),
-			gomcp.WithArgument("mix_type",
-				gomcp.ArgumentDescription("Type of mix: dialogue, music-video, podcast, documentary, commercial"),
-				gomcp.RequiredArgument(),
+	if hasRegisteredTools(s,
+		"premiere_get_timeline", "premiere_normalize_audio",
+		"premiere_set_audio_level", "premiere_apply_audio_effect",
+		"premiere_get_audio_mixer_state",
+	) {
+		addValidatedPrompt(s,
+			gomcp.NewPrompt("audio-mix",
+				gomcp.WithPromptDescription("Mix and master audio for a sequence"),
+				gomcp.WithArgument("mix_type",
+					gomcp.ArgumentDescription("Type of mix: dialogue, music-video, podcast, documentary, commercial"),
+					gomcp.RequiredArgument(),
+				),
+				gomcp.WithArgument("sequence_id",
+					gomcp.ArgumentDescription("Sequence ID to mix (defaults to active sequence)"),
+				),
+				gomcp.WithArgument("loudness_standard",
+					gomcp.ArgumentDescription("Loudness standard: broadcast (-24 LUFS), streaming (-14 LUFS), podcast (-16 LUFS)"),
+				),
 			),
-			gomcp.WithArgument("sequence_id",
-				gomcp.ArgumentDescription("Sequence ID to mix (defaults to active sequence)"),
-			),
-			gomcp.WithArgument("loudness_standard",
-				gomcp.ArgumentDescription("Loudness standard: broadcast (-24 LUFS), streaming (-14 LUFS), podcast (-16 LUFS)"),
-			),
-		),
-		handleAudioMixPrompt,
-	)
+			handleAudioMixPrompt,
+		)
+	}
 
-	s.AddPrompt(
-		gomcp.NewPrompt("add-titles",
-			gomcp.WithPromptDescription("Add titles and lower thirds to a sequence"),
-			gomcp.WithArgument("title_text",
-				gomcp.ArgumentDescription("Main title text to display"),
-				gomcp.RequiredArgument(),
+	if hasRegisteredTools(s,
+		"premiere_get_timeline", "premiere_import_mogrt",
+		"premiere_get_mogrt_properties", "premiere_set_mogrt_text",
+	) {
+		addValidatedPrompt(s,
+			gomcp.NewPrompt("add-titles",
+				gomcp.WithPromptDescription("Add titles and lower thirds from a verified Motion Graphics Template"),
+				gomcp.WithArgument("mogrt_path",
+					gomcp.ArgumentDescription("Absolute path to the .mogrt template to place"),
+					gomcp.RequiredArgument(),
+				),
+				gomcp.WithArgument("title_text",
+					gomcp.ArgumentDescription("Main title text to display"),
+					gomcp.RequiredArgument(),
+				),
+				gomcp.WithArgument("style",
+					gomcp.ArgumentDescription("Title style: minimal, bold, cinematic, news, corporate"),
+					gomcp.RequiredArgument(),
+				),
+				gomcp.WithArgument("sequence_id",
+					gomcp.ArgumentDescription("Sequence ID (defaults to active sequence)"),
+				),
+				gomcp.WithArgument("subtitle_text",
+					gomcp.ArgumentDescription("Subtitle or tagline text (optional)"),
+				),
+				gomcp.WithArgument("lower_thirds",
+					gomcp.ArgumentDescription("Comma-separated list of lower third entries as 'name|title' pairs, e.g. 'John Doe|CEO,Jane Smith|CTO'"),
+				),
 			),
-			gomcp.WithArgument("style",
-				gomcp.ArgumentDescription("Title style: minimal, bold, cinematic, news, corporate"),
-				gomcp.RequiredArgument(),
-			),
-			gomcp.WithArgument("sequence_id",
-				gomcp.ArgumentDescription("Sequence ID (defaults to active sequence)"),
-			),
-			gomcp.WithArgument("subtitle_text",
-				gomcp.ArgumentDescription("Subtitle or tagline text (optional)"),
-			),
-			gomcp.WithArgument("lower_thirds",
-				gomcp.ArgumentDescription("Comma-separated list of lower third entries as 'name|title' pairs, e.g. 'John Doe|CEO,Jane Smith|CTO'"),
-			),
-		),
-		handleAddTitlesPrompt,
-	)
+			handleAddTitlesPrompt,
+		)
+	}
+}
+
+func hasRegisteredTools(s *server.MCPServer, names ...string) bool {
+	tools := s.ListTools()
+	for _, name := range names {
+		if tools[name] == nil {
+			return false
+		}
+	}
+	return true
 }
 
 // ---------------------------------------------------------------------------
@@ -317,123 +359,66 @@ func handleSocialExportPrompt(
 	outputDir := req.Params.Arguments["output_directory"]
 	sequenceID := req.Params.Arguments["sequence_id"]
 
-	seqRef := "the active sequence"
-	if sequenceID != "" {
-		seqRef = fmt.Sprintf("sequence %s", sequenceID)
-	}
-
 	var instructions strings.Builder
-	fmt.Fprintf(&instructions, `Export %s for %s.
+	fmt.Fprintf(&instructions, `Export a sequence for %s.
 
 Step-by-step workflow:
 
-1. INSPECT SEQUENCE
-   - Use premiere_get_timeline to review the current sequence
-   - Note the sequence duration and resolution
-`, seqRef, platform)
+`, platform)
 
-	fmt.Fprintf(&instructions, `
-2. EXPORT WITH PLATFORM SETTINGS
-   Export to: %s
-`, outputDir)
-
-	switch strings.ToLower(platform) {
-	case "youtube":
-		fmt.Fprintf(&instructions, `
-   YouTube recommended settings:
-   - Format: H.264 (MP4)
-   - Resolution: 1920x1080 or 3840x2160
-   - Frame rate: match source (typically 24, 30, or 60 fps)
-   - Bitrate: 15-20 Mbps for 1080p, 45-50 Mbps for 4K
-
-   Use premiere_export with:
-   - output_path: %s/<project_name>_youtube.mp4
-   - preset: h264_1080p (or h264_4k for 4K content)
-`, outputDir)
-
-	case "instagram":
-		fmt.Fprintf(&instructions, `
-   Instagram recommended settings:
-   - Feed video: 1080x1080 (1:1) or 1080x1350 (4:5), max 60s
-   - Reels: 1080x1920 (9:16), max 90s
-   - Stories: 1080x1920 (9:16), max 60s
-   - Format: H.264 MP4
-   - Bitrate: 10-15 Mbps
-
-   Consider the content type and export accordingly:
-   - output_path: %s/<project_name>_instagram.mp4
-   - preset: h264_1080p
-
-   NOTE: If the sequence is not in the correct aspect ratio,
-   recommend creating a new sequence with the proper dimensions
-   and re-editing.
-`, outputDir)
-
-	case "tiktok":
-		fmt.Fprintf(&instructions, `
-   TikTok recommended settings:
-   - Resolution: 1080x1920 (9:16 vertical)
-   - Frame rate: 30 fps
-   - Duration: 15s to 3 min (optimal: 15-60s)
-   - Format: H.264 MP4
-   - Bitrate: 10-15 Mbps
-
-   Use premiere_export with:
-   - output_path: %s/<project_name>_tiktok.mp4
-   - preset: h264_1080p
-
-   NOTE: If sequence is 16:9, recommend creating a 9:16 sequence
-   (1080x1920) and repositioning footage.
-`, outputDir)
-
-	case "twitter":
-		fmt.Fprintf(&instructions, `
-   Twitter/X recommended settings:
-   - Resolution: 1280x720 or 1920x1080
-   - Frame rate: 30 or 60 fps
-   - Duration: max 2 min 20 seconds (140s)
-   - Format: H.264 MP4
-   - Max file size: 512 MB
-
-   Use premiere_export with:
-   - output_path: %s/<project_name>_twitter.mp4
-   - preset: h264_1080p
-`, outputDir)
-
-	case "linkedin":
-		fmt.Fprintf(&instructions, `
-   LinkedIn recommended settings:
-   - Resolution: 1920x1080 or 1280x720
-   - Frame rate: 30 fps
-   - Duration: 3 seconds to 10 minutes (optimal: 1-2 min)
-   - Format: H.264 MP4
-   - Max file size: 5 GB
-
-   Use premiere_export with:
-   - output_path: %s/<project_name>_linkedin.mp4
-   - preset: h264_1080p
-`, outputDir)
-
-	default:
-		fmt.Fprintf(&instructions, `
-   For %s, use general web-optimized settings:
-   - Format: H.264 MP4
-   - Resolution: 1920x1080
-   - Bitrate: 15-20 Mbps
-
-   Use premiere_export with:
-   - output_path: %s/<project_name>_%s.mp4
-   - preset: h264_1080p
-`, platform, outputDir, platform)
+	resolvedSequenceID := sequenceID
+	if resolvedSequenceID == "" {
+		resolvedSequenceID = "<sequence_id returned by premiere_get_timeline>"
+		instructions.WriteString(`1. RESOLVE AND INSPECT THE ACTIVE SEQUENCE
+   - Call premiere_get_timeline with an empty argument object.
+   - Copy the returned sequenceId/sequence_id exactly. Stop if there is no active sequence.
+   - Review its resolution, frame rate, duration, captions, and safe-area needs.
+`)
+	} else {
+		fmt.Fprintf(&instructions, `1. INSPECT THE REQUESTED SEQUENCE
+   - Call premiere_get_timeline with sequence_id: %q.
+   - Confirm the response identifies the same sequence before exporting.
+   - Review its resolution, frame rate, duration, captions, and safe-area needs.
+`, resolvedSequenceID)
 	}
 
-	instructions.WriteString(`
-3. VERIFY EXPORT
-   - Check that the export completed successfully
-   - Report the output file path and estimated file size
+	aspectGuidance := "confirm the destination's current aspect-ratio and delivery requirements before export"
+	switch strings.ToLower(platform) {
+	case "youtube":
+		aspectGuidance = "normally preserve the sequence's 16:9 presentation unless the requested YouTube format is vertical"
+	case "instagram":
+		aspectGuidance = "confirm whether the deliverable is Reel/Story (9:16), portrait feed (4:5), or square feed (1:1)"
+	case "tiktok":
+		aspectGuidance = "confirm a 9:16 vertical sequence and safe placement of captions and graphics"
+	case "twitter", "x":
+		aspectGuidance = "confirm the requested X placement and aspect ratio instead of assuming a fixed duration or file-size limit"
+	case "linkedin":
+		aspectGuidance = "confirm the requested LinkedIn placement and aspect ratio instead of assuming a fixed duration or file-size limit"
+	}
 
-FINAL STEP: Report the exported file details.
-`)
+	fmt.Fprintf(&instructions, `
+2. CONFIRM THE DELIVERABLE
+   - %s.
+   - Do not silently resize or reframe the sequence. If its geometry is wrong, report that and use the dedicated reframing workflow first.
+   - Platform upload limits change; verify current platform documentation when limits matter.
+
+3. EXPORT
+   - Choose h264_4k only for a verified 4K deliverable; otherwise choose h264_1080p.
+   - These names are aliases for administrator-configured .epr files. The matching
+     PREMIERE_EXPORT_PRESET_H264_4K or PREMIERE_EXPORT_PRESET_H264_1080P path must exist.
+   - Call premiere_export with every required argument:
+     sequence_id: %s
+     output_path: %s/<project_name>_%s.mp4
+     preset: <the verified configured alias>
+   - If the alias is not configured, stop and report the missing preset mapping; do not claim an export occurred.
+
+4. VERIFY
+   - Require a successful tool result and report its real job/status and output path.
+   - Check that the output file exists when filesystem access is available.
+   - Do not invent or estimate a file size.
+
+FINAL STEP: Report the sequence ID, configured preset alias, actual status, and output path.
+`, aspectGuidance, resolvedSequenceID, outputDir, strings.ToLower(platform))
 
 	return &gomcp.GetPromptResult{
 		Description: fmt.Sprintf("Social media export workflow for %s", platform),
@@ -564,7 +549,7 @@ Step-by-step workflow:
    - Add a limiter on the master to prevent clipping
 
 4. VERIFY MIX
-   - Use premiere_get_audio_mix to review the final mix state
+   - Use premiere_get_audio_mixer_state to review the final mix state
    - Target loudness: %s
    - Ensure no clipping (peaks should not exceed -1 dB)
 
@@ -586,6 +571,7 @@ func handleAddTitlesPrompt(
 	_ context.Context,
 	req gomcp.GetPromptRequest,
 ) (*gomcp.GetPromptResult, error) {
+	mogrtPath := req.Params.Arguments["mogrt_path"]
 	titleText := req.Params.Arguments["title_text"]
 	style := req.Params.Arguments["style"]
 	sequenceID := req.Params.Arguments["sequence_id"]
@@ -598,126 +584,57 @@ func handleAddTitlesPrompt(
 	}
 
 	var instructions strings.Builder
-	fmt.Fprintf(&instructions, `Add titles and lower thirds to %s.
+	fmt.Fprintf(&instructions, `Add titles and lower thirds to %s using the supplied Motion Graphics Template.
 
 Step-by-step workflow:
 
 1. INSPECT TIMELINE
    - Use premiere_get_timeline to see the current sequence state
-   - Identify available video tracks for title placement
-   - Note the sequence duration for timing
+   - Record the current clips so the newly imported MOGRT can be identified
 
-2. ADD MAIN TITLE
-   Use premiere_add_text with:
-   - text: "%s"
-   - Position at the beginning of the sequence (position_seconds: 0)
-   - Duration: 4-5 seconds
-`, seqRef, titleText)
+2. PLACE AND INSPECT THE TEMPLATE
+   - Use premiere_import_mogrt with mogrt_path: %q
+   - Re-read the timeline and identify the newly inserted MOGRT clip
+   - Use premiere_get_mogrt_properties on that exact clip
+   - Stop if the import is not visible in the timeline or no editable text property is exposed
 
-	switch strings.ToLower(style) {
-	case "minimal":
-		instructions.WriteString(`
-   Minimal style:
-   - font_size: 60
-   - color: #FFFFFF (white)
-   - x: 0.5 (centered)
-   - y: 0.45 (slightly above center)
-   - Clean, simple look — no background or effects needed
-`)
-	case "bold":
-		instructions.WriteString(`
-   Bold style:
-   - font_size: 96
-   - color: #FFFFFF (white)
-   - x: 0.5 (centered)
-   - y: 0.5 (centered)
-   - Consider adding a drop shadow or outline effect
-`)
-	case "cinematic":
-		instructions.WriteString(`
-   Cinematic style:
-   - font_size: 72
-   - color: #F5F5DC (warm off-white)
-   - x: 0.5 (centered)
-   - y: 0.55 (slightly below center)
-   - Add a subtle fade-in transition on the text clip
-   - Consider letter spacing if available
-`)
-	case "news":
-		instructions.WriteString(`
-   News style:
-   - font_size: 48
-   - color: #FFFFFF (white)
-   - x: 0.5 (centered)
-   - y: 0.15 (upper area)
-   - Typically uses a colored background bar
-`)
-	case "corporate":
-		instructions.WriteString(`
-   Corporate style:
-   - font_size: 54
-   - color: #333333 (dark gray) or #FFFFFF on dark backgrounds
-   - x: 0.5 (centered)
-   - y: 0.45
-   - Clean, professional look
-`)
-	default:
+3. SET AND VERIFY THE MAIN TITLE
+   - Find the text property index returned by premiere_get_mogrt_properties
+   - Use premiere_set_mogrt_text to set it to %q
+   - Read the MOGRT properties again and require the returned value to match exactly
+`, seqRef, mogrtPath, titleText)
+
+	if style != "" {
 		fmt.Fprintf(&instructions, `
-   For "%s" style, use appropriate font size (48-72),
-   color, and positioning.
+   Requested visual style: %q
+   - Change style properties only when the template exposes a clearly named matching property
+   - Use premiere_set_mogrt_property and read the properties back after each change
+   - Do not invent font, color, or layout controls that the template does not expose
 `, style)
 	}
 
 	if subtitleText != "" {
 		fmt.Fprintf(&instructions, `
-3. ADD SUBTITLE/TAGLINE
-   Use premiere_add_text with:
-   - text: "%s"
-   - Place directly after or overlapping with the main title
-   - Use a smaller font_size (e.g., 36-42)
-   - Position below the main title (y: 0.6)
+4. OPTIONAL SUBTITLE/TAGLINE
+   - If the same MOGRT exposes a second text property, set it to %q and read it back
+   - Otherwise stop and request a subtitle-capable template; do not create an unverified text clip
 `, subtitleText)
 	}
 
 	if lowerThirds != "" {
-		instructions.WriteString("\n")
-		if subtitleText != "" {
-			instructions.WriteString("4. ADD LOWER THIRDS\n")
-		} else {
-			instructions.WriteString("3. ADD LOWER THIRDS\n")
-		}
-		instructions.WriteString("   For each person/speaker, add a lower third:\n\n")
-
-		entries := strings.Split(lowerThirds, ",")
-		for _, entry := range entries {
-			parts := strings.SplitN(strings.TrimSpace(entry), "|", 2)
-			if len(parts) == 2 {
-				fmt.Fprintf(&instructions, `   - Name: %s, Title: %s
-     Use premiere_add_text:
-     - text: "%s\n%s"
-     - font_size: 36
-     - x: 0.2 (left-aligned area)
-     - y: 0.85 (lower third position)
-     - duration_seconds: 4
-
-`, parts[0], parts[1], parts[0], parts[1])
-			} else if len(parts) == 1 {
-				fmt.Fprintf(&instructions, `   - Name: %s
-     Use premiere_add_text:
-     - text: "%s"
-     - font_size: 36
-     - x: 0.2 (left-aligned area)
-     - y: 0.85 (lower third position)
-     - duration_seconds: 4
-
-`, parts[0], parts[0])
-			}
-		}
+		fmt.Fprintf(&instructions, `
+5. OPTIONAL LOWER THIRDS
+   Requested entries: %q
+   - Require an explicit timeline position for every entry (or a named marker that supplies it)
+   - Import a fresh copy of the supplied MOGRT for each entry, set only exposed text properties, and read each copy back
+   - If the template lacks separate name/title fields, report that limitation before placing anything
+`, lowerThirds)
 	}
 
 	instructions.WriteString(`
-FINAL STEP: Use premiere_get_timeline to verify all titles were placed
-correctly and report the title positions and durations.
+FINAL STEP: Use premiere_get_timeline and premiere_get_mogrt_properties to
+verify every placed title. Report the track, clip index, timing, template path,
+and exact text values. A successful import alone is not proof that text changed.
 `)
 
 	return &gomcp.GetPromptResult{

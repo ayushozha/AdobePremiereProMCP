@@ -20,7 +20,6 @@ from src.models import (
     VideoInfo,
 )
 
-
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 
@@ -79,9 +78,7 @@ def generator() -> EDLGenerator:
 
 
 class TestBasicGeneration:
-    def test_generates_edl_from_segments_and_matches(
-        self, generator: EDLGenerator
-    ) -> None:
+    def test_generates_edl_from_segments_and_matches(self, generator: EDLGenerator) -> None:
         segments = [_make_segment(0), _make_segment(1)]
         matches = [_make_match(0, "a1"), _make_match(1, "a2")]
         assets = [_make_asset("a1"), _make_asset("a2")]
@@ -101,9 +98,7 @@ class TestBasicGeneration:
         assert "a3" in asset_ids
         # Segment 1 has no match, so its asset should not appear
 
-    def test_uses_highest_confidence_match_per_segment(
-        self, generator: EDLGenerator
-    ) -> None:
+    def test_uses_highest_confidence_match_per_segment(self, generator: EDLGenerator) -> None:
         segments = [_make_segment(0)]
         matches = [
             _make_match(0, "low", confidence=0.3),
@@ -115,9 +110,7 @@ class TestBasicGeneration:
         video_entries = [e for e in edl.entries if e.source_asset_id in ("low", "high")]
         assert any(e.source_asset_id == "high" for e in video_entries)
 
-    def test_empty_segments_produces_empty_edl(
-        self, generator: EDLGenerator
-    ) -> None:
+    def test_empty_segments_produces_empty_edl(self, generator: EDLGenerator) -> None:
         edl = generator.generate([], [], [], _default_settings())
         assert len(edl.entries) == 0
 
@@ -150,9 +143,7 @@ class TestTrackAssignment:
         video_entries = [e for e in edl.entries if e.track.type == TrackType.VIDEO]
         assert len(video_entries) >= 1
 
-    def test_broll_on_different_track_than_dialogue(
-        self, generator: EDLGenerator
-    ) -> None:
+    def test_broll_on_different_track_than_dialogue(self, generator: EDLGenerator) -> None:
         segments = [
             _make_segment(0, SegmentType.DIALOGUE),
             _make_segment(1, SegmentType.BROLL),
@@ -205,9 +196,7 @@ class TestTimelinePosition:
             first = edl.entries[0]
             assert first.timeline_range.in_point.to_seconds() < 1.0
 
-    def test_entries_progress_along_timeline(
-        self, generator: EDLGenerator
-    ) -> None:
+    def test_entries_progress_along_timeline(self, generator: EDLGenerator) -> None:
         segments = [
             _make_segment(0, duration=3.0),
             _make_segment(1, duration=4.0),
@@ -266,9 +255,7 @@ class TestTransitionInsertion:
         entries_with_transitions = [e for e in edl.entries if e.transition is not None]
         assert len(entries_with_transitions) >= 1
 
-    def test_cut_transition_produces_no_transition_object(
-        self, generator: EDLGenerator
-    ) -> None:
+    def test_cut_transition_produces_no_transition_object(self, generator: EDLGenerator) -> None:
         segments = [_make_segment(0), _make_segment(1)]
         matches = [_make_match(0, "a1"), _make_match(1, "a2")]
         assets = [_make_asset("a1"), _make_asset("a2")]

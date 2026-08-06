@@ -7,7 +7,7 @@
 package mcp
 
 import (
-	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/orchestrator"
+	"github.com/ayushozha/AdobePremiereProMCP/go-orchestrator/internal/orchestrator"
 )
 
 // Orchestrator is an alias for the canonical interface in the orchestrator package.

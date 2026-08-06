@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -15,7 +14,7 @@ import (
 func (e *Engine) LumetriGetAll(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriGetAll", string(argsJSON))
 	if err != nil {
@@ -28,8 +27,8 @@ func (e *Engine) LumetriGetAll(ctx context.Context, trackIndex, clipIndex int) (
 func (e *Engine) LumetriSetExposure2(ctx context.Context, trackIndex, clipIndex int, value float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"value": value,
+		"clipIndex":  clipIndex,
+		"value":      value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriSetExposure2", string(argsJSON))
 	if err != nil {
@@ -42,8 +41,8 @@ func (e *Engine) LumetriSetExposure2(ctx context.Context, trackIndex, clipIndex 
 func (e *Engine) LumetriSetContrast2(ctx context.Context, trackIndex, clipIndex int, value float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"value": value,
+		"clipIndex":  clipIndex,
+		"value":      value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriSetContrast2", string(argsJSON))
 	if err != nil {
@@ -56,8 +55,8 @@ func (e *Engine) LumetriSetContrast2(ctx context.Context, trackIndex, clipIndex 
 func (e *Engine) LumetriSetHighlights(ctx context.Context, trackIndex, clipIndex int, value float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"value": value,
+		"clipIndex":  clipIndex,
+		"value":      value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriSetHighlights", string(argsJSON))
 	if err != nil {
@@ -70,8 +69,8 @@ func (e *Engine) LumetriSetHighlights(ctx context.Context, trackIndex, clipIndex
 func (e *Engine) LumetriSetShadows(ctx context.Context, trackIndex, clipIndex int, value float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"value": value,
+		"clipIndex":  clipIndex,
+		"value":      value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriSetShadows", string(argsJSON))
 	if err != nil {
@@ -84,8 +83,8 @@ func (e *Engine) LumetriSetShadows(ctx context.Context, trackIndex, clipIndex in
 func (e *Engine) LumetriSetWhites(ctx context.Context, trackIndex, clipIndex int, value float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"value": value,
+		"clipIndex":  clipIndex,
+		"value":      value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriSetWhites", string(argsJSON))
 	if err != nil {
@@ -98,8 +97,8 @@ func (e *Engine) LumetriSetWhites(ctx context.Context, trackIndex, clipIndex int
 func (e *Engine) LumetriSetBlacks(ctx context.Context, trackIndex, clipIndex int, value float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"value": value,
+		"clipIndex":  clipIndex,
+		"value":      value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriSetBlacks", string(argsJSON))
 	if err != nil {
@@ -112,8 +111,8 @@ func (e *Engine) LumetriSetBlacks(ctx context.Context, trackIndex, clipIndex int
 func (e *Engine) LumetriSetTemperature2(ctx context.Context, trackIndex, clipIndex int, value float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"value": value,
+		"clipIndex":  clipIndex,
+		"value":      value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriSetTemperature2", string(argsJSON))
 	if err != nil {
@@ -126,8 +125,8 @@ func (e *Engine) LumetriSetTemperature2(ctx context.Context, trackIndex, clipInd
 func (e *Engine) LumetriSetTint2(ctx context.Context, trackIndex, clipIndex int, value float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"value": value,
+		"clipIndex":  clipIndex,
+		"value":      value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriSetTint2", string(argsJSON))
 	if err != nil {
@@ -140,8 +139,8 @@ func (e *Engine) LumetriSetTint2(ctx context.Context, trackIndex, clipIndex int,
 func (e *Engine) LumetriSetSaturation2(ctx context.Context, trackIndex, clipIndex int, value float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"value": value,
+		"clipIndex":  clipIndex,
+		"value":      value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriSetSaturation2", string(argsJSON))
 	if err != nil {
@@ -154,8 +153,8 @@ func (e *Engine) LumetriSetSaturation2(ctx context.Context, trackIndex, clipInde
 func (e *Engine) LumetriSetVibrance(ctx context.Context, trackIndex, clipIndex int, value float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"value": value,
+		"clipIndex":  clipIndex,
+		"value":      value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriSetVibrance", string(argsJSON))
 	if err != nil {
@@ -168,8 +167,8 @@ func (e *Engine) LumetriSetVibrance(ctx context.Context, trackIndex, clipIndex i
 func (e *Engine) LumetriSetFadedFilm(ctx context.Context, trackIndex, clipIndex int, value float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"value": value,
+		"clipIndex":  clipIndex,
+		"value":      value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriSetFadedFilm", string(argsJSON))
 	if err != nil {
@@ -182,8 +181,8 @@ func (e *Engine) LumetriSetFadedFilm(ctx context.Context, trackIndex, clipIndex 
 func (e *Engine) LumetriSetSharpen(ctx context.Context, trackIndex, clipIndex int, value float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"value": value,
+		"clipIndex":  clipIndex,
+		"value":      value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriSetSharpen", string(argsJSON))
 	if err != nil {
@@ -195,10 +194,10 @@ func (e *Engine) LumetriSetSharpen(ctx context.Context, trackIndex, clipIndex in
 // LumetriSetCurvePoint sets a control point on a Lumetri Color curve.
 func (e *Engine) LumetriSetCurvePoint(ctx context.Context, trackIndex, clipIndex int, channel string, inputValue, outputValue float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"channel": channel,
-		"inputValue": inputValue,
+		"trackIndex":  trackIndex,
+		"clipIndex":   clipIndex,
+		"channel":     channel,
+		"inputValue":  inputValue,
 		"outputValue": outputValue,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriSetCurvePoint", string(argsJSON))
@@ -212,8 +211,8 @@ func (e *Engine) LumetriSetCurvePoint(ctx context.Context, trackIndex, clipIndex
 func (e *Engine) LumetriSetShadowColor(ctx context.Context, trackIndex, clipIndex int, hue, saturation, brightness float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"hue": hue,
+		"clipIndex":  clipIndex,
+		"hue":        hue,
 		"saturation": saturation,
 		"brightness": brightness,
 	})
@@ -228,8 +227,8 @@ func (e *Engine) LumetriSetShadowColor(ctx context.Context, trackIndex, clipInde
 func (e *Engine) LumetriSetMidtoneColor(ctx context.Context, trackIndex, clipIndex int, hue, saturation, brightness float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"hue": hue,
+		"clipIndex":  clipIndex,
+		"hue":        hue,
 		"saturation": saturation,
 		"brightness": brightness,
 	})
@@ -244,8 +243,8 @@ func (e *Engine) LumetriSetMidtoneColor(ctx context.Context, trackIndex, clipInd
 func (e *Engine) LumetriSetHighlightColor(ctx context.Context, trackIndex, clipIndex int, hue, saturation, brightness float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"hue": hue,
+		"clipIndex":  clipIndex,
+		"hue":        hue,
 		"saturation": saturation,
 		"brightness": brightness,
 	})
@@ -260,8 +259,8 @@ func (e *Engine) LumetriSetHighlightColor(ctx context.Context, trackIndex, clipI
 func (e *Engine) LumetriSetVignetteAmount(ctx context.Context, trackIndex, clipIndex int, value float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"value": value,
+		"clipIndex":  clipIndex,
+		"value":      value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriSetVignetteAmount", string(argsJSON))
 	if err != nil {
@@ -274,8 +273,8 @@ func (e *Engine) LumetriSetVignetteAmount(ctx context.Context, trackIndex, clipI
 func (e *Engine) LumetriSetVignetteMidpoint(ctx context.Context, trackIndex, clipIndex int, value float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"value": value,
+		"clipIndex":  clipIndex,
+		"value":      value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriSetVignetteMidpoint", string(argsJSON))
 	if err != nil {
@@ -288,8 +287,8 @@ func (e *Engine) LumetriSetVignetteMidpoint(ctx context.Context, trackIndex, cli
 func (e *Engine) LumetriSetVignetteRoundness(ctx context.Context, trackIndex, clipIndex int, value float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"value": value,
+		"clipIndex":  clipIndex,
+		"value":      value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriSetVignetteRoundness", string(argsJSON))
 	if err != nil {
@@ -302,8 +301,8 @@ func (e *Engine) LumetriSetVignetteRoundness(ctx context.Context, trackIndex, cl
 func (e *Engine) LumetriSetVignetteFeather(ctx context.Context, trackIndex, clipIndex int, value float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"value": value,
+		"clipIndex":  clipIndex,
+		"value":      value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriSetVignetteFeather", string(argsJSON))
 	if err != nil {
@@ -316,8 +315,8 @@ func (e *Engine) LumetriSetVignetteFeather(ctx context.Context, trackIndex, clip
 func (e *Engine) LumetriApplyLUT(ctx context.Context, trackIndex, clipIndex int, lutPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"lutPath": lutPath,
+		"clipIndex":  clipIndex,
+		"lutPath":    lutPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriApplyLUT", string(argsJSON))
 	if err != nil {
@@ -330,7 +329,7 @@ func (e *Engine) LumetriApplyLUT(ctx context.Context, trackIndex, clipIndex int,
 func (e *Engine) LumetriRemoveLUT(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriRemoveLUT", string(argsJSON))
 	if err != nil {
@@ -343,7 +342,7 @@ func (e *Engine) LumetriRemoveLUT(ctx context.Context, trackIndex, clipIndex int
 func (e *Engine) LumetriAutoColor(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriAutoColor", string(argsJSON))
 	if err != nil {
@@ -356,7 +355,7 @@ func (e *Engine) LumetriAutoColor(ctx context.Context, trackIndex, clipIndex int
 func (e *Engine) LumetriReset(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriReset", string(argsJSON))
 	if err != nil {
@@ -369,7 +368,7 @@ func (e *Engine) LumetriReset(ctx context.Context, trackIndex, clipIndex int) (*
 func (e *Engine) GetColorInfo(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "getColorInfo", string(argsJSON))
 	if err != nil {
@@ -382,7 +381,7 @@ func (e *Engine) GetColorInfo(ctx context.Context, trackIndex, clipIndex int) (*
 func (e *Engine) CopyColorGrade(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "copyColorGrade", string(argsJSON))
 	if err != nil {
@@ -395,7 +394,7 @@ func (e *Engine) CopyColorGrade(ctx context.Context, trackIndex, clipIndex int) 
 func (e *Engine) PasteColorGrade(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "pasteColorGrade", string(argsJSON))
 	if err != nil {
@@ -407,8 +406,8 @@ func (e *Engine) PasteColorGrade(ctx context.Context, trackIndex, clipIndex int)
 // ApplyColorGradeToAll applies a color grade from a source clip to all clips on a track.
 func (e *Engine) ApplyColorGradeToAll(ctx context.Context, srcTrackIndex, srcClipIndex, destTrackIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"srcTrackIndex": srcTrackIndex,
-		"srcClipIndex": srcClipIndex,
+		"srcTrackIndex":  srcTrackIndex,
+		"srcClipIndex":   srcClipIndex,
 		"destTrackIndex": destTrackIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "applyColorGradeToAll", string(argsJSON))
@@ -422,7 +421,7 @@ func (e *Engine) ApplyColorGradeToAll(ctx context.Context, srcTrackIndex, srcCli
 func (e *Engine) LumetriAutoWhiteBalance(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "lumetriAutoWhiteBalance", string(argsJSON))
 	if err != nil {

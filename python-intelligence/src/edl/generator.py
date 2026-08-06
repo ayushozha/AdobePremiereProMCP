@@ -12,15 +12,14 @@ import uuid
 from src.models import (
     AssetInfo,
     AssetMatch,
+    EditDecisionList,
     EDLEntry,
     EDLSettings,
-    EditDecisionList,
     Position,
     ScriptSegment,
     SegmentType,
     TextOverlay,
     TextStyle,
-    Timecode,
     TimeRange,
     TrackTarget,
     TrackType,
@@ -159,9 +158,7 @@ class EDLGenerator:
                 segment_duration = asset_duration
 
             # Source range.
-            source_range = self._compute_source_range(
-                match, segment_duration, calc
-            )
+            source_range = self._compute_source_range(match, segment_duration, calc)
 
             # Timeline range -- cumulative position from start.
             timeline_start = calc.calculate_position(seg.index, durations)
@@ -216,13 +213,8 @@ class EDLGenerator:
             entry_index += 1
 
         # ── Apply transition overlap ─────────────────────────────────
-        if (
-            settings.default_transition_duration > 0
-            and settings.default_transition != "cut"
-        ):
-            entries = calc.calculate_transitions(
-                entries, settings.default_transition_duration
-            )
+        if settings.default_transition_duration > 0 and settings.default_transition != "cut":
+            entries = calc.calculate_transitions(entries, settings.default_transition_duration)
 
         # ── Check for timeline gaps on V1 ────────────────────────────
         gap_warnings = self._detect_timeline_gaps(entries, calc)
@@ -316,9 +308,7 @@ class EDLGenerator:
         # visual_direction.
         if segment.type == SegmentType.TRANSITION:
             if segment.visual_direction:
-                transition_type = (
-                    segment.visual_direction.strip().lower().replace(" ", "_")
-                )
+                transition_type = segment.visual_direction.strip().lower().replace(" ", "_")
             if duration <= 0:
                 duration = 1.0  # Sensible fallback.
 
@@ -345,9 +335,7 @@ class EDLGenerator:
         """Build a :class:`TextOverlay` from a title or lower-third segment."""
         timeline_start = calc.calculate_position(segment.index, durations)
         duration = (
-            segment.estimated_duration_seconds
-            if segment.estimated_duration_seconds > 0
-            else 3.0
+            segment.estimated_duration_seconds if segment.estimated_duration_seconds > 0 else 3.0
         )
 
         if segment.type == SegmentType.LOWER_THIRD:

@@ -144,7 +144,7 @@ class RhythmAnalyzer:
             # Progress 0..1
             t = i / (n - 1) if n > 1 else 0.0
             # Exponential decay from 6 s down to 2 s
-            duration = 6.0 - 4.0 * (t ** 1.5)
+            duration = 6.0 - 4.0 * (t**1.5)
             result.append(round(max(1.5, duration), 2))
         return result
 

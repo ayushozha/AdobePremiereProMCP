@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -15,7 +14,7 @@ import (
 func (e *Engine) CreateVerticalVersion(ctx context.Context, sequenceIndex int, outputName string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"outputName": outputName,
+		"outputName":    outputName,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createVerticalVersion", string(argsJSON))
 	if err != nil {
@@ -28,7 +27,7 @@ func (e *Engine) CreateVerticalVersion(ctx context.Context, sequenceIndex int, o
 func (e *Engine) CreateSquareVersion(ctx context.Context, sequenceIndex int, outputName string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"outputName": outputName,
+		"outputName":    outputName,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createSquareVersion", string(argsJSON))
 	if err != nil {
@@ -41,7 +40,7 @@ func (e *Engine) CreateSquareVersion(ctx context.Context, sequenceIndex int, out
 func (e *Engine) AddSafeZoneGuides(ctx context.Context, sequenceIndex int, platform string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"platform": platform,
+		"platform":      platform,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "addSafeZoneGuides", string(argsJSON))
 	if err != nil {
@@ -54,7 +53,7 @@ func (e *Engine) AddSafeZoneGuides(ctx context.Context, sequenceIndex int, platf
 func (e *Engine) OptimizeForPlatform(ctx context.Context, sequenceIndex int, platform string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"platform": platform,
+		"platform":      platform,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "optimizeForPlatform", string(argsJSON))
 	if err != nil {
@@ -67,9 +66,9 @@ func (e *Engine) OptimizeForPlatform(ctx context.Context, sequenceIndex int, pla
 func (e *Engine) CreateThumbnailFromFrame(ctx context.Context, sequenceIndex int, timeSeconds float64, outputPath, addText string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"timeSeconds": timeSeconds,
-		"outputPath": outputPath,
-		"addText": addText,
+		"timeSeconds":   timeSeconds,
+		"outputPath":    outputPath,
+		"addText":       addText,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createThumbnailFromFrame", string(argsJSON))
 	if err != nil {
@@ -85,7 +84,7 @@ func (e *Engine) CreateThumbnailFromFrame(ctx context.Context, sequenceIndex int
 // SplitIntoSegments splits a long video into segments under a max duration.
 func (e *Engine) SplitIntoSegments(ctx context.Context, sequenceIndex int, maxDurationSeconds float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"sequenceIndex": sequenceIndex,
+		"sequenceIndex":      sequenceIndex,
 		"maxDurationSeconds": maxDurationSeconds,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "splitIntoSegments", string(argsJSON))
@@ -99,8 +98,8 @@ func (e *Engine) SplitIntoSegments(ctx context.Context, sequenceIndex int, maxDu
 func (e *Engine) CreateChaptersFile(ctx context.Context, sequenceIndex int, outputPath, format string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"outputPath": outputPath,
-		"format": format,
+		"outputPath":    outputPath,
+		"format":        format,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createChaptersFile", string(argsJSON))
 	if err != nil {
@@ -112,10 +111,10 @@ func (e *Engine) CreateChaptersFile(ctx context.Context, sequenceIndex int, outp
 // ExtractSegmentByMarkers extracts a segment between two markers.
 func (e *Engine) ExtractSegmentByMarkers(ctx context.Context, sequenceIndex, startMarkerIndex, endMarkerIndex int, outputName string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"sequenceIndex": sequenceIndex,
+		"sequenceIndex":    sequenceIndex,
 		"startMarkerIndex": startMarkerIndex,
-		"endMarkerIndex": endMarkerIndex,
-		"outputName": outputName,
+		"endMarkerIndex":   endMarkerIndex,
+		"outputName":       outputName,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "extractSegmentByMarkers", string(argsJSON))
 	if err != nil {
@@ -127,9 +126,9 @@ func (e *Engine) ExtractSegmentByMarkers(ctx context.Context, sequenceIndex, sta
 // CreateTeaser auto-creates a short teaser from a sequence.
 func (e *Engine) CreateTeaser(ctx context.Context, sequenceIndex int, durationSeconds float64, outputName string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"sequenceIndex": sequenceIndex,
+		"sequenceIndex":   sequenceIndex,
 		"durationSeconds": durationSeconds,
-		"outputName": outputName,
+		"outputName":      outputName,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createTeaser", string(argsJSON))
 	if err != nil {
@@ -141,9 +140,9 @@ func (e *Engine) CreateTeaser(ctx context.Context, sequenceIndex int, durationSe
 // CreateBumper creates an intro/outro bumper sequence.
 func (e *Engine) CreateBumper(ctx context.Context, text string, duration float64, style, outputName string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"text": text,
-		"duration": duration,
-		"style": style,
+		"text":       text,
+		"duration":   duration,
+		"style":      style,
 		"outputName": outputName,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createBumper", string(argsJSON))
@@ -161,8 +160,8 @@ func (e *Engine) CreateBumper(ctx context.Context, text string, duration float64
 func (e *Engine) ExportForBroadcast(ctx context.Context, sequenceIndex int, outputPath, standard string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"outputPath": outputPath,
-		"standard": standard,
+		"outputPath":    outputPath,
+		"standard":      standard,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "exportForBroadcast", string(argsJSON))
 	if err != nil {
@@ -175,8 +174,8 @@ func (e *Engine) ExportForBroadcast(ctx context.Context, sequenceIndex int, outp
 func (e *Engine) ExportForStreaming(ctx context.Context, sequenceIndex int, outputPath, platform string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"outputPath": outputPath,
-		"platform": platform,
+		"outputPath":    outputPath,
+		"platform":      platform,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "exportForStreaming", string(argsJSON))
 	if err != nil {
@@ -189,8 +188,8 @@ func (e *Engine) ExportForStreaming(ctx context.Context, sequenceIndex int, outp
 func (e *Engine) ExportForArchive(ctx context.Context, sequenceIndex int, outputPath, codec string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"outputPath": outputPath,
-		"codec": codec,
+		"outputPath":    outputPath,
+		"codec":         codec,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "exportForArchive", string(argsJSON))
 	if err != nil {
@@ -203,8 +202,8 @@ func (e *Engine) ExportForArchive(ctx context.Context, sequenceIndex int, output
 func (e *Engine) ExportForWeb(ctx context.Context, sequenceIndex int, outputPath, quality string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"outputPath": outputPath,
-		"quality": quality,
+		"outputPath":    outputPath,
+		"quality":       quality,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "exportForWeb", string(argsJSON))
 	if err != nil {
@@ -217,8 +216,8 @@ func (e *Engine) ExportForWeb(ctx context.Context, sequenceIndex int, outputPath
 func (e *Engine) ExportForMobile(ctx context.Context, sequenceIndex int, outputPath, device string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"outputPath": outputPath,
-		"device": device,
+		"outputPath":    outputPath,
+		"device":        device,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "exportForMobile", string(argsJSON))
 	if err != nil {
@@ -235,10 +234,10 @@ func (e *Engine) ExportForMobile(ctx context.Context, sequenceIndex int, outputP
 func (e *Engine) SetDistributionMetadata(ctx context.Context, sequenceIndex int, title, description, tags, category string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"title": title,
-		"description": description,
-		"tags": tags,
-		"category": category,
+		"title":         title,
+		"description":   description,
+		"tags":          tags,
+		"category":      category,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setDistributionMetadata", string(argsJSON))
 	if err != nil {
@@ -262,7 +261,7 @@ func (e *Engine) GetDistributionMetadata(ctx context.Context, sequenceIndex int)
 // EmbedThumbnailInFile embeds a thumbnail image in a video file.
 func (e *Engine) EmbedThumbnailInFile(ctx context.Context, videoPath, thumbnailPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"videoPath": videoPath,
+		"videoPath":     videoPath,
 		"thumbnailPath": thumbnailPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "embedThumbnailInFile", string(argsJSON))
@@ -275,7 +274,7 @@ func (e *Engine) EmbedThumbnailInFile(ctx context.Context, videoPath, thumbnailP
 // AddChapterMetadata adds chapter metadata to an exported video file.
 func (e *Engine) AddChapterMetadata(ctx context.Context, videoPath, chaptersJSON string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"videoPath": videoPath,
+		"videoPath":    videoPath,
 		"chaptersJSON": chaptersJSON,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "addChapterMetadata", string(argsJSON))
@@ -289,7 +288,7 @@ func (e *Engine) AddChapterMetadata(ctx context.Context, videoPath, chaptersJSON
 func (e *Engine) SetContentRating(ctx context.Context, sequenceIndex int, rating string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"rating": rating,
+		"rating":        rating,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setContentRating", string(argsJSON))
 	if err != nil {
@@ -306,7 +305,7 @@ func (e *Engine) SetContentRating(ctx context.Context, sequenceIndex int, rating
 func (e *Engine) RunQAChecklist(ctx context.Context, sequenceIndex int, specsJSON string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"specsJSON": specsJSON,
+		"specsJSON":     specsJSON,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "runQAChecklist", string(argsJSON))
 	if err != nil {
@@ -319,7 +318,7 @@ func (e *Engine) RunQAChecklist(ctx context.Context, sequenceIndex int, specsJSO
 func (e *Engine) CheckLoudnessCompliance(ctx context.Context, sequenceIndex int, standard string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"standard": standard,
+		"standard":      standard,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "checkLoudnessCompliance", string(argsJSON))
 	if err != nil {
@@ -332,7 +331,7 @@ func (e *Engine) CheckLoudnessCompliance(ctx context.Context, sequenceIndex int,
 func (e *Engine) CheckColorCompliance(ctx context.Context, sequenceIndex int, standard string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"standard": standard,
+		"standard":      standard,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "checkColorCompliance", string(argsJSON))
 	if err != nil {
@@ -373,9 +372,9 @@ func (e *Engine) ValidateClosedCaptions(ctx context.Context, sequenceIndex int) 
 func (e *Engine) CreateVersionedExport(ctx context.Context, sequenceIndex int, outputDir, versionName, notes string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"outputDir": outputDir,
-		"versionName": versionName,
-		"notes": notes,
+		"outputDir":     outputDir,
+		"versionName":   versionName,
+		"notes":         notes,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createVersionedExport", string(argsJSON))
 	if err != nil {
@@ -413,7 +412,7 @@ func (e *Engine) CompareExportVersions(ctx context.Context, version1Path, versio
 func (e *Engine) CreateApprovalPackage(ctx context.Context, sequenceIndex int, outputDir string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"outputDir": outputDir,
+		"outputDir":     outputDir,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createApprovalPackage", string(argsJSON))
 	if err != nil {
@@ -426,7 +425,7 @@ func (e *Engine) CreateApprovalPackage(ctx context.Context, sequenceIndex int, o
 func (e *Engine) ArchiveAndCleanup(ctx context.Context, sequenceIndex int, archiveDir string, deleteRenders bool) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"archiveDir": archiveDir,
+		"archiveDir":    archiveDir,
 		"deleteRenders": deleteRenders,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "archiveAndCleanup", string(argsJSON))

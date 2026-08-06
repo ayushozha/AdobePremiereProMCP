@@ -7,7 +7,7 @@ package grpc
 import (
 	"context"
 
-	orch "github.com/anthropics/premierpro-mcp/go-orchestrator/internal/orchestrator"
+	orch "github.com/ayushozha/AdobePremiereProMCP/go-orchestrator/internal/orchestrator"
 )
 
 // ---------------------------------------------------------------------------
@@ -314,6 +314,27 @@ func (a *MediaAdapter) ProbeMedia(ctx context.Context, filePath string) (*orch.A
 	return convertGRPCAssetToOrchestrator(&res.Asset), nil
 }
 
+func (a *MediaAdapter) GenerateThumbnail(ctx context.Context, filePath string, opts *orch.ThumbnailOptions) (*orch.ThumbnailResult, error) {
+	params := GenerateThumbnailParams{FilePath: filePath}
+	if opts != nil {
+		params.Timestamp = secondsToNativeTimecode(opts.TimestampSeconds, 24)
+		params.OutputSize = Resolution{Width: opts.Width, Height: opts.Height}
+		params.OutputFormat = opts.OutputFormat
+	}
+	res, err := a.C.GenerateThumbnail(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	return &orch.ThumbnailResult{
+		ThumbnailData: res.ThumbnailData,
+		OutputPath:    res.OutputPath,
+		ActualSize: orch.Resolution{
+			Width:  res.ActualSize.Width,
+			Height: res.ActualSize.Height,
+		},
+	}, nil
+}
+
 func (a *MediaAdapter) AnalyzeWaveform(ctx context.Context, filePath string, opts *orch.WaveformOptions) (*orch.WaveformResult, error) {
 	var params AnalyzeWaveformParams
 	params.FilePath = filePath
@@ -354,7 +375,7 @@ func (a *MediaAdapter) DetectScenes(ctx context.Context, filePath string, thresh
 	scenes := make([]*orch.SceneChange, len(res.Scenes))
 	for i, s := range res.Scenes {
 		scenes[i] = &orch.SceneChange{
-			TimecodeSeconds: s.Timecode.FrameRate, // approximate seconds from timecode
+			TimecodeSeconds: nativeTimecodeToSeconds(s.Timecode),
 			Confidence:      s.Confidence,
 		}
 	}
@@ -668,6 +689,31 @@ func convertOrchestratorEDLToGRPC(edl *orch.EDL) EditDecisionList {
 		SequenceFrameRate:  edl.SequenceFrameRate,
 		Entries:            entries,
 	}
+}
+
+func secondsToNativeTimecode(seconds float64, frameRate float64) Timecode {
+	if seconds < 0 {
+		seconds = 0
+	}
+	if frameRate <= 0 {
+		frameRate = 24
+	}
+	wholeSeconds := uint32(seconds)
+	return Timecode{
+		Hours:     wholeSeconds / 3600,
+		Minutes:   (wholeSeconds % 3600) / 60,
+		Seconds:   wholeSeconds % 60,
+		Frames:    uint32((seconds - float64(wholeSeconds)) * frameRate),
+		FrameRate: frameRate,
+	}
+}
+
+func nativeTimecodeToSeconds(timecode Timecode) float64 {
+	seconds := float64(timecode.Hours*3600 + timecode.Minutes*60 + timecode.Seconds)
+	if timecode.FrameRate > 0 {
+		seconds += float64(timecode.Frames) / timecode.FrameRate
+	}
+	return seconds
 }
 
 func convertGRPCEDLToOrchestrator(edl *EditDecisionList) *orch.EDL {

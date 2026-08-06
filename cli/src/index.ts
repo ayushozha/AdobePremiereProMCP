@@ -9,8 +9,10 @@
 
 import { MCPClient } from "./mcp-client.js";
 import { ChatLoop } from "./chat.js";
-import { resolveAuth, printAuthHelp, printOAuthHelp } from "./auth.js";
+import { resolveAuth, printAuthHelp } from "./auth.js";
 import type { AuthResult } from "./auth.js";
+import { loadRepositoryEnvironment } from "./environment.js";
+import * as path from "node:path";
 import {
   banner,
   printAssistant,
@@ -25,6 +27,8 @@ import {
 // ── Main ──────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  loadRepositoryEnvironment(path.resolve(import.meta.dirname, "..", ".."));
+
   // Show banner without tool count (we don't know yet)
   banner();
 
@@ -41,13 +45,6 @@ async function main(): Promise<void> {
       `  ${color.cyan}https://github.com/ayushozha/AdobePremiereProMCP#setup${color.reset}`,
     );
     console.log();
-    process.exit(1);
-  }
-
-  // Handle OAuth detection (logged in via claude.ai but no API key)
-  if ("kind" in authResult && authResult.kind === "oauth-no-key") {
-    printError("Claude OAuth session detected, but no API key available.");
-    printOAuthHelp(color, authResult.email);
     process.exit(1);
   }
 
@@ -191,8 +188,8 @@ async function main(): Promise<void> {
 function getAuthSource(auth: AuthResult): string {
   if (process.env.ANTHROPIC_API_KEY) return "ANTHROPIC_API_KEY env var";
   if (process.env.OPENAI_API_KEY) return "OPENAI_API_KEY env var";
-  if (auth.provider === "anthropic") return "Claude CLI (claude login)";
-  if (auth.provider === "openai") return "Codex CLI or config file";
+  if (auth.provider === "anthropic") return "PremierPro MCP config file";
+  if (auth.provider === "openai") return "PremierPro MCP config file";
   return "config file";
 }
 

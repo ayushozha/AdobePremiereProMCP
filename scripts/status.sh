@@ -13,6 +13,10 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+process_start_stamp() {
+    ps -p "$1" -o lstart= 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+}
+
 echo -e "${CYAN}========================================${NC}"
 echo -e "${CYAN}  PremierPro MCP — Service Status${NC}"
 echo -e "${CYAN}========================================${NC}"
@@ -27,12 +31,16 @@ fi
 printf "%-25s %-8s %-12s %-12s\n" "SERVICE" "PID" "PROCESS" "gRPC PORT"
 printf "%-25s %-8s %-12s %-12s\n" "-------" "---" "-------" "---------"
 
-while IFS=: read -r name pid port; do
+while IFS=: read -r name pid port expected_start; do
     [ -z "$name" ] && continue
 
     # Check if the process is alive
-    if kill -0 "$pid" 2>/dev/null; then
+    if kill -0 "$pid" 2>/dev/null &&
+       [ -n "$expected_start" ] &&
+       [ "$(process_start_stamp "$pid")" = "$expected_start" ]; then
         proc_status="${GREEN}RUNNING${NC}"
+    elif kill -0 "$pid" 2>/dev/null; then
+        proc_status="${RED}FOREIGN${NC}"
     else
         proc_status="${RED}DEAD${NC}"
     fi
@@ -64,10 +72,12 @@ echo ""
 # Summary
 total=0
 running=0
-while IFS=: read -r name pid port; do
+while IFS=: read -r name pid port expected_start; do
     [ -z "$name" ] && continue
     total=$((total + 1))
-    if kill -0 "$pid" 2>/dev/null; then
+    if kill -0 "$pid" 2>/dev/null &&
+       [ -n "$expected_start" ] &&
+       [ "$(process_start_stamp "$pid")" = "$expected_start" ]; then
         running=$((running + 1))
     fi
 done < "$PID_FILE"

@@ -24,7 +24,7 @@ from .suggest import suggest_assets
 
 log = logging.getLogger(__name__)
 
-# Default thresholds – can be overridden via ``IntelligenceSettings``.
+# Default thresholds - can be overridden via ``IntelligenceSettings``.
 _DEFAULT_CONFIDENCE_THRESHOLD = 0.6
 _DEFAULT_MAX_MATCHES = 3
 _DEFAULT_KEYWORD_WEIGHT = 0.3
@@ -75,8 +75,12 @@ class AssetMatcher:
         self,
         segments: list[ScriptSegment],
         assets: list[AssetInfo],
+        strategy: MatchStrategy | None = None,
     ) -> MatchResult:
         """Match every segment in *segments* to the best assets in *assets*.
+
+        ``strategy`` is a per-call override. It is intentionally kept local so
+        concurrent gRPC requests never mutate shared matcher state.
 
         Returns a ``MatchResult`` containing accepted matches **and** a list
         of unmatched segments with human-readable suggestions.
@@ -88,13 +92,15 @@ class AssetMatcher:
         unmatched: list[UnmatchedSegment] = []
         available_types = list({a.asset_type.name for a in assets})
 
+        effective_strategy = strategy or self.strategy
+
         for segment in segments:
-            scored = self._score_segment(segment, assets)
+            scored = self._score_segment(segment, assets, effective_strategy)
 
             # Filter by threshold and cap the count.
-            accepted = [
-                s for s in scored if s.score >= self.confidence_threshold
-            ][: self.max_matches_per_segment]
+            accepted = [s for s in scored if s.score >= self.confidence_threshold][
+                : self.max_matches_per_segment
+            ]
 
             if accepted:
                 for sm in accepted:
@@ -137,9 +143,10 @@ class AssetMatcher:
         self,
         segment: ScriptSegment,
         assets: list[AssetInfo],
+        strategy: MatchStrategy,
     ) -> list[ScoredMatch]:
         """Return all ``ScoredMatch`` entries for a single segment."""
-        match self.strategy:
+        match strategy:
             case MatchStrategy.KEYWORD:
                 return self.keyword_matcher.match(segment, assets)
             case MatchStrategy.EMBEDDING:

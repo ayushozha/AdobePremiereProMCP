@@ -360,7 +360,7 @@ func registerImmersiveTools(s *server.MCPServer, orch Orchestrator, logger *zap.
 	// 29. premiere_align_caption_to_speech
 	s.AddTool(
 		gomcp.NewTool("premiere_align_caption_to_speech",
-			gomcp.WithDescription("Auto-align captions to detected speech on a track."),
+			gomcp.WithDescription("Unavailable on the CEP backend: returns an explicit unsupported error because speech alignment cannot be invoked and verified portably."),
 			gomcp.WithNumber("track_index", gomcp.Required(), gomcp.Description("Zero-based caption track index")),
 		),
 		makeImmersiveHandler(orch, logger, "alignCaptionToSpeech", []string{"track_index"}),
@@ -369,7 +369,7 @@ func registerImmersiveTools(s *server.MCPServer, orch Orchestrator, logger *zap.
 	// 30. premiere_split_long_captions
 	s.AddTool(
 		gomcp.NewTool("premiere_split_long_captions",
-			gomcp.WithDescription("Split captions longer than a maximum character count into shorter segments."),
+			gomcp.WithDescription("Unavailable on the CEP backend: returns an explicit unsupported error to avoid truncating caption text. Split the SRT before import."),
 			gomcp.WithNumber("track_index", gomcp.Required(), gomcp.Description("Zero-based caption track index")),
 			gomcp.WithNumber("max_chars", gomcp.Description("Maximum characters per caption (default: 42)")),
 		),

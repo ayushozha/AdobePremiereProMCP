@@ -1,6 +1,11 @@
-# Competitive Analysis -- Premiere Pro MCP Servers
+# Historical Competitive Analysis -- Premiere Pro MCP Servers
 
 Last updated: 2026-03-19
+
+> **Historical snapshot:** repository counts, stars, and capability claims in
+> this file were collected on the date above and are not current verification.
+> See [Workflow Research and Adoption Notes](workflow-research.md) for the
+> 2026-08-06 review and the changes actually adopted.
 
 This document surveys every known MCP server for Adobe Premiere Pro on GitHub, compares them feature-by-feature against our project (PremierPro MCP), and identifies gaps or opportunities.
 

@@ -121,11 +121,13 @@ def parse_narration(text: str) -> list[ScriptSegment]:
                 if narration_text:
                     # Clean up any leftover brackets or whitespace
                     narration_text = re.sub(r"\s+", " ", narration_text)
-                    segments.append(ScriptSegment(
-                        index=idx,
-                        type=SegmentType.VOICEOVER,
-                        content=narration_text,
-                    ))
+                    segments.append(
+                        ScriptSegment(
+                            index=idx,
+                            type=SegmentType.VOICEOVER,
+                            content=narration_text,
+                        )
+                    )
                     idx += 1
                 i += 1
             elif i + 1 < len(parts):
@@ -140,11 +142,13 @@ def parse_narration(text: str) -> list[ScriptSegment]:
                 # Orphan part (shouldn't normally happen)
                 leftover = parts[i].strip()
                 if leftover:
-                    segments.append(ScriptSegment(
-                        index=idx,
-                        type=SegmentType.VOICEOVER,
-                        content=leftover,
-                    ))
+                    segments.append(
+                        ScriptSegment(
+                            index=idx,
+                            type=SegmentType.VOICEOVER,
+                            content=leftover,
+                        )
+                    )
                     idx += 1
                 i += 1
 

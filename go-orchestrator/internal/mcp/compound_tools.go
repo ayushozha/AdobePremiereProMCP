@@ -452,13 +452,13 @@ func registerCompoundTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// 15. premiere_add_subtitles_from_srt
 	s.AddTool(
 		gomcp.NewTool("premiere_add_subtitles_from_srt",
-			gomcp.WithDescription("Import an SRT subtitle file and place subtitles on the timeline. Parses SRT format and creates caption entries."),
+			gomcp.WithDescription("Validate and import an SRT subtitle file, create a Premiere caption track with Sequence.createCaptionTrack, and verify the resulting caption count."),
 			gomcp.WithString("srt_path",
 				gomcp.Required(),
 				gomcp.Description("Absolute path to the SRT subtitle file"),
 			),
 			gomcp.WithNumber("track_index",
-				gomcp.Description("Zero-based track index for captions (default: 0)"),
+				gomcp.Description("Expected track index for reporting (Premiere appends the new caption track; default: 0)"),
 			),
 		),
 		compoundH(logger, "add_subtitles_from_srt", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {

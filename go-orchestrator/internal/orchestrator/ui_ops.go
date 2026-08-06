@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -77,7 +76,7 @@ func (e *Engine) GetWindowInfo(ctx context.Context) (*GenericResult, error) {
 
 func (e *Engine) SetWindowSize(ctx context.Context, width, height int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"width": width,
+		"width":  width,
 		"height": height,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setWindowSize", string(argsJSON))
@@ -120,9 +119,9 @@ func (e *Engine) EnterFullscreen(ctx context.Context) (*GenericResult, error) {
 
 func (e *Engine) SetTrackHeight(ctx context.Context, trackType string, trackIndex int, height int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"height": height,
+		"height":     height,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setTrackHeight", string(argsJSON))
 	if err != nil {
@@ -133,7 +132,7 @@ func (e *Engine) SetTrackHeight(ctx context.Context, trackType string, trackInde
 
 func (e *Engine) CollapseTrack(ctx context.Context, trackType string, trackIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "collapseTrack", string(argsJSON))
@@ -145,7 +144,7 @@ func (e *Engine) CollapseTrack(ctx context.Context, trackType string, trackIndex
 
 func (e *Engine) ExpandTrack(ctx context.Context, trackType string, trackIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "expandTrack", string(argsJSON))
@@ -260,7 +259,7 @@ func (e *Engine) SetTrackNameDisplay(ctx context.Context, enabled bool) (*Generi
 
 func (e *Engine) ShowAlert(ctx context.Context, title, message string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"title": title,
+		"title":   title,
 		"message": message,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "showAlert", string(argsJSON))
@@ -272,7 +271,7 @@ func (e *Engine) ShowAlert(ctx context.Context, title, message string) (*Generic
 
 func (e *Engine) ShowConfirmDialog(ctx context.Context, title, message string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"title": title,
+		"title":   title,
 		"message": message,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "showConfirmDialog", string(argsJSON))
@@ -284,8 +283,8 @@ func (e *Engine) ShowConfirmDialog(ctx context.Context, title, message string) (
 
 func (e *Engine) ShowInputDialog(ctx context.Context, title, prompt, defaultValue string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"title": title,
-		"prompt": prompt,
+		"title":        title,
+		"prompt":       prompt,
 		"defaultValue": defaultValue,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "showInputDialog", string(argsJSON))
@@ -297,8 +296,8 @@ func (e *Engine) ShowInputDialog(ctx context.Context, title, prompt, defaultValu
 
 func (e *Engine) ShowProgressDialog(ctx context.Context, title, message string, progress float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"title": title,
-		"message": message,
+		"title":    title,
+		"message":  message,
 		"progress": progress,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "showProgressDialog", string(argsJSON))

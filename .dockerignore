@@ -1,0 +1,29 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+
+**/node_modules
+**/dist
+**/build
+**/target
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.venv
+**/venv
+**/*.egg-info
+
+scripts/logs
+scripts/.pids
+outputs
+tmp
+.cache
+
+# These clients are regenerated in the proto-builder stage. Keep only the
+# generated Go module metadata that is explicitly copied by the Dockerfile.
+gen/go/**/*.pb.go
+gen/python

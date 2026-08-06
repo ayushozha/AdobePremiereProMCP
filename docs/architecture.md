@@ -2,7 +2,10 @@
 
 ## System Overview
 
-The PremierPro MCP Server is a multi-language system that enables AI-driven end-to-end video editing in Adobe Premiere Pro. It uses four languages — Go, Rust, Python, and TypeScript — each chosen for their strengths in a specific layer of the stack.
+The PremierPro MCP Server is a multi-language system for supported,
+readback-first video-editing workflows in Adobe Premiere Pro. It uses four
+languages — Go, Rust, Python, and TypeScript — each chosen for a specific layer
+of the stack.
 
 ## Architecture Diagram
 
@@ -130,12 +133,12 @@ The PremierPro MCP Server is a multi-language system that enables AI-driven end-
   <rect x="690" y="530" width="240" height="32" rx="6" fill="rgba(255,255,255,0.18)"/>
   <text x="810" y="551" text-anchor="middle" fill="#fff" font-size="11">Import / Export / Render</text>
   <rect x="690" y="570" width="240" height="14" rx="4" fill="rgba(0,0,0,0.15)"/>
-  <text x="810" y="581" text-anchor="middle" fill="#A8C0E8" font-size="9">CEP (primary) &middot; Standalone Node (fallback)</text>
+  <text x="810" y="581" text-anchor="middle" fill="#A8C0E8" font-size="9">CEP (default) &middot; Standalone Node (macOS, explicit)</text>
 
   <!-- Arrow: TS → Premiere Pro -->
   <line x1="810" y1="595" x2="810" y2="640" stroke="#8B95A5" stroke-width="2" marker-end="url(#arrowGray)"/>
 
-  <!-- Fallback path -->
+  <!-- Bridge paths -->
   <rect x="670" y="608" width="120" height="18" rx="4" fill="rgba(255,255,255,0.06)"/>
   <text x="730" y="621" text-anchor="middle" fill="#6B7B8D" font-size="9">CEP Panel</text>
   <rect x="830" y="608" width="120" height="18" rx="4" fill="rgba(255,255,255,0.06)"/>
@@ -214,7 +217,7 @@ The PremierPro MCP Server is a multi-language system that enables AI-driven end-
 | **Go** | Orchestrator & MCP Server | MCP protocol (JSON-RPC/stdio), task orchestration via goroutines, service mesh, health checks, retry/circuit-breaker, graceful shutdown, logging & metrics |
 | **Rust** | Media Processing Engine | Media probing & metadata extraction, asset indexing & fingerprinting, waveform & silence detection, thumbnail generation, high-perf file I/O via FFmpeg bindings |
 | **Python** | Intelligence Layer | Script parsing & NLP, Edit Decision List generation, shot-to-asset matching via AI embeddings, pacing & timing analysis, scene detection |
-| **TypeScript** | Premiere Pro Bridge | ExtendScript API integration, CEP Panel (primary bridge), standalone Node.js fallback, timeline & clip operations, import/export/render control |
+| **TypeScript** | Premiere Pro Bridge | ExtendScript API integration, CEP Panel (default bridge), explicit standalone Node.js mode on macOS, timeline & clip operations, import/export/render control |
 
 ## Inter-Service Communication
 
@@ -228,15 +231,22 @@ All services communicate via **gRPC** with shared protobuf definitions:
 | Go → TypeScript | gRPC / HTTP | Premiere Pro commands (EDL execution) |
 | TypeScript → Premiere Pro | CEP / ExtendScript | Native Adobe scripting DOM calls |
 
-## Bridge Fallback Strategy
+## Bridge Mode Selection
 
 The TypeScript bridge to Premiere Pro supports two modes:
 
-1. **CEP Panel (Primary)** — Runs inside Premiere Pro as an extension panel. Direct DOM access, lowest latency. Communicates with the Go orchestrator over a local WebSocket/HTTP server.
+1. **CEP Panel (Primary)** — Runs inside Premiere Pro as an extension panel. Direct DOM access, lowest latency. Communicates with the host TypeScript bridge over an authenticated, loopback-only WebSocket. Both processes share a per-user token stored at `~/.premierpro-mcp/cep-token` by default.
 
-2. **Standalone Node.js (Fallback)** — Runs as an external process. Sends commands to Premiere Pro via the ExtendScript Toolkit CLI (`osascript` / COM on Windows). Higher latency but works without a panel installed.
+2. **Standalone Node.js (macOS only)** — Runs as an external process and sends commands to Premiere Pro through `osascript`. Higher latency, but it can work without a panel installed. Windows uses the CEP panel bridge.
 
-The Go orchestrator auto-detects which bridge is available and falls back gracefully.
+Select the bridge explicitly with `BRIDGE_MODE=cep` (preferred) or, on macOS,
+`BRIDGE_MODE=standalone`. The service reports a disconnected state when the
+selected bridge is unavailable; it does not silently switch mutation backends.
+
+The loopback boundary is intentional: a containerized TypeScript bridge cannot
+connect directly to the host CEP panel. For live editing, run both the Go
+orchestrator and TypeScript bridge beside Premiere Pro on the host. Docker
+Compose is limited to the Rust and Python analysis backends.
 
 ## Build System
 

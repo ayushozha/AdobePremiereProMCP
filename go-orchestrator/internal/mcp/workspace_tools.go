@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"math"
+	"strings"
 
 	gomcp "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -77,11 +79,24 @@ func registerWorkspaceTools(s *server.MCPServer, orch Orchestrator, logger *zap.
 	// -------------------------------------------------------------------
 
 	s.AddTool(gomcp.NewTool("premiere_create_proxy",
-		gomcp.WithDescription("Create a proxy media file for a project item using an encoder preset."),
-		gomcp.WithNumber("project_item_index", gomcp.Required(), gomcp.Description("Zero-based index of the project item in root bin")),
-		gomcp.WithString("preset_path", gomcp.Description("Path to the encoder preset file for proxy creation")),
+		gomcp.WithDescription("Queue asynchronous proxy generation for a root-bin project item through Adobe Media Encoder. Poll the explicit output path until the file is stable, then call premiere_attach_proxy and verify its canonical path."),
+		gomcp.WithNumber("project_item_index", gomcp.Required(), gomcp.Min(0), gomcp.Description("Zero-based index of a proxy-capable project item in the root bin")),
+		gomcp.WithString("output_path", gomcp.Required(), gomcp.MinLength(1), gomcp.Description("Absolute path for a new proxy output file; its parent directory must exist and an existing file will not be overwritten")),
+		gomcp.WithString("preset_path", gomcp.Required(), gomcp.MinLength(1), gomcp.Description("Absolute path to an existing .epr encoder preset")),
 	), wsH(orch, logger, "create_proxy", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
-		result, err := orch.CreateProxy(ctx, gomcp.ParseInt(req, "project_item_index", 0), gomcp.ParseString(req, "preset_path", ""))
+		projectItemIndex, err := proxyProjectItemIndex(req)
+		if err != nil {
+			return gomcp.NewToolResultError(err.Error()), nil
+		}
+		presetPath := strings.TrimSpace(gomcp.ParseString(req, "preset_path", ""))
+		if presetPath == "" {
+			return gomcp.NewToolResultError("parameter 'preset_path' is required"), nil
+		}
+		outputPath := strings.TrimSpace(gomcp.ParseString(req, "output_path", ""))
+		if outputPath == "" {
+			return gomcp.NewToolResultError("parameter 'output_path' is required"), nil
+		}
+		result, err := orch.CreateProxy(ctx, projectItemIndex, outputPath, presetPath)
 		if err != nil {
 			return gomcp.NewToolResultError(fmt.Sprintf("failed: %v", err)), nil
 		}
@@ -89,15 +104,19 @@ func registerWorkspaceTools(s *server.MCPServer, orch Orchestrator, logger *zap.
 	}))
 
 	s.AddTool(gomcp.NewTool("premiere_attach_proxy",
-		gomcp.WithDescription("Attach an existing proxy media file to a project item."),
-		gomcp.WithNumber("project_item_index", gomcp.Required(), gomcp.Description("Zero-based index of the project item in root bin")),
-		gomcp.WithString("proxy_path", gomcp.Required(), gomcp.Description("Absolute path to the proxy media file")),
+		gomcp.WithDescription("Attach an existing local proxy file to a root-bin project item, then verify hasProxy and the canonical attached path."),
+		gomcp.WithNumber("project_item_index", gomcp.Required(), gomcp.Min(0), gomcp.Description("Zero-based index of a proxy-capable project item in the root bin")),
+		gomcp.WithString("proxy_path", gomcp.Required(), gomcp.MinLength(1), gomcp.Description("Absolute path to an existing proxy media file")),
 	), wsH(orch, logger, "attach_proxy", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
-		proxyPath := gomcp.ParseString(req, "proxy_path", "")
+		projectItemIndex, err := proxyProjectItemIndex(req)
+		if err != nil {
+			return gomcp.NewToolResultError(err.Error()), nil
+		}
+		proxyPath := strings.TrimSpace(gomcp.ParseString(req, "proxy_path", ""))
 		if proxyPath == "" {
 			return gomcp.NewToolResultError("parameter 'proxy_path' is required"), nil
 		}
-		result, err := orch.AttachProxy(ctx, gomcp.ParseInt(req, "project_item_index", 0), proxyPath)
+		result, err := orch.AttachProxy(ctx, projectItemIndex, proxyPath)
 		if err != nil {
 			return gomcp.NewToolResultError(fmt.Sprintf("failed: %v", err)), nil
 		}
@@ -105,10 +124,14 @@ func registerWorkspaceTools(s *server.MCPServer, orch Orchestrator, logger *zap.
 	}))
 
 	s.AddTool(gomcp.NewTool("premiere_has_proxy",
-		gomcp.WithDescription("Check whether a project item has an attached proxy media file."),
-		gomcp.WithNumber("project_item_index", gomcp.Required(), gomcp.Description("Zero-based index of the project item in root bin")),
+		gomcp.WithDescription("Read and cross-check whether a root-bin project item has proxy media attached, including its canonical proxy path when present."),
+		gomcp.WithNumber("project_item_index", gomcp.Required(), gomcp.Min(0), gomcp.Description("Zero-based index of a proxy-capable project item in the root bin")),
 	), wsH(orch, logger, "has_proxy", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
-		result, err := orch.HasProxy(ctx, gomcp.ParseInt(req, "project_item_index", 0))
+		projectItemIndex, err := proxyProjectItemIndex(req)
+		if err != nil {
+			return gomcp.NewToolResultError(err.Error()), nil
+		}
+		result, err := orch.HasProxy(ctx, projectItemIndex)
 		if err != nil {
 			return gomcp.NewToolResultError(fmt.Sprintf("failed: %v", err)), nil
 		}
@@ -116,10 +139,14 @@ func registerWorkspaceTools(s *server.MCPServer, orch Orchestrator, logger *zap.
 	}))
 
 	s.AddTool(gomcp.NewTool("premiere_get_proxy_path",
-		gomcp.WithDescription("Get the file path of the proxy media attached to a project item."),
-		gomcp.WithNumber("project_item_index", gomcp.Required(), gomcp.Description("Zero-based index of the project item in root bin")),
+		gomcp.WithDescription("Get the canonical proxy path for a root-bin project item and cross-check it against hasProxy state."),
+		gomcp.WithNumber("project_item_index", gomcp.Required(), gomcp.Min(0), gomcp.Description("Zero-based index of a proxy-capable project item in the root bin")),
 	), wsH(orch, logger, "get_proxy_path", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
-		result, err := orch.GetProxyPath(ctx, gomcp.ParseInt(req, "project_item_index", 0))
+		projectItemIndex, err := proxyProjectItemIndex(req)
+		if err != nil {
+			return gomcp.NewToolResultError(err.Error()), nil
+		}
+		result, err := orch.GetProxyPath(ctx, projectItemIndex)
 		if err != nil {
 			return gomcp.NewToolResultError(fmt.Sprintf("failed: %v", err)), nil
 		}
@@ -127,7 +154,7 @@ func registerWorkspaceTools(s *server.MCPServer, orch Orchestrator, logger *zap.
 	}))
 
 	s.AddTool(gomcp.NewTool("premiere_toggle_proxies",
-		gomcp.WithDescription("Toggle proxy playback mode on or off globally for the project."),
+		gomcp.WithDescription("Set proxy playback mode on or off using Premiere's query/set APIs and return verified state readback."),
 		gomcp.WithBoolean("enabled", gomcp.Required(), gomcp.Description("true to enable proxy playback, false to disable")),
 	), wsH(orch, logger, "toggle_proxies", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
 		result, err := orch.ToggleProxies(ctx, gomcp.ParseBoolean(req, "enabled", false))
@@ -138,10 +165,14 @@ func registerWorkspaceTools(s *server.MCPServer, orch Orchestrator, logger *zap.
 	}))
 
 	s.AddTool(gomcp.NewTool("premiere_detach_proxy",
-		gomcp.WithDescription("Detach the proxy media file from a project item, reverting to full-resolution only."),
-		gomcp.WithNumber("project_item_index", gomcp.Required(), gomcp.Description("Zero-based index of the project item in root bin")),
+		gomcp.WithDescription("Detach proxy media from a root-bin project item with Premiere's detach API and verify that proxy state and path are cleared."),
+		gomcp.WithNumber("project_item_index", gomcp.Required(), gomcp.Min(0), gomcp.Description("Zero-based index of a proxy-capable project item in the root bin")),
 	), wsH(orch, logger, "detach_proxy", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
-		result, err := orch.DetachProxy(ctx, gomcp.ParseInt(req, "project_item_index", 0))
+		projectItemIndex, err := proxyProjectItemIndex(req)
+		if err != nil {
+			return gomcp.NewToolResultError(err.Error()), nil
+		}
+		result, err := orch.DetachProxy(ctx, projectItemIndex)
 		if err != nil {
 			return gomcp.NewToolResultError(fmt.Sprintf("failed: %v", err)), nil
 		}
@@ -341,6 +372,23 @@ func registerWorkspaceTools(s *server.MCPServer, orch Orchestrator, logger *zap.
 		}
 		return toolResultJSON(result)
 	}))
+}
+
+func proxyProjectItemIndex(req gomcp.CallToolRequest) (int, error) {
+	arguments, err := objectArguments(req.Params.Arguments)
+	if err != nil {
+		return 0, fmt.Errorf("invalid project_item_index: %w", err)
+	}
+	raw, ok := arguments["project_item_index"]
+	if !ok {
+		return 0, fmt.Errorf("parameter 'project_item_index' is required")
+	}
+	number, ok := raw.(float64)
+	maxInt := int(^uint(0) >> 1)
+	if !ok || math.IsNaN(number) || math.IsInf(number, 0) || number < 0 || math.Trunc(number) != number || number >= float64(maxInt) {
+		return 0, fmt.Errorf("parameter 'project_item_index' must be a non-negative integer")
+	}
+	return int(number), nil
 }
 
 // wsH is a small wrapper that logs the tool name before delegating to the handler.

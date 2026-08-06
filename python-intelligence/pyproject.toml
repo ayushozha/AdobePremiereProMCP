@@ -5,9 +5,9 @@ description = "AI/NLP intelligence service for PremierPro MCP — script parsing
 requires-python = ">=3.12"
 license = { text = "MIT" }
 dependencies = [
-    "grpcio>=1.60",
-    "grpcio-tools>=1.60",
-    "protobuf>=5.0",
+    "grpcio>=1.83.0",
+    "grpcio-tools>=1.83.0",
+    "protobuf>=7.35.1",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
     "numpy>=1.26",
@@ -22,8 +22,6 @@ ai = [
     "openai>=1.0",
     "anthropic>=0.40",
 ]
-
-[dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
@@ -32,11 +30,14 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.31.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["../gen/python"]
 
 [tool.ruff]
 line-length = 100
@@ -59,8 +60,17 @@ select = [
 [tool.ruff.lint.isort]
 known-first-party = ["src"]
 
+[tool.ruff.lint.per-file-ignores]
+# Protobuf RPC method names are fixed by the service contract.
+"src/grpc_server.py" = ["N802"]
+# This module must add generated stubs to sys.path before importing the server.
+"src/main.py" = ["E402"]
+# Retain the existing ``str, Enum`` string representation for compatibility.
+"src/models.py" = ["UP042"]
+
 [tool.mypy]
 python_version = "3.12"
+mypy_path = "../gen/python"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
@@ -72,3 +82,18 @@ no_implicit_optional = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
+
+[[tool.mypy.overrides]]
+module = ["grpc", "openai"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Generated protobuf/grpc modules are checked at generation time. Their
+# third-party annotations are not strict-mypy clean, but their public types
+# remain available to the handwritten service code.
+module = [
+    "premierpro.common.v1.common_pb2",
+    "premierpro.intelligence.v1.intelligence_pb2",
+    "premierpro.intelligence.v1.intelligence_pb2_grpc",
+]
+ignore_errors = true

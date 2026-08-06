@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -13,8 +12,8 @@ import (
 
 func (e *Engine) ImportMOGRT(ctx context.Context, mogrtPath, timeTicks string, videoTrackOffset, audioTrackOffset int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"mogrtPath": mogrtPath,
-		"timeTicks": timeTicks,
+		"mogrtPath":        mogrtPath,
+		"timeTicks":        timeTicks,
 		"videoTrackOffset": videoTrackOffset,
 		"audioTrackOffset": audioTrackOffset,
 	})
@@ -28,7 +27,7 @@ func (e *Engine) ImportMOGRT(ctx context.Context, mogrtPath, timeTicks string, v
 func (e *Engine) GetMOGRTProperties(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "getMOGRTProperties", string(argsJSON))
 	if err != nil {
@@ -39,10 +38,10 @@ func (e *Engine) GetMOGRTProperties(ctx context.Context, trackIndex, clipIndex i
 
 func (e *Engine) SetMOGRTText(ctx context.Context, trackIndex, clipIndex, propertyIndex int, text string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"trackIndex":    trackIndex,
+		"clipIndex":     clipIndex,
 		"propertyIndex": propertyIndex,
-		"text": text,
+		"text":          text,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setMOGRTText", string(argsJSON))
 	if err != nil {
@@ -53,10 +52,10 @@ func (e *Engine) SetMOGRTText(ctx context.Context, trackIndex, clipIndex, proper
 
 func (e *Engine) SetMOGRTProperty(ctx context.Context, trackIndex, clipIndex int, propertyName string, value string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"trackIndex":   trackIndex,
+		"clipIndex":    clipIndex,
 		"propertyName": propertyName,
-		"value": value,
+		"value":        value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setMOGRTProperty", string(argsJSON))
 	if err != nil {
@@ -71,11 +70,11 @@ func (e *Engine) SetMOGRTProperty(ctx context.Context, trackIndex, clipIndex int
 
 func (e *Engine) AddTitle(ctx context.Context, text string, trackIndex int, startTime, duration float64, styleJSON string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"text": text,
+		"text":       text,
 		"trackIndex": trackIndex,
-		"startTime": startTime,
-		"duration": duration,
-		"styleJSON": styleJSON,
+		"startTime":  startTime,
+		"duration":   duration,
+		"styleJSON":  styleJSON,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "addTitle", string(argsJSON))
 	if err != nil {
@@ -86,11 +85,11 @@ func (e *Engine) AddTitle(ctx context.Context, text string, trackIndex int, star
 
 func (e *Engine) AddLowerThird(ctx context.Context, name, title string, trackIndex int, startTime, duration float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"name": name,
-		"title": title,
+		"name":       name,
+		"title":      title,
 		"trackIndex": trackIndex,
-		"startTime": startTime,
-		"duration": duration,
+		"startTime":  startTime,
+		"duration":   duration,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "addLowerThird", string(argsJSON))
 	if err != nil {
@@ -117,7 +116,7 @@ func (e *Engine) CreateCaptionTrack(ctx context.Context, format string) (*Generi
 func (e *Engine) ImportCaptions(ctx context.Context, filePath, format string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"filePath": filePath,
-		"format": format,
+		"format":   format,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "importCaptions", string(argsJSON))
 	if err != nil {
@@ -140,9 +139,9 @@ func (e *Engine) GetCaptions(ctx context.Context, trackIndex int) (*GenericResul
 func (e *Engine) AddCaption(ctx context.Context, trackIndex int, startTime, endTime float64, text string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"startTime": startTime,
-		"endTime": endTime,
-		"text": text,
+		"startTime":  startTime,
+		"endTime":    endTime,
+		"text":       text,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "addCaption", string(argsJSON))
 	if err != nil {
@@ -153,9 +152,9 @@ func (e *Engine) AddCaption(ctx context.Context, trackIndex int, startTime, endT
 
 func (e *Engine) EditCaption(ctx context.Context, trackIndex, captionIndex int, text string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackIndex": trackIndex,
+		"trackIndex":   trackIndex,
 		"captionIndex": captionIndex,
-		"text": text,
+		"text":         text,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "editCaption", string(argsJSON))
 	if err != nil {
@@ -166,7 +165,7 @@ func (e *Engine) EditCaption(ctx context.Context, trackIndex, captionIndex int, 
 
 func (e *Engine) DeleteCaption(ctx context.Context, trackIndex, captionIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackIndex": trackIndex,
+		"trackIndex":   trackIndex,
 		"captionIndex": captionIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "deleteCaption", string(argsJSON))
@@ -176,10 +175,11 @@ func (e *Engine) DeleteCaption(ctx context.Context, trackIndex, captionIndex int
 	return &GenericResult{Status: "success", Message: result}, nil
 }
 
-func (e *Engine) ExportCaptions(ctx context.Context, outputPath, format string) (*GenericResult, error) {
+func (e *Engine) ExportCaptions(ctx context.Context, sequenceID, outputPath, format string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"outputPath": outputPath,
-		"format": format,
+		"expectedSequenceId": sequenceID,
+		"outputPath":         outputPath,
+		"format":             format,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "exportCaptions", string(argsJSON))
 	if err != nil {
@@ -191,11 +191,11 @@ func (e *Engine) ExportCaptions(ctx context.Context, outputPath, format string) 
 func (e *Engine) StyleCaptions(ctx context.Context, trackIndex int, font string, size float64, color, bgColor, position string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"font": font,
-		"size": size,
-		"color": color,
-		"bgColor": bgColor,
-		"position": position,
+		"font":       font,
+		"size":       size,
+		"color":      color,
+		"bgColor":    bgColor,
+		"position":   position,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "styleCaptions", string(argsJSON))
 	if err != nil {
@@ -210,11 +210,11 @@ func (e *Engine) StyleCaptions(ctx context.Context, trackIndex int, font string,
 
 func (e *Engine) CreateColorMatte(ctx context.Context, name string, red, green, blue, width, height int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"name": name,
-		"red": red,
-		"green": green,
-		"blue": blue,
-		"width": width,
+		"name":   name,
+		"red":    red,
+		"green":  green,
+		"blue":   blue,
+		"width":  width,
 		"height": height,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createColorMatte", string(argsJSON))
@@ -227,9 +227,9 @@ func (e *Engine) CreateColorMatte(ctx context.Context, name string, red, green, 
 func (e *Engine) PlaceColorMatte(ctx context.Context, projectItemIndex, trackIndex int, startTime, duration float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"trackIndex": trackIndex,
-		"startTime": startTime,
-		"duration": duration,
+		"trackIndex":       trackIndex,
+		"startTime":        startTime,
+		"duration":         duration,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "placeColorMatte", string(argsJSON))
 	if err != nil {
@@ -240,9 +240,9 @@ func (e *Engine) PlaceColorMatte(ctx context.Context, projectItemIndex, trackInd
 
 func (e *Engine) CreateTransparentVideo(ctx context.Context, name string, width, height int, duration float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"name": name,
-		"width": width,
-		"height": height,
+		"name":     name,
+		"width":    width,
+		"height":   height,
 		"duration": duration,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createTransparentVideo", string(argsJSON))
@@ -259,8 +259,8 @@ func (e *Engine) CreateTransparentVideo(ctx context.Context, name string, width,
 func (e *Engine) SetTimeRemapping(ctx context.Context, trackIndex, clipIndex int, enabled bool) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"enabled": enabled,
+		"clipIndex":  clipIndex,
+		"enabled":    enabled,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setTimeRemapping", string(argsJSON))
 	if err != nil {
@@ -272,9 +272,9 @@ func (e *Engine) SetTimeRemapping(ctx context.Context, trackIndex, clipIndex int
 func (e *Engine) AddTimeRemapKeyframe(ctx context.Context, trackIndex, clipIndex int, time, speed float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"time": time,
-		"speed": speed,
+		"clipIndex":  clipIndex,
+		"time":       time,
+		"speed":      speed,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "addTimeRemapKeyframe", string(argsJSON))
 	if err != nil {
@@ -286,9 +286,9 @@ func (e *Engine) AddTimeRemapKeyframe(ctx context.Context, trackIndex, clipIndex
 func (e *Engine) FreezeFrame(ctx context.Context, trackIndex, clipIndex int, time, duration float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"time": time,
-		"duration": duration,
+		"clipIndex":  clipIndex,
+		"time":       time,
+		"duration":   duration,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "freezeFrame", string(argsJSON))
 	if err != nil {
@@ -303,8 +303,8 @@ func (e *Engine) FreezeFrame(ctx context.Context, trackIndex, clipIndex int, tim
 
 func (e *Engine) DetectSceneEdits(ctx context.Context, trackIndex, clipIndex int, sensitivity float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"trackIndex":  trackIndex,
+		"clipIndex":   clipIndex,
 		"sensitivity": sensitivity,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "detectSceneEdits", string(argsJSON))

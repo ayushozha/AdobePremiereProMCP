@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -14,8 +13,8 @@ import (
 // AddReviewComment adds a review comment as a marker with metadata at the given time.
 func (e *Engine) AddReviewComment(ctx context.Context, time float64, text, author string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"time": time,
-		"text": text,
+		"time":   time,
+		"text":   text,
 		"author": author,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "addReviewComment", string(argsJSON))
@@ -61,7 +60,7 @@ func (e *Engine) GetUnresolvedComments(ctx context.Context) (*GenericResult, err
 func (e *Engine) ExportReviewReport(ctx context.Context, outputPath, format string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"outputPath": outputPath,
-		"format": format,
+		"format":     format,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "exportReviewReport", string(argsJSON))
 	if err != nil {
@@ -99,7 +98,7 @@ func (e *Engine) RevertToVersion(ctx context.Context, versionPath string) (*Gene
 // CreateSnapshot saves the project as a named snapshot with description.
 func (e *Engine) CreateSnapshot(ctx context.Context, name, description string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"name": name,
+		"name":        name,
 		"description": description,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createSnapshot", string(argsJSON))
@@ -178,7 +177,7 @@ func (e *Engine) ImportXMLTimeline(ctx context.Context, xmlPath string) (*Generi
 func (e *Engine) ExportEDLFile(ctx context.Context, outputPath, format string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"outputPath": outputPath,
-		"format": format,
+		"format":     format,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "exportEDLFile", string(argsJSON))
 	if err != nil {
@@ -206,10 +205,10 @@ func (e *Engine) ExportProjectSnapshot(ctx context.Context, outputPath string) (
 // SetEditorialNote sets an editorial note on a clip.
 func (e *Engine) SetEditorialNote(ctx context.Context, trackType string, trackIndex, clipIndex int, note string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"note": note,
+		"clipIndex":  clipIndex,
+		"note":       note,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setEditorialNote", string(argsJSON))
 	if err != nil {
@@ -241,9 +240,9 @@ func (e *Engine) ClearEditorialNotes(ctx context.Context) (*GenericResult, error
 // TagClipForReview tags a clip with a review status (approved, needs-changes, rejected).
 func (e *Engine) TagClipForReview(ctx context.Context, trackType string, trackIndex, clipIndex int, reviewType string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 		"reviewType": reviewType,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "tagClipForReview", string(argsJSON))
@@ -256,9 +255,9 @@ func (e *Engine) TagClipForReview(ctx context.Context, trackType string, trackIn
 // GetClipReviewStatus returns the review status for a clip.
 func (e *Engine) GetClipReviewStatus(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "getClipReviewStatus", string(argsJSON))
 	if err != nil {
@@ -311,7 +310,7 @@ func (e *Engine) GetLastModifiedClips(ctx context.Context, count int) (*GenericR
 func (e *Engine) CheckAudioLevels(ctx context.Context, targetLUFS, tolerance float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"targetLUFS": targetLUFS,
-		"tolerance": tolerance,
+		"tolerance":  tolerance,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "checkAudioLevels", string(argsJSON))
 	if err != nil {
@@ -335,7 +334,7 @@ func (e *Engine) CheckFrameRate(ctx context.Context, targetFPS float64) (*Generi
 // CheckResolution verifies the sequence resolution matches the target.
 func (e *Engine) CheckResolution(ctx context.Context, targetWidth, targetHeight int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"targetWidth": targetWidth,
+		"targetWidth":  targetWidth,
 		"targetHeight": targetHeight,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "checkResolution", string(argsJSON))

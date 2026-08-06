@@ -75,7 +75,10 @@ impl SceneDetector {
     /// - `ffmpeg` is not installed or not on `$PATH`.
     /// - The file does not contain a video stream.
     /// - ffmpeg fails for any other reason.
-    pub fn detect(file_path: &str, options: &SceneDetectionOptions) -> Result<SceneDetectionResult> {
+    pub fn detect(
+        file_path: &str,
+        options: &SceneDetectionOptions,
+    ) -> Result<SceneDetectionResult> {
         let path = Path::new(file_path);
         if !path.exists() {
             anyhow::bail!("file not found: {file_path}");
@@ -97,9 +100,7 @@ impl SceneDetector {
         // metadata via the `-f null` trick.
         //
         // Cleanest approach: use `select` + `metadata=print` with `-f null`.
-        let filter = format!(
-            "select='gt(scene\\,{threshold})',metadata=print:file=-"
-        );
+        let filter = format!("select='gt(scene\\,{threshold})',metadata=print:file=-");
 
         let output = Command::new("ffmpeg")
             .args([
@@ -116,7 +117,7 @@ impl SceneDetector {
             .output()
             .context(
                 "failed to execute ffmpeg for scene detection \
-                 -- is ffmpeg installed and on your PATH?"
+                 -- is ffmpeg installed and on your PATH?",
             )?;
 
         // ffmpeg writes metadata to stdout via the `metadata=print:file=-`
@@ -268,10 +269,8 @@ lavfi.scene_score=0.42
 
     #[test]
     fn test_detect_missing_file() {
-        let result = SceneDetector::detect(
-            "/nonexistent/video.mp4",
-            &SceneDetectionOptions::default(),
-        );
+        let result =
+            SceneDetector::detect("/nonexistent/video.mp4", &SceneDetectionOptions::default());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("file not found"));
     }

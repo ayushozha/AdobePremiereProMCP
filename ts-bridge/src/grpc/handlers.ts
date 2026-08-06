@@ -11,7 +11,7 @@
  */
 
 import type { Logger } from "winston";
-import type { PremiereBridge } from "../bridge/interface.js";
+import type { PremiereBridge, TimeRange } from "../bridge/interface.js";
 
 // ---------------------------------------------------------------------------
 // Inline request / response types (mirrors proto messages)
@@ -363,6 +363,7 @@ export function createHandlers(
           frames: 0,
           frameRate: 24,
         },
+        sourceRange: request.sourceRange as TimeRange | undefined,
         speed: request.speed || 1.0,
       });
     },

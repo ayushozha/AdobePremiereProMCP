@@ -15,7 +15,7 @@ func registerExportTools2(s *server.MCPServer, orch Orchestrator, logger *zap.Lo
 	// premiere_export_direct — synchronous direct export
 	s.AddTool(
 		gomcp.NewTool("premiere_export_direct",
-			gomcp.WithDescription("Export a sequence synchronously (blocking) using Premiere Pro's direct export pipeline. The call blocks until the export file is written to disk. Use this for automated workflows where you need to wait for the file before proceeding. For background/non-blocking export, use premiere_export_via_ame instead. Requires an .epr export preset file -- use premiere_get_exporters and premiere_get_export_presets to find available presets."),
+			gomcp.WithDescription("Export a sequence synchronously (blocking) using Premiere Pro's direct export pipeline. The call blocks until the export file is written to disk. Use this for automated workflows where you need to wait for the file before proceeding. For background/non-blocking export, use premiere_export_via_ame instead. Requires a real .epr export preset file; use premiere_list_export_presets_disk or provide an explicitly configured path."),
 			gomcp.WithNumber("sequence_index",
 				gomcp.Description("Zero-based sequence index to export. Use -1 (default) to export the currently active sequence. Use premiere_get_sequence_list to find sequence indices."),
 			),
@@ -25,7 +25,7 @@ func registerExportTools2(s *server.MCPServer, orch Orchestrator, logger *zap.Lo
 			),
 			gomcp.WithString("preset_path",
 				gomcp.Required(),
-				gomcp.Description("Absolute path to the .epr (Export Preset) file that defines codec, resolution, bitrate, and other encoding settings. Find presets in Premiere's presets folder or use premiere_get_export_presets."),
+				gomcp.Description("Absolute path to the .epr (Export Preset) file that defines codec, resolution, bitrate, and other encoding settings. Use premiere_list_export_presets_disk to inspect preset files found on this host."),
 			),
 			gomcp.WithNumber("work_area_type",
 				gomcp.Description("Which portion of the sequence to export: 0 = entire sequence (default), 1 = in-point to out-point only, 2 = work area bar range only. Set in/out points with premiere_set_in_point/premiere_set_out_point first."),
@@ -37,7 +37,7 @@ func registerExportTools2(s *server.MCPServer, orch Orchestrator, logger *zap.Lo
 	// premiere_export_via_ame — async export via Adobe Media Encoder
 	s.AddTool(
 		gomcp.NewTool("premiere_export_via_ame",
-			gomcp.WithDescription("Queue an export job in Adobe Media Encoder (AME) for asynchronous rendering. AME must be installed and running (use premiere_launch_ame first). The job is added to AME's queue but does not start automatically -- call premiere_start_ame_batch to begin rendering. This frees Premiere Pro for continued editing while AME renders in the background."),
+			gomcp.WithDescription("Queue and start an export job in Adobe Media Encoder (AME) for asynchronous rendering. The tool launches AME, rejects an invalid job ID, and starts the batch before reporting success. This frees Premiere Pro for continued editing while AME renders in the background."),
 			gomcp.WithNumber("sequence_index",
 				gomcp.Description("Zero-based sequence index to export. Use -1 (default) for the currently active sequence."),
 			),
@@ -202,7 +202,7 @@ func registerExportTools2(s *server.MCPServer, orch Orchestrator, logger *zap.Lo
 			),
 			gomcp.WithString("preset_path",
 				gomcp.Required(),
-				gomcp.Description("Absolute path to an audio-format export preset (.epr), e.g. a WAV or MP3 preset. Use premiere_get_export_presets to find available audio presets."),
+				gomcp.Description("Absolute path to an audio-format export preset (.epr), e.g. a WAV or MP3 preset. Use premiere_list_export_presets_disk to inspect preset files found on this host."),
 			),
 		),
 		makeExportAudioOnlyHandler(orch, logger),

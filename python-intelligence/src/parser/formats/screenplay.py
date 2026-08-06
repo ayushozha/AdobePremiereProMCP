@@ -69,8 +69,12 @@ def _is_likely_character_name(line: str) -> bool:
 def _extract_scene_location(heading_text: str) -> str:
     """Extract the location from a scene heading, stripping the time of day."""
     # Remove time of day: ' - DAY', ' - NIGHT', etc.
-    cleaned = re.sub(r"\s*-\s*(DAY|NIGHT|MORNING|EVENING|DAWN|DUSK|LATER|CONTINUOUS)\s*$",
-                     "", heading_text, flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"\s*-\s*(DAY|NIGHT|MORNING|EVENING|DAWN|DUSK|LATER|CONTINUOUS)\s*$",
+        "",
+        heading_text,
+        flags=re.IGNORECASE,
+    )
     return cleaned.strip()
 
 
@@ -100,12 +104,14 @@ def parse_screenplay(text: str) -> list[ScriptSegment]:
         nonlocal idx, action_buffer
         joined = " ".join(action_buffer).strip()
         if joined:
-            segments.append(ScriptSegment(
-                index=idx,
-                type=SegmentType.ACTION,
-                content=joined,
-                scene_description=current_scene,
-            ))
+            segments.append(
+                ScriptSegment(
+                    index=idx,
+                    type=SegmentType.ACTION,
+                    content=joined,
+                    scene_description=current_scene,
+                )
+            )
             idx += 1
         action_buffer = []
 
@@ -114,13 +120,15 @@ def parse_screenplay(text: str) -> list[ScriptSegment]:
         joined = " ".join(dialogue_buffer).strip()
         if joined:
             seg_type = SegmentType.VOICEOVER if is_voiceover else SegmentType.DIALOGUE
-            segments.append(ScriptSegment(
-                index=idx,
-                type=seg_type,
-                content=joined,
-                speaker=current_speaker,
-                scene_description=current_scene,
-            ))
+            segments.append(
+                ScriptSegment(
+                    index=idx,
+                    type=seg_type,
+                    content=joined,
+                    speaker=current_speaker,
+                    scene_description=current_scene,
+                )
+            )
             idx += 1
         dialogue_buffer = []
         is_voiceover = False
@@ -143,11 +151,13 @@ def parse_screenplay(text: str) -> list[ScriptSegment]:
             if in_dialogue:
                 _flush_dialogue()
                 in_dialogue = False
-            segments.append(ScriptSegment(
-                index=idx,
-                type=SegmentType.TRANSITION,
-                content=stripped,
-            ))
+            segments.append(
+                ScriptSegment(
+                    index=idx,
+                    type=SegmentType.TRANSITION,
+                    content=stripped,
+                )
+            )
             idx += 1
             continue
 
@@ -159,19 +169,22 @@ def parse_screenplay(text: str) -> list[ScriptSegment]:
                 _flush_dialogue()
                 in_dialogue = False
             current_scene = _extract_scene_location(m_scene.group(2))
-            segments.append(ScriptSegment(
-                index=idx,
-                type=SegmentType.ACTION,
-                content=stripped,
-                scene_description=current_scene,
-            ))
+            segments.append(
+                ScriptSegment(
+                    index=idx,
+                    type=SegmentType.ACTION,
+                    content=stripped,
+                    scene_description=current_scene,
+                )
+            )
             idx += 1
             continue
 
         # --- Character name ---
-        if not in_dialogue and (_CHARACTER_RE.match(line) or
-                                (_CHARACTER_SIMPLE_RE.match(stripped)
-                                 and _is_likely_character_name(stripped))):
+        if not in_dialogue and (
+            _CHARACTER_RE.match(line)
+            or (_CHARACTER_SIMPLE_RE.match(stripped) and _is_likely_character_name(stripped))
+        ):
             _flush_action()
             current_speaker = re.sub(r"\s*\([^)]*\)\s*", "", stripped).strip()
             is_voiceover = bool(_VO_ANNOTATION_RE.search(stripped))

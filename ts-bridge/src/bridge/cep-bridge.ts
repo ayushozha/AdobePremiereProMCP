@@ -16,7 +16,12 @@ import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import { createLogger, format, transports, type Logger } from "winston";
 
-import type { BridgeConfig } from "../config.js";
+import { resolveSharedToken } from "../auth/token.js";
+import {
+  resolveExportPresetPath,
+  type BridgeConfig,
+  type ExportPresetPaths,
+} from "../config.js";
 import type {
   PremiereBridge,
   ProjectState,
@@ -103,11 +108,13 @@ const PONG_TIMEOUT_MS = 5_000;
 
 export class CepBridge implements PremiereBridge {
   private readonly log: Logger;
-  private readonly wsUrl: string;
+  private readonly wsEndpoint: string;
+  private readonly wsHeaders: Readonly<Record<string, string>>;
   private readonly commandTimeoutMs: number;
   private readonly maxReconnectAttempts: number;
   private readonly reconnectBaseMs: number;
   private readonly reconnectMaxMs: number;
+  private readonly exportPresetPaths: ExportPresetPaths;
 
   private ws: WebSocket | null = null;
   private pendingRequests = new Map<string, PendingRequest>();
@@ -121,11 +128,14 @@ export class CepBridge implements PremiereBridge {
 
   constructor(config: BridgeConfig) {
     const port = config.cepWsPort || DEFAULT_WS_PORT;
-    this.wsUrl = `ws://localhost:${port}`;
+    const token = resolveSharedToken(config.cepToken);
+    this.wsEndpoint = `ws://127.0.0.1:${port}`;
+    this.wsHeaders = { Authorization: `Bearer ${token}` };
     this.commandTimeoutMs = DEFAULT_COMMAND_TIMEOUT_MS;
     this.maxReconnectAttempts = DEFAULT_MAX_RECONNECT_ATTEMPTS;
     this.reconnectBaseMs = DEFAULT_RECONNECT_BASE_MS;
     this.reconnectMaxMs = DEFAULT_RECONNECT_MAX_MS;
+    this.exportPresetPaths = config.exportPresetPaths ?? {};
 
     this.log = createLogger({
       level: config.logLevel,
@@ -152,9 +162,9 @@ export class CepBridge implements PremiereBridge {
     this.intentionalClose = false;
 
     return new Promise<void>((resolve) => {
-      this.log.info(`Connecting to CEP panel at ${this.wsUrl}...`);
+      this.log.info(`Connecting to CEP panel at ${this.wsEndpoint}...`);
 
-      const ws = new WebSocket(this.wsUrl);
+      const ws = new WebSocket(this.wsEndpoint, { headers: this.wsHeaders });
       let settled = false;
       // Track whether the socket ever successfully opened so we only
       // auto-reconnect on connections that were previously established.
@@ -165,7 +175,7 @@ export class CepBridge implements PremiereBridge {
           settled = true;
           ws.terminate();
           this.log.warn(
-            `Connection to CEP panel at ${this.wsUrl} timed out. ` +
+            `Connection to CEP panel at ${this.wsEndpoint} timed out. ` +
               "Bridge will operate in disconnected mode.",
           );
           resolve();
@@ -183,7 +193,7 @@ export class CepBridge implements PremiereBridge {
         this.reconnectAttempts = 0;
         this.startHeartbeat();
 
-        this.log.info(`Connected to CEP panel at ${this.wsUrl}`);
+        this.log.info(`Connected to CEP panel at ${this.wsEndpoint}`);
         resolve();
       });
 
@@ -258,7 +268,45 @@ export class CepBridge implements PremiereBridge {
   // -----------------------------------------------------------------------
 
   async getProjectState(): Promise<ProjectState> {
-    return this.send<ProjectState>("getProjectState", {});
+    const raw = await this.invokeHost<Record<string, unknown>>(
+      "getProjectState",
+    );
+    const rawSequences = Array.isArray(raw["sequences"])
+      ? raw["sequences"] as Array<Record<string, unknown>>
+      : [];
+
+    return {
+      projectName: String(raw["projectName"] ?? raw["name"] ?? ""),
+      projectPath: String(raw["projectPath"] ?? raw["path"] ?? ""),
+      sequences: rawSequences.map((sequence, index) => ({
+        id: String(
+          sequence["id"] ?? sequence["sequenceId"] ??
+          sequence["sequenceID"] ?? index,
+        ),
+        name: String(sequence["name"] ?? `Sequence ${index + 1}`),
+        resolution: {
+          width: Number(
+            (sequence["resolution"] as Record<string, unknown> | undefined)?.["width"] ??
+            sequence["frameSizeHorizontal"] ?? sequence["width"] ?? 0,
+          ),
+          height: Number(
+            (sequence["resolution"] as Record<string, unknown> | undefined)?.["height"] ??
+            sequence["frameSizeVertical"] ?? sequence["height"] ?? 0,
+          ),
+        },
+        frameRate: Number(sequence["frameRate"] ?? sequence["fps"] ?? 0),
+        durationSeconds: Number(
+          sequence["durationSeconds"] ?? sequence["outPoint"] ?? 0,
+        ),
+        videoTrackCount: Number(sequence["videoTrackCount"] ?? 0),
+        audioTrackCount: Number(sequence["audioTrackCount"] ?? 0),
+      })),
+      binCount: Number(raw["binCount"] ?? 0),
+      // The CEP host cannot reliably expose Premiere's dirty-document state.
+      // Treat an absent value as unknown/unsaved instead of reporting a false
+      // guarantee that the project is safely on disk.
+      isSaved: Boolean(raw["isSaved"] ?? false),
+    };
   }
 
   // -----------------------------------------------------------------------
@@ -272,14 +320,29 @@ export class CepBridge implements PremiereBridge {
     videoTracks: number;
     audioTracks: number;
   }): Promise<{ sequenceId: string; name: string }> {
-    return this.send<{ sequenceId: string; name: string }>(
+    const raw = await this.invokeHost<Record<string, unknown>>(
       "createSequence",
-      params,
+      {
+        name: params.name,
+        width: params.resolution.width,
+        height: params.resolution.height,
+        fps: params.frameRate,
+        videoTracks: params.videoTracks,
+        audioTracks: params.audioTracks,
+      },
     );
+    return {
+      sequenceId: String(
+        raw["sequenceId"] ?? raw["sequenceID"] ?? raw["id"] ?? "",
+      ),
+      name: String(raw["name"] ?? params.name),
+    };
   }
 
   async getTimelineState(sequenceId: string): Promise<TimelineState> {
-    return this.send<TimelineState>("getTimelineState", { sequenceId });
+    return this.invokeHost<TimelineState>("mcpGetTimelineState", {
+      sequenceId,
+    });
   }
 
   // -----------------------------------------------------------------------
@@ -290,10 +353,17 @@ export class CepBridge implements PremiereBridge {
     filePath: string;
     targetBin: string;
   }): Promise<{ projectItemId: string; name: string }> {
-    return this.send<{ projectItemId: string; name: string }>(
+    const raw = await this.invokeHost<Record<string, unknown>>(
       "importMedia",
-      params,
+      { filePath: params.filePath, binPath: params.targetBin },
     );
+    return {
+      projectItemId: String(
+        raw["projectItemId"] ?? raw["nodeId"] ?? raw["mediaPath"] ??
+        params.filePath,
+      ),
+      name: String(raw["name"] ?? params.filePath.split(/[\\/]/).pop() ?? ""),
+    };
   }
 
   async placeClip(params: {
@@ -303,14 +373,14 @@ export class CepBridge implements PremiereBridge {
     sourceRange?: TimeRange;
     speed: number;
   }): Promise<{ clipId: string }> {
-    return this.send<{ clipId: string }>("placeClip", params);
+    return this.invokeHost<{ clipId: string }>("mcpPlaceClip", params);
   }
 
   async removeClip(params: {
     clipId: string;
     sequenceId: string;
   }): Promise<void> {
-    await this.send("removeClip", params);
+    await this.invokeHost("mcpRemoveClip", params);
   }
 
   // -----------------------------------------------------------------------
@@ -324,7 +394,10 @@ export class CepBridge implements PremiereBridge {
     transitionType: string;
     durationSeconds: number;
   }): Promise<{ transitionId: string }> {
-    return this.send<{ transitionId: string }>("addTransition", params);
+    return this.invokeHost<{ transitionId: string }>(
+      "mcpAddTransition",
+      params,
+    );
   }
 
   async addText(params: {
@@ -335,7 +408,7 @@ export class CepBridge implements PremiereBridge {
     position: Timecode;
     durationSeconds: number;
   }): Promise<{ clipId: string }> {
-    return this.send<{ clipId: string }>("addText", params);
+    return this.invokeHost<{ clipId: string }>("mcpAddText", params);
   }
 
   async applyEffect(params: {
@@ -343,7 +416,7 @@ export class CepBridge implements PremiereBridge {
     sequenceId: string;
     effect: EffectParams;
   }): Promise<void> {
-    await this.send("applyEffect", params);
+    await this.invokeHost("mcpApplyEffect", params);
   }
 
   // -----------------------------------------------------------------------
@@ -355,7 +428,7 @@ export class CepBridge implements PremiereBridge {
     sequenceId: string;
     levelDb: number;
   }): Promise<void> {
-    await this.send("setAudioLevel", params);
+    await this.invokeHost("mcpSetAudioLevel", params);
   }
 
   // -----------------------------------------------------------------------
@@ -367,7 +440,31 @@ export class CepBridge implements PremiereBridge {
     outputPath: string;
     preset: ExportPreset;
   }): Promise<ExportResult> {
-    return this.send<ExportResult>("exportSequence", params);
+    const presetPath = resolveExportPresetPath(
+      this.exportPresetPaths,
+      params.preset,
+    );
+    const raw = await this.invokeHost<Record<string, unknown>>(
+      "exportSequence",
+      {
+        sequenceId: params.sequenceId,
+        outputPath: params.outputPath,
+        presetPath,
+      },
+    );
+    const rawStatus = String(raw["status"] ?? "pending");
+    const status: ExportResult["status"] = rawStatus === "completed" || rawStatus === "export_complete"
+      ? "completed"
+      : rawStatus === "failed"
+        ? "failed"
+        : rawStatus === "running"
+          ? "running"
+          : "pending";
+    return {
+      jobId: String(raw["jobId"] ?? raw["jobID"] ?? "queued"),
+      status,
+      outputPath: String(raw["outputPath"] ?? params.outputPath),
+    };
   }
 
   // -----------------------------------------------------------------------
@@ -379,7 +476,7 @@ export class CepBridge implements PremiereBridge {
     autoImport: boolean;
     autoCreateSequence: boolean;
   }): Promise<EDLExecutionResult> {
-    return this.send<EDLExecutionResult>("executeEDL", params);
+    return this.invokeHost<EDLExecutionResult>("mcpExecuteEDL", params);
   }
 
   // -----------------------------------------------------------------------
@@ -412,7 +509,19 @@ export class CepBridge implements PremiereBridge {
 
   async ping(): Promise<PingResult> {
     try {
-      return await this.send<PingResult>("ping", {});
+      const raw = await this.invokeHost<Record<string, unknown>>("ping");
+      return {
+        premiereRunning: Boolean(
+          raw["premiereRunning"] ?? raw["premiere_running"] ??
+          raw["status"] === "ok",
+        ),
+        premiereVersion: String(
+          raw["premiereVersion"] ?? raw["premiere_version"] ??
+          raw["version"] ?? "unknown",
+        ),
+        projectOpen: Boolean(raw["projectOpen"] ?? raw["project_open"] ?? false),
+        bridgeMode: "cep",
+      };
     } catch {
       return {
         premiereRunning: false,
@@ -426,6 +535,23 @@ export class CepBridge implements PremiereBridge {
   // -----------------------------------------------------------------------
   // Private: WebSocket command transport
   // -----------------------------------------------------------------------
+
+  /** Invoke a named premiere.jsx function through the generic dispatcher. */
+  private async invokeHost<T = unknown>(
+    functionName: string,
+    args: object = {},
+  ): Promise<T> {
+    const response = await this.evalCommand(functionName, JSON.stringify(args));
+    if (response.isError) {
+      throw new CepCommandError(functionName, response.errorMessage);
+    }
+    if (response.resultJson === "") return undefined as T;
+    try {
+      return JSON.parse(response.resultJson) as T;
+    } catch {
+      return response.resultJson as T;
+    }
+  }
 
   /**
    * Send a command to the CEP panel and wait for its response.
@@ -560,7 +686,7 @@ export class CepBridge implements PremiereBridge {
         .then(() => {
           if (this._isConnected) {
             this.log.info(
-              `Reconnected to CEP panel at ${this.wsUrl} after ${this.reconnectAttempts} attempt(s).`,
+              `Reconnected to CEP panel at ${this.wsEndpoint} after ${this.reconnectAttempts} attempt(s).`,
             );
             // Reset attempt counter on successful connection -- already
             // done inside connect()'s "open" handler.

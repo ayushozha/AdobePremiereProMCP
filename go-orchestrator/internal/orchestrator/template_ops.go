@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -24,7 +23,7 @@ func (e *Engine) ListSequencePresets(ctx context.Context) (*GenericResult, error
 // CreateSequenceFromPreset creates a new sequence from a preset file using QE DOM.
 func (e *Engine) CreateSequenceFromPreset(ctx context.Context, name, presetPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"name": name,
+		"name":       name,
 		"presetPath": presetPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createSequenceFromPreset", string(argsJSON))
@@ -38,7 +37,7 @@ func (e *Engine) CreateSequenceFromPreset(ctx context.Context, name, presetPath 
 func (e *Engine) ExportSequencePreset(ctx context.Context, sequenceIndex int, outputPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"outputPath": outputPath,
+		"outputPath":    outputPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "exportSequencePreset", string(argsJSON))
 	if err != nil {
@@ -64,9 +63,9 @@ func (e *Engine) ListEffectPresets(ctx context.Context) (*GenericResult, error) 
 // ApplyEffectPreset applies an effect preset to a clip.
 func (e *Engine) ApplyEffectPreset(ctx context.Context, trackType string, trackIndex, clipIndex int, presetPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 		"presetPath": presetPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "applyEffectPreset", string(argsJSON))
@@ -79,9 +78,9 @@ func (e *Engine) ApplyEffectPreset(ctx context.Context, trackType string, trackI
 // SaveEffectPreset saves a clip's effects as a preset.
 func (e *Engine) SaveEffectPreset(ctx context.Context, trackType string, trackIndex, clipIndex int, presetName string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 		"presetName": presetName,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "saveEffectPreset", string(argsJSON))
@@ -109,7 +108,7 @@ func (e *Engine) ListExportPresetsFromDisk(ctx context.Context) (*GenericResult,
 func (e *Engine) CreateExportPreset(ctx context.Context, settingsJSON, name string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"settingsJSON": settingsJSON,
-		"name": name,
+		"name":         name,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createExportPreset", string(argsJSON))
 	if err != nil {
@@ -150,7 +149,7 @@ func (e *Engine) SaveAsTemplate(ctx context.Context, templatePath string) (*Gene
 func (e *Engine) CreateFromTemplate(ctx context.Context, templatePath, projectPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"templatePath": templatePath,
-		"projectPath": projectPath,
+		"projectPath":  projectPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createFromTemplate", string(argsJSON))
 	if err != nil {
@@ -192,7 +191,7 @@ func (e *Engine) ExecuteMenuCommand(ctx context.Context, menuPath string) (*Gene
 // CreateIngestPreset creates an ingest preset for transcode on import.
 func (e *Engine) CreateIngestPreset(ctx context.Context, name, settingsJSON string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"name": name,
+		"name":         name,
 		"settingsJSON": settingsJSON,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createIngestPreset", string(argsJSON))
@@ -216,7 +215,7 @@ func (e *Engine) GetIngestSettings(ctx context.Context) (*GenericResult, error) 
 func (e *Engine) SetIngestSettings(ctx context.Context, enabled bool, preset string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"enabled": enabled,
-		"preset": preset,
+		"preset":  preset,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setIngestSettings", string(argsJSON))
 	if err != nil {
@@ -232,10 +231,10 @@ func (e *Engine) SetIngestSettings(ctx context.Context, enabled bool, preset str
 // SaveClipPreset saves clip settings (speed, effects, motion) as a preset.
 func (e *Engine) SaveClipPreset(ctx context.Context, trackType string, trackIndex, clipIndex int, name string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"name": name,
+		"clipIndex":  clipIndex,
+		"name":       name,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "saveClipPreset", string(argsJSON))
 	if err != nil {
@@ -247,9 +246,9 @@ func (e *Engine) SaveClipPreset(ctx context.Context, trackType string, trackInde
 // ApplyClipPreset applies a saved clip preset.
 func (e *Engine) ApplyClipPreset(ctx context.Context, trackType string, trackIndex, clipIndex int, presetName string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 		"presetName": presetName,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "applyClipPreset", string(argsJSON))
@@ -276,9 +275,9 @@ func (e *Engine) ListClipPresets(ctx context.Context) (*GenericResult, error) {
 // BatchRename renames clips on a track using a pattern (e.g., "Shot_001", "Shot_002").
 func (e *Engine) BatchRename(ctx context.Context, trackType string, trackIndex int, pattern string, startNumber int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
-		"trackIndex": trackIndex,
-		"pattern": pattern,
+		"trackType":   trackType,
+		"trackIndex":  trackIndex,
+		"pattern":     pattern,
 		"startNumber": startNumber,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "batchRename", string(argsJSON))
@@ -291,8 +290,8 @@ func (e *Engine) BatchRename(ctx context.Context, trackType string, trackIndex i
 // BatchSetDuration sets all clips on a track to the same duration.
 func (e *Engine) BatchSetDuration(ctx context.Context, trackType string, trackIndex int, durationSeconds float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
-		"trackIndex": trackIndex,
+		"trackType":       trackType,
+		"trackIndex":      trackIndex,
 		"durationSeconds": durationSeconds,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "batchSetDuration", string(argsJSON))
@@ -305,9 +304,9 @@ func (e *Engine) BatchSetDuration(ctx context.Context, trackType string, trackIn
 // BatchSetSpeed sets speed on all clips on a track.
 func (e *Engine) BatchSetSpeed(ctx context.Context, trackType string, trackIndex int, speed float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"speed": speed,
+		"speed":      speed,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "batchSetSpeed", string(argsJSON))
 	if err != nil {
@@ -319,9 +318,9 @@ func (e *Engine) BatchSetSpeed(ctx context.Context, trackType string, trackIndex
 // BatchApplyTransitions applies a transition to all cuts on a track.
 func (e *Engine) BatchApplyTransitions(ctx context.Context, trackIndex int, transitionName string, duration float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackIndex": trackIndex,
+		"trackIndex":     trackIndex,
 		"transitionName": transitionName,
-		"duration": duration,
+		"duration":       duration,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "batchApplyTransitions", string(argsJSON))
 	if err != nil {
@@ -334,8 +333,8 @@ func (e *Engine) BatchApplyTransitions(ctx context.Context, trackIndex int, tran
 func (e *Engine) BatchExportFrames(ctx context.Context, trackIndex int, outputDir, format string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"outputDir": outputDir,
-		"format": format,
+		"outputDir":  outputDir,
+		"format":     format,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "batchExportFrames", string(argsJSON))
 	if err != nil {
@@ -351,7 +350,7 @@ func (e *Engine) BatchExportFrames(ctx context.Context, trackIndex int, outputDi
 // SaveTimelineTemplate saves the current timeline as a template.
 func (e *Engine) SaveTimelineTemplate(ctx context.Context, name, description string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"name": name,
+		"name":        name,
 		"description": description,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "saveTimelineTemplate", string(argsJSON))

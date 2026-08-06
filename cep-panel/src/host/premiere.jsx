@@ -85,6 +85,204 @@ if (typeof JSON === "undefined") {
 }
 
 // ---------------------------------------------------------------------------
+// Generic MCP command dispatcher
+// ---------------------------------------------------------------------------
+
+/**
+ * Invoke an ExtendScript function using the JSON object sent by the Go
+ * orchestrator. Most host functions use positional arguments while MCP tools
+ * send a named object; calling fn(argsJson) therefore corrupts every argument
+ * after the first. This dispatcher reads the target function's parameter
+ * names, resolves camelCase/snake_case fields, and calls it positionally.
+ *
+ * Functions intentionally accepting a single `*Json`/`args` parameter still
+ * receive the original JSON string. Array/object parameters whose names end in
+ * `Json` are serialized before invocation (for example `clipIndicesJson`).
+ */
+function mcpDispatch(functionName, argsJson) {
+    try {
+        functionName = String(functionName || "");
+        if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(functionName)) {
+            return _err("Invalid command name: " + functionName);
+        }
+
+        var target;
+        try { target = eval(functionName); }
+        catch (lookupErr) { target = null; }
+        if (typeof target !== "function") {
+            return _err("Unsupported Premiere command: " + functionName);
+        }
+
+        var rawArgs = argsJson;
+        if (rawArgs === undefined || rawArgs === null || rawArgs === "") rawArgs = "{}";
+        rawArgs = String(rawArgs);
+
+        var parsedArgs;
+        try { parsedArgs = JSON.parse(rawArgs); }
+        catch (parseErr) { return _err("Invalid command arguments: " + parseErr.message); }
+
+        var source = String(target);
+        var signature = source.match(/function[^\(]*\(([^\)]*)\)/);
+        if (!signature) {
+            return _err("Could not inspect command signature: " + functionName);
+        }
+
+        var parameterText = signature[1].replace(/^\s+|\s+$/g, "");
+        if (parameterText === "") return target();
+
+        var parameters = parameterText.split(",");
+        for (var pi = 0; pi < parameters.length; pi++) {
+            parameters[pi] = parameters[pi].replace(/^\s+|\s+$/g, "");
+        }
+
+        if (parsedArgs instanceof Array) return target.apply(null, parsedArgs);
+        if (parsedArgs === null || typeof parsedArgs !== "object") return target(parsedArgs);
+
+        function hasOwn(obj, key) {
+            return obj !== null && obj !== undefined && obj.hasOwnProperty(key);
+        }
+
+        function toSnakeCase(name) {
+            return name.replace(/([A-Z])/g, "_$1").toLowerCase();
+        }
+
+        // Several typed Go operations wrap their payload under `params`.
+        // Positional host functions should resolve from that object as well as
+        // the top level, without changing single args/params JSON handlers.
+        var nestedParams = null;
+        if (hasOwn(parsedArgs, "params") && parsedArgs.params !== null &&
+            typeof parsedArgs.params === "object" && !(parsedArgs.params instanceof Array)) {
+            nestedParams = parsedArgs.params;
+        }
+
+        var commandAliases = {
+            copyEffects: {
+                srcTrackType: "trackType",
+                srcTrackIndex: "trackIndex",
+                srcClipIndex: "clipIndex"
+            },
+            pasteEffects: {
+                destTrackType: "trackType",
+                destTrackIndex: "trackIndex",
+                destClipIndex: "clipIndex"
+            },
+            addClipMarker: { color: "colorIndex" },
+            generateDeliveryReport: { specs: "specsJSON" },
+            runQAChecklist: { specs: "specsJSON" },
+            copyColorGrade: { srcTrackIndex: "trackIndex", srcClipIndex: "clipIndex" },
+            pasteColorGrade: { destTrackIndex: "trackIndex", destClipIndex: "clipIndex" },
+            applyColorGradeToAll: { trackIndex: "destTrackIndex" },
+            batchSetMetadata: { itemIndicesStr: "itemIndices" },
+            batchSetLabels: { itemIndicesStr: "itemIndices" },
+            createExportPreset: { settings: "settingsJSON" },
+            createIngestPreset: { settings: "settingsJSON" },
+            setLabelPreferences: { labels: "labelsJSON" },
+            showInputDialog: { promptText: "prompt" }
+        };
+
+        function canonicalKey(name) {
+            return String(name || "").replace(/[^A-Za-z0-9]/g, "").toLowerCase();
+        }
+
+        function findCanonicalValue(obj, name) {
+            var wanted = canonicalKey(name);
+            for (var key in obj) {
+                if (hasOwn(obj, key) && canonicalKey(key) === wanted) {
+                    return { found: true, value: obj[key] };
+                }
+            }
+            return { found: false };
+        }
+
+        function findNamedValue(name) {
+            if (hasOwn(parsedArgs, name)) return { found: true, value: parsedArgs[name] };
+            if (nestedParams && hasOwn(nestedParams, name)) return { found: true, value: nestedParams[name] };
+            var canonical = findCanonicalValue(parsedArgs, name);
+            if (canonical.found) return canonical;
+            if (nestedParams) {
+                canonical = findCanonicalValue(nestedParams, name);
+                if (canonical.found) return canonical;
+            }
+            return { found: false };
+        }
+
+        function prepareResolvedValue(name, value) {
+            if (/json$/i.test(name) && typeof value !== "string") return JSON.stringify(value);
+            if (name === "itemIndicesStr" && value && typeof value.join === "function") return value.join(",");
+            return value;
+        }
+
+        function resolveValue(name) {
+            var direct = findNamedValue(name);
+            if (direct.found) return prepareResolvedValue(name, direct.value);
+
+            var snakeName = toSnakeCase(name);
+            var snake = findNamedValue(snakeName);
+            if (snake.found) return prepareResolvedValue(name, snake.value);
+
+            var aliases = commandAliases[functionName];
+            if (aliases && hasOwn(aliases, name)) {
+                var aliasName = aliases[name];
+                var alias = findNamedValue(aliasName);
+                if (!alias.found) alias = findNamedValue(toSnakeCase(aliasName));
+                if (alias.found) return prepareResolvedValue(name, alias.value);
+            }
+
+            // Functions commonly name structured positional parameters
+            // `somethingJson`/`somethingJSON`, while the MCP schema exposes
+            // `something`.
+            if (/json$/i.test(name)) {
+                var baseName = name.substring(0, name.length - 4);
+                var baseSnake = toSnakeCase(baseName);
+                var structured = findNamedValue(baseName);
+                if (!structured.found) structured = findNamedValue(baseSnake);
+                if (structured.found) {
+                    return prepareResolvedValue(name, structured.value);
+                }
+
+                if ((functionName === "exportAAF" || functionName === "exportOMF") &&
+                    name === "optionsJson" && nestedParams) return JSON.stringify(nestedParams);
+            }
+
+            // Small naming differences used by a handful of older JSX calls.
+            if (/Seconds$/.test(name)) {
+                var shortName = name.substring(0, name.length - 7);
+                var shortValue = findNamedValue(shortName);
+                if (!shortValue.found) shortValue = findNamedValue(toSnakeCase(shortName));
+                if (shortValue.found) return prepareResolvedValue(name, shortValue.value);
+            }
+
+            return undefined;
+        }
+
+        // Generic args/params functions parse the complete MCP object. Other
+        // single *Json functions usually expect a named field inside that
+        // object (for example {edlJSON:"[...]"}); extract it before falling
+        // back to the complete object.
+        if (parameters.length === 1 &&
+            (parameters[0] === "args" || parameters[0] === "params" ||
+             /^argsJson$/i.test(parameters[0]) || /^paramsJson$/i.test(parameters[0]))) {
+            return target(rawArgs);
+        }
+        if (parameters.length === 1 && /json$/i.test(parameters[0])) {
+            var jsonValue = resolveValue(parameters[0]);
+            if (jsonValue !== undefined) {
+                return target(typeof jsonValue === "string" ? jsonValue : JSON.stringify(jsonValue));
+            }
+            return target(rawArgs);
+        }
+
+        var positional = [];
+        for (var i = 0; i < parameters.length; i++) {
+            positional.push(resolveValue(parameters[i]));
+        }
+        return target.apply(null, positional);
+    } catch (dispatchErr) {
+        return _err("Command " + functionName + " failed: " + dispatchErr.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Time helpers
 // ---------------------------------------------------------------------------
 
@@ -103,6 +301,197 @@ function _secondsToTime(seconds) {
     var t = new Time();
     t.seconds = seconds;
     return t;
+}
+
+/** Return the index of a sequence without relying on its display name. */
+function _mcpSequenceIndex(sequence) {
+    if (!app.project || !app.project.sequences || !sequence) return -1;
+    var wanted = String(sequence.sequenceID || "");
+    for (var i = 0; i < app.project.sequences.numSequences; i++) {
+        var candidate = app.project.sequences[i];
+        if (candidate === sequence || (wanted && candidate && String(candidate.sequenceID || "") === wanted)) return i;
+    }
+    return -1;
+}
+
+/** Read back the settings Premiere actually accepted. */
+function _mcpActualSequenceSpec(sequence) {
+    var settings = null;
+    try { settings = sequence.getSettings ? sequence.getSettings() : null; } catch (ignoreSettings) {}
+    var width = settings ? parseInt(settings.videoFrameWidth, 10) || 0 : 0;
+    var height = settings ? parseInt(settings.videoFrameHeight, 10) || 0 : 0;
+    if (!width) width = parseInt(sequence.frameSizeHorizontal, 10) || 0;
+    if (!height) height = parseInt(sequence.frameSizeVertical, 10) || 0;
+    var fps = 0;
+    var rate = settings ? settings.videoFrameRate : null;
+    if (rate && rate.ticks) {
+        var ticks = parseFloat(rate.ticks);
+        if (ticks > 0) fps = 254016000000 / ticks;
+    } else if (rate && rate.seconds) {
+        var seconds = parseFloat(rate.seconds);
+        if (seconds > 0) fps = 1 / seconds;
+    }
+    if (!fps) {
+        var timebase = parseFloat(sequence.timebase);
+        if (timebase > 0) fps = 254016000000 / timebase;
+    }
+    return {
+        width: width,
+        height: height,
+        fps: fps,
+        videoTracks: sequence.videoTracks ? sequence.videoTracks.numTracks : 0,
+        audioTracks: sequence.audioTracks ? sequence.audioTracks.numTracks : 0
+    };
+}
+
+/** Activate a sequence and prove the active identity through the public DOM. */
+function _mcpActivateSequenceAndVerify(sequence) {
+    if (!app.project || !sequence) return { error: "Cannot activate a missing sequence" };
+    var expectedID = String(sequence.sequenceID || "");
+    if (!expectedID) return { error: "Cannot verify a sequence with an empty sequence ID" };
+    if (typeof app.project.openSequence !== "function") {
+        return { error: "Project.openSequence is not supported in this Premiere Pro version" };
+    }
+    var openResult;
+    try { openResult = app.project.openSequence(expectedID); } catch (activationError) {
+        return { error: "Premiere could not open sequence " + expectedID + ": " + activationError.message };
+    }
+    if (openResult !== true) {
+        return { error: "Project.openSequence returned failure for sequence " + expectedID };
+    }
+    var active = app.project.activeSequence;
+    var activeID = active ? String(active.sequenceID || "") : "";
+    if (!active || activeID !== expectedID) {
+        return { error: "Premiere did not activate sequence " + expectedID + "; active sequence is " + (activeID || "none") };
+    }
+    return { data: { sequenceID: expectedID, name: String(active.name || ""), verified: true } };
+}
+
+/** Delete only a sequence object already resolved by the caller. */
+function _mcpDeleteSequenceQuietly(sequence) {
+    if (!app.project || !sequence) return false;
+    var wanted = String(sequence.sequenceID || "");
+    try { app.project.deleteSequence(sequence); } catch (ignoreDelete) { return false; }
+    if (!wanted || !app.project.sequences) return true;
+    for (var i = 0; i < app.project.sequences.numSequences; i++) {
+        if (String(app.project.sequences[i].sequenceID || "") === wanted) return false;
+    }
+    return true;
+}
+
+function _mcpCaptureSequenceIds() {
+    var ids = {};
+    if (!app.project || !app.project.sequences) return ids;
+    ids.__mcpCount = app.project.sequences.numSequences;
+    for (var i = 0; i < app.project.sequences.numSequences; i++) {
+        var id = String(app.project.sequences[i].sequenceID || "");
+        if (id) ids[id] = true;
+    }
+    return ids;
+}
+
+function _mcpFindNewSequence(previousIds) {
+    if (!app.project || !app.project.sequences) return null;
+    var previousCount = parseInt(previousIds.__mcpCount, 10) || 0;
+    if (app.project.sequences.numSequences <= previousCount) return null;
+    var active = app.project.activeSequence;
+    var activeId = active ? String(active.sequenceID || "") : "";
+    if (active && activeId && !previousIds[activeId]) return active;
+    for (var i = 0; i < app.project.sequences.numSequences; i++) {
+        var candidate = app.project.sequences[i];
+        var candidateId = candidate ? String(candidate.sequenceID || "") : "";
+        if (candidate && ((candidateId && !previousIds[candidateId]) || (!candidateId && i >= previousCount))) return candidate;
+    }
+    // Sequence IDs should be unique, but retain a last-position fallback so a
+    // malformed/blank ID still gives the caller an object it can delete.
+    return app.project.sequences[app.project.sequences.numSequences - 1] || null;
+}
+
+/**
+ * Apply requested sequence settings and track counts, then verify the DOM.
+ * Returns {data: actualSpec} or {error: message}; callers own rollback.
+ */
+function _mcpConfigureAndVerifySequence(sequence, requested) {
+    if (!sequence) return { error: "No sequence was created" };
+    var settings = null;
+    try { settings = sequence.getSettings ? sequence.getSettings() : null; } catch (settingsReadErr) {
+        return { error: "Cannot read sequence settings: " + settingsReadErr.message };
+    }
+    if (!settings) return { error: "Premiere did not expose sequence settings" };
+
+    if (requested.width !== undefined) settings.videoFrameWidth = requested.width;
+    if (requested.height !== undefined) settings.videoFrameHeight = requested.height;
+    if (requested.fps !== undefined) {
+        var frameDuration = new Time();
+        frameDuration.ticks = String(Math.round(254016000000 / requested.fps));
+        settings.videoFrameRate = frameDuration;
+    }
+    try { sequence.setSettings(settings); } catch (settingsWriteErr) {
+        return { error: "Premiere rejected sequence settings: " + settingsWriteErr.message };
+    }
+
+    // Some Premiere versions only accept frame-size changes through QE. Use
+    // that as a fallback, but still trust only the standard DOM readback.
+    var afterSettings = _mcpActualSequenceSpec(sequence);
+    if ((requested.width !== undefined && afterSettings.width !== requested.width) ||
+        (requested.height !== undefined && afterSettings.height !== requested.height)) {
+        try {
+            app.enableQE();
+            var sequenceIndex = _mcpSequenceIndex(sequence);
+            var qeSequence = sequenceIndex >= 0 && qe.project ? qe.project.getSequenceAt(sequenceIndex) : null;
+            if (qeSequence && qeSequence.setFrameSize) qeSequence.setFrameSize(requested.width, requested.height);
+        } catch (ignoreQEFrameSize) {}
+    }
+
+    if (requested.videoTracks !== undefined || requested.audioTracks !== undefined) {
+        try { app.project.activeSequence = sequence; } catch (activateErr) {
+            return { error: "Cannot activate the new sequence to configure tracks: " + activateErr.message };
+        }
+        try { app.enableQE(); } catch (enableQEErr) {
+            return { error: "QE DOM is required to configure exact track counts: " + enableQEErr.message };
+        }
+        var activeQE = (typeof qe !== "undefined" && qe.project) ? qe.project.getActiveSequence() : null;
+        if (!activeQE) return { error: "QE DOM did not expose the new sequence" };
+
+        var guard = 0;
+        while (requested.videoTracks !== undefined && sequence.videoTracks.numTracks < requested.videoTracks && guard++ < 64) {
+            if (!activeQE.addVideoTrack) return { error: "Premiere cannot add video tracks in this version" };
+            var videoBefore = sequence.videoTracks.numTracks;
+            activeQE.addVideoTrack();
+            if (sequence.videoTracks.numTracks <= videoBefore) return { error: "Premiere did not add the requested video track" };
+        }
+        guard = 0;
+        while (requested.videoTracks !== undefined && sequence.videoTracks.numTracks > requested.videoTracks && guard++ < 64) {
+            if (!activeQE.removeVideoTrack) return { error: "Premiere cannot remove video tracks in this version" };
+            var videoRemoveBefore = sequence.videoTracks.numTracks;
+            activeQE.removeVideoTrack(videoRemoveBefore - 1);
+            if (sequence.videoTracks.numTracks >= videoRemoveBefore) return { error: "Premiere did not remove the extra video track" };
+        }
+        guard = 0;
+        while (requested.audioTracks !== undefined && sequence.audioTracks.numTracks < requested.audioTracks && guard++ < 64) {
+            if (!activeQE.addAudioTrack) return { error: "Premiere cannot add audio tracks in this version" };
+            var audioBefore = sequence.audioTracks.numTracks;
+            activeQE.addAudioTrack(1);
+            if (sequence.audioTracks.numTracks <= audioBefore) return { error: "Premiere did not add the requested audio track" };
+        }
+        guard = 0;
+        while (requested.audioTracks !== undefined && sequence.audioTracks.numTracks > requested.audioTracks && guard++ < 64) {
+            if (!activeQE.removeAudioTrack) return { error: "Premiere cannot remove audio tracks in this version" };
+            var audioRemoveBefore = sequence.audioTracks.numTracks;
+            activeQE.removeAudioTrack(audioRemoveBefore - 1);
+            if (sequence.audioTracks.numTracks >= audioRemoveBefore) return { error: "Premiere did not remove the extra audio track" };
+        }
+    }
+
+    var actual = _mcpActualSequenceSpec(sequence);
+    var mismatches = [];
+    if (requested.width !== undefined && actual.width !== requested.width) mismatches.push("width " + actual.width + " (requested " + requested.width + ")");
+    if (requested.height !== undefined && actual.height !== requested.height) mismatches.push("height " + actual.height + " (requested " + requested.height + ")");
+    if (requested.fps !== undefined && (!actual.fps || Math.abs(actual.fps - requested.fps) > 0.02)) mismatches.push("frame rate " + actual.fps + " (requested " + requested.fps + ")");
+    if (requested.videoTracks !== undefined && actual.videoTracks !== requested.videoTracks) mismatches.push("video tracks " + actual.videoTracks + " (requested " + requested.videoTracks + ")");
+    if (requested.audioTracks !== undefined && actual.audioTracks !== requested.audioTracks) mismatches.push("audio tracks " + actual.audioTracks + " (requested " + requested.audioTracks + ")");
+    if (mismatches.length) return { error: "Premiere did not apply: " + mismatches.join(", "), data: actual };
+    return { data: actual };
 }
 
 // ---------------------------------------------------------------------------
@@ -146,7 +535,8 @@ function getProjectState() {
             name: proj.name || "",
             path: proj.path || "",
             sequences: [],
-            activeSequenceIndex: -1
+            activeSequenceIndex: -1,
+            binCount: 0
         };
 
         // Enumerate sequences
@@ -161,6 +551,7 @@ function getProjectState() {
                 inPoint: _timeToSeconds(seq.getInPoint()),
                 outPoint: _timeToSeconds(seq.getOutPoint()),
                 timebase: seq.timebase || "",
+                fps: _mcpSequenceFPS(seq),
                 frameSizeHorizontal: seq.frameSizeHorizontal || 0,
                 frameSizeVertical: seq.frameSizeVertical || 0
             };
@@ -172,9 +563,13 @@ function getProjectState() {
             }
         }
 
-        // Count root items
-        if (proj.rootItem) {
-            state.rootItemCount = proj.rootItem.children ? proj.rootItem.children.numItems : 0;
+        // Report actual root-level bins rather than all root project items.
+        if (proj.rootItem && proj.rootItem.children) {
+            for (var rootIndex = 0; rootIndex < proj.rootItem.children.numItems; rootIndex++) {
+                if (proj.rootItem.children[rootIndex].type === ProjectItemType.BIN) {
+                    state.binCount++;
+                }
+            }
         }
 
         return _ok(state);
@@ -187,49 +582,76 @@ function getProjectState() {
 // createSequence(paramsJson) - Create a new sequence
 // ---------------------------------------------------------------------------
 function createSequence(paramsJson) {
+    var createdSequence = null;
+    var previousActiveSequence = null;
     try {
-        var params = JSON.parse(paramsJson);
-        var name = params.name || "New Sequence";
-        var width = parseInt(params.width, 10) || 1920;
-        var height = parseInt(params.height, 10) || 1080;
-        var fps = parseFloat(params.fps) || 29.97;
+        var params = (typeof paramsJson === "string") ? JSON.parse(paramsJson) : (paramsJson || {});
+        var name = String(params.name || "New Sequence");
+        var widthRaw = params.width === undefined ? 1920 : parseFloat(params.width);
+        var heightRaw = params.height === undefined ? 1080 : parseFloat(params.height);
+        var width = parseInt(widthRaw, 10);
+        var height = parseInt(heightRaw, 10);
+        var fpsValue = params.fps !== undefined ? params.fps : params.frameRate;
+        if (fpsValue === undefined) fpsValue = params.frame_rate;
+        var fps = fpsValue === undefined ? 24 : parseFloat(fpsValue);
+        var videoValue = params.videoTracks !== undefined ? params.videoTracks : params.video_tracks;
+        var audioValue = params.audioTracks !== undefined ? params.audioTracks : params.audio_tracks;
+        var videoRaw = videoValue === undefined ? 3 : parseFloat(videoValue);
+        var audioRaw = audioValue === undefined ? 2 : parseFloat(audioValue);
+        var videoTracks = parseInt(videoRaw, 10);
+        var audioTracks = parseInt(audioRaw, 10);
 
         if (!app.project) {
             return _err("No project is open");
         }
+        previousActiveSequence = app.project.activeSequence;
+        if (!name) return _err("Sequence name is required");
+        if (isNaN(width) || width <= 0 || width !== widthRaw || isNaN(height) || height <= 0 || height !== heightRaw) return _err("Sequence width and height must be positive integers");
+        if (isNaN(fps) || fps <= 0 || fps > 240) return _err("Sequence fps must be greater than 0 and no more than 240");
+        if (isNaN(videoTracks) || videoTracks !== videoRaw || videoTracks < 1 || videoTracks > 64) return _err("videoTracks must be an integer between 1 and 64");
+        if (isNaN(audioTracks) || audioTracks !== audioRaw || audioTracks < 1 || audioTracks > 64) return _err("audioTracks must be an integer between 1 and 64");
 
-        // Use the new sequence preset creation if available
-        var seqID = app.project.createNewSequence(name);
+        var previousIds = _mcpCaptureSequenceIds();
+        var internalId = "mcp_sequence_" + (new Date()).getTime();
+        app.project.createNewSequence(name, internalId);
+        createdSequence = _mcpFindNewSequence(previousIds);
+        if (!createdSequence) return _err("Premiere did not create a distinct sequence");
 
-        if (seqID) {
-            // Try to set properties on the newly created sequence
-            var seq = app.project.activeSequence;
-            if (seq) {
-                // Setting frame size may require sequence presets in newer versions
-                // These settings work through sequence settings dialog in practice,
-                // but we attempt to set them programmatically
-                try {
-                    seq.frameSizeHorizontal = width;
-                    seq.frameSizeVertical = height;
-                } catch (dimErr) {
-                    // Frame dimensions may not be directly settable in all versions
-                }
-            }
-
-            return _ok({
-                name: name,
-                sequenceID: seqID || "",
-                width: width,
-                height: height,
-                fps: fps,
-                videoTrackCount: seq ? (seq.videoTracks ? seq.videoTracks.numTracks : 0) : 0,
-                audioTrackCount: seq ? (seq.audioTracks ? seq.audioTracks.numTracks : 0) : 0,
-                timebase: seq ? (seq.timebase || "") : ""
-            });
-        } else {
-            return _err("createNewSequence returned no ID");
+        var configured = _mcpConfigureAndVerifySequence(createdSequence, {
+            width: width,
+            height: height,
+            fps: fps,
+            videoTracks: videoTracks,
+            audioTracks: audioTracks
+        });
+        if (configured.error) {
+            var deleted = _mcpDeleteSequenceQuietly(createdSequence);
+            if (deleted && previousActiveSequence) { try { app.project.activeSequence = previousActiveSequence; } catch (ignoreRestoreActive) {} }
+            createdSequence = null;
+            return _err(configured.error + (deleted ? "; the invalid sequence was deleted" : "; cleanup failed, so inspect the project before continuing"));
         }
+        if (String(createdSequence.name || "") !== name) {
+            var nameDeleted = _mcpDeleteSequenceQuietly(createdSequence);
+            if (nameDeleted && previousActiveSequence) { try { app.project.activeSequence = previousActiveSequence; } catch (ignoreRestoreNameActive) {} }
+            createdSequence = null;
+            return _err("Premiere created the sequence with an unexpected name" + (nameDeleted ? "; it was deleted" : "; cleanup failed"));
+        }
+
+        var actual = configured.data;
+        return _ok({
+            name: String(createdSequence.name || ""),
+            sequenceID: String(createdSequence.sequenceID || ""),
+            width: actual.width,
+            height: actual.height,
+            fps: actual.fps,
+            videoTrackCount: actual.videoTracks,
+            audioTrackCount: actual.audioTracks,
+            timebase: createdSequence.timebase || ""
+        });
     } catch (e) {
+        if (createdSequence && _mcpDeleteSequenceQuietly(createdSequence) && previousActiveSequence) {
+            try { app.project.activeSequence = previousActiveSequence; } catch (ignoreCatchActive) {}
+        }
         return _err("createSequence failed: " + e.message);
     }
 }
@@ -371,6 +793,19 @@ function importMedia(filePath, binPath) {
             return _err("filePath is required");
         }
 
+        var requestedFile = new File(String(filePath));
+        if (!requestedFile.exists) {
+            return _err("Media file does not exist: " + filePath);
+        }
+        var requestedPath = String(requestedFile.fsName);
+        var windowsHost = $.os && $.os.indexOf("Win") >= 0;
+        function normalizedMediaPath(value) {
+            if (!value) return "";
+            var canonical = String((new File(String(value))).fsName).replace(/\\/g, "/");
+            return windowsHost ? canonical.toLowerCase() : canonical;
+        }
+        var requestedKey = normalizedMediaPath(requestedPath);
+
         // Determine the target bin
         var targetBin = app.project.rootItem;
 
@@ -405,27 +840,66 @@ function importMedia(filePath, binPath) {
             }
         }
 
+        var priorNodeIds = {};
+        if (targetBin.children) {
+            for (var priorIndex = 0; priorIndex < targetBin.children.numItems; priorIndex++) {
+                var priorItem = targetBin.children[priorIndex];
+                if (priorItem && priorItem.nodeId !== undefined) {
+                    priorNodeIds[String(priorItem.nodeId)] = true;
+                }
+            }
+        }
+
         // Import the file
-        var importArray = [filePath];
+        var importArray = [requestedPath];
         var suppressUI = true;
 
         if (app.project.importFiles(importArray, suppressUI, targetBin, false)) {
-            // Find the newly imported item (last item in target bin)
-            var importedItem = null;
-            if (targetBin.children && targetBin.children.numItems > 0) {
-                importedItem = targetBin.children[targetBin.children.numItems - 1];
+            // Resolve the result by canonical media path and node identity. The
+            // last child is not necessarily the imported item when Premiere is
+            // processing other project-panel work.
+            var newMatches = [];
+            var existingMatches = [];
+            if (targetBin.children) {
+                for (var resultIndex = 0; resultIndex < targetBin.children.numItems; resultIndex++) {
+                    var candidate = targetBin.children[resultIndex];
+                    if (!candidate || !candidate.getMediaPath) continue;
+                    var candidatePath = "";
+                    try { candidatePath = candidate.getMediaPath() || ""; } catch (_) {}
+                    if (normalizedMediaPath(candidatePath) !== requestedKey) continue;
+                    var candidateNodeId = candidate.nodeId !== undefined ? String(candidate.nodeId) : "";
+                    existingMatches.push(candidate);
+                    if (!candidateNodeId || !priorNodeIds[candidateNodeId]) newMatches.push(candidate);
+                }
             }
+
+            if (newMatches.length > 1) {
+                return _err("Import created multiple indistinguishable project items for: " + requestedPath);
+            }
+            var importedItem = newMatches.length === 1 ? newMatches[0] :
+                (existingMatches.length === 1 ? existingMatches[0] : null);
+            if (!importedItem) {
+                return _err("Import returned success but no uniquely matching project item was found for: " + requestedPath);
+            }
+            var importedPath = importedItem.getMediaPath ? (importedItem.getMediaPath() || "") : "";
+            if (normalizedMediaPath(importedPath) !== requestedKey) {
+                return _err("Imported project item path did not match the requested media path");
+            }
+            var importedNodeId = importedItem.nodeId !== undefined ? String(importedItem.nodeId) : "";
+            if (!importedNodeId) return _err("Imported project item has no nodeId");
 
             var result = {
-                filePath: filePath,
+                filePath: requestedPath,
                 binPath: binPath || "/",
-                imported: true
+                imported: true,
+                verified: true,
+                projectItemId: importedNodeId,
+                nodeId: importedNodeId,
+                alreadyPresent: newMatches.length === 0
             };
 
-            if (importedItem) {
-                result.name = importedItem.name || "";
-                result.mediaPath = importedItem.getMediaPath ? (importedItem.getMediaPath() || "") : "";
-            }
+            result.name = importedItem.name || "";
+            result.mediaPath = importedPath;
 
             return _ok(result);
         } else {
@@ -617,14 +1091,157 @@ function _getAudioClip(ti, ci) { if (!app.project) return _err("No project is op
 function _getAudioTrack(ti) { if (!app.project) return _err("No project is open"); var s = app.project.activeSequence; if (!s) return _err("No active sequence"); ti = parseInt(ti,10)||0; if (ti >= s.audioTracks.numTracks) return _err("Audio track index "+ti+" out of range"); return {seq:s,track:s.audioTracks[ti]}; }
 function _getVideoTrack(ti) { if (!app.project) return _err("No project is open"); var s = app.project.activeSequence; if (!s) return _err("No active sequence"); ti = parseInt(ti,10)||0; if (ti >= s.videoTracks.numTracks) return _err("Video track index "+ti+" out of range"); return {seq:s,track:s.videoTracks[ti]}; }
 function _clampDb(db) { db = parseFloat(db)||0; if (db < -96) db = -96; if (db > 15) db = 15; return db; }
+function _dbToAmplitude(db) { db = _clampDb(db); return db <= -96 ? 0 : Math.pow(10, db / 20); }
+function _amplitudeToDb(value) { value = parseFloat(value); if (isNaN(value) || value <= 0) return -96; return _clampDb(20 * Math.log(value) / Math.LN10); }
+
+function _mcpStrictNumber(value, label) {
+    if (value === undefined || value === null || (typeof value === "string" && value.replace(/^\s+|\s+$/g, "") === "")) {
+        return { error: label + " is required" };
+    }
+    if (typeof value !== "number" && typeof value !== "string") {
+        return { error: label + " must be a finite number" };
+    }
+    if (typeof value === "string" && !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value.replace(/^\s+|\s+$/g, ""))) {
+        return { error: label + " must be a finite number" };
+    }
+    var numberValue = Number(value);
+    if (isNaN(numberValue) || !isFinite(numberValue)) return { error: label + " must be a finite number" };
+    return { value: numberValue };
+}
+
+function _mcpNonNegativeIndex(value, label) {
+    var parsed = _mcpStrictNumber(value, label);
+    if (parsed.error) return parsed;
+    if (parsed.value < 0 || Math.floor(parsed.value) !== parsed.value) {
+        return { error: label + " must be a non-negative integer" };
+    }
+    return parsed;
+}
+
+function _mcpAudioLevelInput(value, label) {
+    var parsed = _mcpStrictNumber(value, label);
+    if (parsed.error) return parsed;
+    if (parsed.value < -96 || parsed.value > 15) {
+        return { error: label + " must be between -96 and 15 dB" };
+    }
+    return parsed;
+}
 
 // ===========================================================================
 // AUDIO LEVELS (1-5)
 // ===========================================================================
-function setAudioLevel(trackIndex, clipIndex, levelDb) { try { var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r; levelDb = _clampDb(levelDb); var p = _findVolumeParam(r.clip); if (!p) return _err("Volume/Level parameter not found"); p.setValue(levelDb, true); return _ok({trackIndex:parseInt(trackIndex,10)||0, clipIndex:parseInt(clipIndex,10)||0, levelDb:levelDb}); } catch(e) { return _err("setAudioLevel failed: "+e.message); } }
-function setAudioLevelKeyframe(trackIndex, clipIndex, time, levelDb) { try { var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r; levelDb = _clampDb(levelDb); time = parseFloat(time)||0; var p = _findVolumeParam(r.clip); if (!p) return _err("Volume/Level parameter not found"); p.setValueAtKey(_secondsToTime(time), levelDb, true); return _ok({trackIndex:parseInt(trackIndex,10)||0, clipIndex:parseInt(clipIndex,10)||0, time:time, levelDb:levelDb}); } catch(e) { return _err("setAudioLevelKeyframe failed: "+e.message); } }
-function getAudioLevel(trackIndex, clipIndex) { try { var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r; var p = _findVolumeParam(r.clip); if (!p) return _err("Volume/Level parameter not found"); var v = p.getValue(); var kc = 0; try { var ks = p.getKeys(); kc = ks ? ks.length : 0; } catch(kfe){} return _ok({trackIndex:parseInt(trackIndex,10)||0, clipIndex:parseInt(clipIndex,10)||0, levelDb:v, hasKeyframes:kc>0, keyframeCount:kc}); } catch(e) { return _err("getAudioLevel failed: "+e.message); } }
-function normalizeAudio(trackIndex, clipIndex, targetDb) { try { var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r; targetDb = _clampDb(targetDb); var p = _findVolumeParam(r.clip); if (!p) return _err("Volume/Level parameter not found"); var prev = p.getValue(); try { var ks = p.getKeys(); if (ks) for (var ki = ks.length-1; ki >= 0; ki--) p.removeKey(ks[ki]); } catch(rk){} p.setValue(targetDb, true); return _ok({trackIndex:parseInt(trackIndex,10)||0, clipIndex:parseInt(clipIndex,10)||0, previousLevelDb:prev, targetDb:targetDb}); } catch(e) { return _err("normalizeAudio failed: "+e.message); } }
+function setAudioLevel(trackIndex, clipIndex, levelDb) {
+    try {
+        var parsedTrack = _mcpNonNegativeIndex(trackIndex, "trackIndex");
+        if (parsedTrack.error) return _err(parsedTrack.error);
+        var parsedClip = _mcpNonNegativeIndex(clipIndex, "clipIndex");
+        if (parsedClip.error) return _err(parsedClip.error);
+        var parsedLevel = _mcpAudioLevelInput(levelDb, "levelDb");
+        if (parsedLevel.error) return _err(parsedLevel.error);
+        var r = _getAudioClip(parsedTrack.value, parsedClip.value);
+        if (typeof r === "string") return r;
+        var p = _findVolumeParam(r.clip);
+        if (!p || !p.setValue || !p.getValue) return _err("Volume/Level parameter is not readable and writable");
+        var expectedAmplitude = _dbToAmplitude(parsedLevel.value);
+        var write = _setComponentParamAndVerify(p, expectedAmplitude);
+        if (write.error) return _err("Could not set audio level: " + write.error);
+        var actualAmplitude = write.value;
+        return _ok({
+            trackIndex: parsedTrack.value,
+            clipIndex: parsedClip.value,
+            levelDb: parsedLevel.value,
+            actualLevelDb: _amplitudeToDb(actualAmplitude),
+            verified: true
+        });
+    } catch(e) { return _err("setAudioLevel failed: "+e.message); }
+}
+function setAudioLevelKeyframe(trackIndex, clipIndex, time, levelDb) { try { var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r; levelDb = _clampDb(levelDb); time = parseFloat(time)||0; var p = _findVolumeParam(r.clip); if (!p) return _err("Volume/Level parameter not found"); p.setValueAtKey(_secondsToTime(time), _dbToAmplitude(levelDb), true); return _ok({trackIndex:parseInt(trackIndex,10)||0, clipIndex:parseInt(clipIndex,10)||0, time:time, levelDb:levelDb}); } catch(e) { return _err("setAudioLevelKeyframe failed: "+e.message); } }
+function getAudioLevel(trackIndex, clipIndex) { try { var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r; var p = _findVolumeParam(r.clip); if (!p) return _err("Volume/Level parameter not found"); var v = _amplitudeToDb(p.getValue()); var kc = 0; try { var ks = p.getKeys(); kc = ks ? ks.length : 0; } catch(kfe){} return _ok({trackIndex:parseInt(trackIndex,10)||0, clipIndex:parseInt(clipIndex,10)||0, levelDb:v, hasKeyframes:kc>0, keyframeCount:kc}); } catch(e) { return _err("getAudioLevel failed: "+e.message); } }
+function normalizeAudio(trackIndex, clipIndex, targetDb) {
+    try {
+        var parsedTrack = _mcpNonNegativeIndex(trackIndex, "trackIndex");
+        if (parsedTrack.error) return _err(parsedTrack.error);
+        var parsedClip = _mcpNonNegativeIndex(clipIndex, "clipIndex");
+        if (parsedClip.error) return _err(parsedClip.error);
+        var parsedTarget = _mcpAudioLevelInput(targetDb, "targetDb");
+        if (parsedTarget.error) return _err(parsedTarget.error);
+        var r = _getAudioClip(parsedTrack.value, parsedClip.value);
+        if (typeof r === "string") return r;
+        var p = _findVolumeParam(r.clip);
+        if (!p || !p.setValue || !p.getValue || !p.getKeys) {
+            return _err("Volume/Level parameter does not support verifiable normalization");
+        }
+        var previousAmplitude = p.getValue();
+        if (isNaN(Number(previousAmplitude)) || !isFinite(Number(previousAmplitude))) {
+            return _err("Current audio level is not a finite value");
+        }
+        var keys = p.getKeys();
+        var keyCount = keys && keys.length ? keys.length : 0;
+        if (keyCount > 0 && !p.removeKey) return _err("Volume keyframes cannot be removed by this Premiere version");
+        if (keyCount > 0 && (!p.getValueAtKey || !p.addKey || !p.setValueAtKey)) {
+            return _err("Volume keyframes cannot be safely restored if normalization fails");
+        }
+        var keyframes = [];
+        for (var captureIndex = 0; captureIndex < keyCount; captureIndex++) {
+            var keyValue = p.getValueAtKey(keys[captureIndex]);
+            if (isNaN(Number(keyValue)) || !isFinite(Number(keyValue))) {
+                return _err("Volume keyframe " + captureIndex + " has a non-finite value");
+            }
+            keyframes.push({ time: keys[captureIndex], value: keyValue });
+        }
+        var removedKeyframes = [];
+
+        function restoreNormalizationState() {
+            var restored = true;
+            var flatRestore = _setComponentParamAndVerify(p, previousAmplitude);
+            if (flatRestore.error) restored = false;
+            for (var restoreIndex = removedKeyframes.length - 1; restoreIndex >= 0; restoreIndex--) {
+                var record = removedKeyframes[restoreIndex];
+                if (p.addKey(record.time) !== 0) { restored = false; continue; }
+                if (p.setValueAtKey(record.time, record.value, true) !== 0) restored = false;
+            }
+            var restoredKeys = p.getKeys();
+            if ((restoredKeys && restoredKeys.length ? restoredKeys.length : 0) !== keyCount) restored = false;
+            for (var verifyIndex = 0; restored && verifyIndex < removedKeyframes.length; verifyIndex++) {
+                if (!_componentParamValuesEquivalent(p.getValueAtKey(removedKeyframes[verifyIndex].time), removedKeyframes[verifyIndex].value)) restored = false;
+            }
+            return restored;
+        }
+
+        for (var ki = keyCount - 1; ki >= 0; ki--) {
+            var removeStatus = p.removeKey(keys[ki]);
+            if (removeStatus !== 0) {
+                var removalRestored = restoreNormalizationState();
+                return _err("Premiere rejected volume keyframe removal at index " + ki + " (status " + removeStatus + ")" +
+                    (removalRestored ? "; original level and keyframes were restored" : "; original automation could not be fully restored"));
+            }
+            removedKeyframes.push(keyframes[ki]);
+        }
+        var remainingKeys = p.getKeys();
+        if (remainingKeys && remainingKeys.length) {
+            var remainingRestored = restoreNormalizationState();
+            return _err("Premiere reported success but " + remainingKeys.length + " volume keyframe(s) remain" +
+                (remainingRestored ? "; original level and keyframes were restored" : "; original automation could not be fully restored"));
+        }
+        var expectedAmplitude = _dbToAmplitude(parsedTarget.value);
+        var write = _setComponentParamAndVerify(p, expectedAmplitude);
+        if (write.error) {
+            var levelRestored = restoreNormalizationState();
+            return _err("Could not set normalized audio level: " + write.error +
+                (levelRestored ? "; original level and keyframes were restored" : "; original automation could not be fully restored"));
+        }
+        var actualAmplitude = write.value;
+        return _ok({
+            trackIndex: parsedTrack.value,
+            clipIndex: parsedClip.value,
+            previousLevelDb: _amplitudeToDb(previousAmplitude),
+            targetDb: parsedTarget.value,
+            actualLevelDb: _amplitudeToDb(actualAmplitude),
+            keyframesRemoved: keyCount,
+            verified: true
+        });
+    } catch(e) { return _err("normalizeAudio failed: "+e.message); }
+}
 function setAudioGain(projectItemIndex, gainDb) { try { if (!app.project) return _err("No project is open"); projectItemIndex = parseInt(projectItemIndex,10)||0; gainDb = _clampDb(gainDb); if (!app.project.rootItem.children || projectItemIndex >= app.project.rootItem.children.numItems) return _err("Project item index "+projectItemIndex+" out of range"); var item = app.project.rootItem.children[projectItemIndex]; if (!item) return _err("No project item at index "+projectItemIndex); if (item.setAudioGain) item.setAudioGain(gainDb); else return _err("setAudioGain not supported on this item"); return _ok({projectItemIndex:projectItemIndex, name:item.name||"", gainDb:gainDb}); } catch(e) { return _err("setAudioGain failed: "+e.message); } }
 
 // ===========================================================================
@@ -644,7 +1261,38 @@ function setAudioChannelMapping(projectItemIndex, mapping) { try { if (!app.proj
 // ===========================================================================
 // AUDIO EFFECTS (12-14)
 // ===========================================================================
-function applyAudioEffect(trackIndex, clipIndex, effectName) { try { var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r; if (!effectName||effectName==="") return _err("effectName is required"); if (typeof qe !== "undefined" && qe.project) { var qs = qe.project.getActiveSequence(); if (qs) { var qt = qs.getAudioTrackAt(parseInt(trackIndex,10)||0); if (qt) { var qc = qt.getItemAt(parseInt(clipIndex,10)||0); if (qc) { var ef = qe.project.getAudioEffectByName(effectName); if (ef) { qc.addAudioEffect(ef); return _ok({trackIndex:parseInt(trackIndex,10)||0, clipIndex:parseInt(clipIndex,10)||0, effectName:effectName, applied:true}); } else return _err("Audio effect not found: "+effectName); } } } } return _err("Applying audio effects requires QE DOM. Call app.enableQE() first."); } catch(e) { return _err("applyAudioEffect failed: "+e.message); } }
+function applyAudioEffect(trackIndex, clipIndex, effectName) {
+    try {
+        var r = _getAudioClip(trackIndex, clipIndex);
+        if (typeof r === "string") return r;
+        if (!effectName || effectName === "") return _err("effectName is required");
+        if (!r.clip.components) return _err("Premiere does not expose audio components for effect verification");
+        var beforeCount = r.clip.components.numItems;
+        app.enableQE();
+        if (typeof qe === "undefined" || !qe.project) return _err("QE DOM is unavailable after app.enableQE()");
+        var qs = qe.project.getActiveSequence();
+        if (!qs) return _err("QE: no active sequence");
+        var resolvedTrackIndex = parseInt(trackIndex, 10) || 0;
+        var resolvedClipIndex = parseInt(clipIndex, 10) || 0;
+        var qt = qs.getAudioTrackAt(resolvedTrackIndex);
+        if (!qt) return _err("QE: audio track " + resolvedTrackIndex + " not found");
+        var qc = qt.getItemAt(resolvedClipIndex);
+        if (!qc) return _err("QE: clip " + resolvedClipIndex + " not found on audio track " + resolvedTrackIndex);
+        var ef = qe.project.getAudioEffectByName(effectName);
+        if (!ef) return _err("Audio effect not found: " + effectName);
+        qc.addAudioEffect(ef);
+        var afterCount = r.clip.components ? r.clip.components.numItems : 0;
+        if (afterCount <= beforeCount) return _err("QE did not attach a verifiable audio effect: " + effectName);
+        var added = r.clip.components[afterCount - 1];
+        return _ok({
+            trackIndex: resolvedTrackIndex,
+            clipIndex: resolvedClipIndex,
+            effectName: added ? (added.displayName || added.matchName || effectName) : effectName,
+            componentIndex: afterCount - 1,
+            verified: true
+        });
+    } catch(e) { return _err("applyAudioEffect failed: " + e.message); }
+}
 function removeAudioEffect(trackIndex, clipIndex, effectIndex) { try { var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r; effectIndex = parseInt(effectIndex,10)||0; var ci = effectIndex+1; if (!r.clip.components || ci >= r.clip.components.numItems) return _err("Effect index "+effectIndex+" out of range"); var comp = r.clip.components[ci]; var en = comp.displayName||"unknown"; if (r.clip.removeComponent) r.clip.removeComponent(comp); else if (comp.remove) comp.remove(); else return _err("Cannot remove effect in this version"); return _ok({trackIndex:parseInt(trackIndex,10)||0, clipIndex:parseInt(clipIndex,10)||0, effectIndex:effectIndex, removedEffect:en}); } catch(e) { return _err("removeAudioEffect failed: "+e.message); } }
 function getAudioEffects(trackIndex, clipIndex) { try { var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r; var fx = []; if (r.clip.components) { for (var ci = 0; ci < r.clip.components.numItems; ci++) { var c = r.clip.components[ci]; fx.push({index:ci, name:c.displayName||"", matchName:c.matchName||"", paramCount:c.properties?c.properties.numItems:0}); } } return _ok({trackIndex:parseInt(trackIndex,10)||0, clipIndex:parseInt(clipIndex,10)||0, effects:fx}); } catch(e) { return _err("getAudioEffects failed: "+e.message); } }
 
@@ -664,7 +1312,7 @@ function enableAutoDucking(trackIndex, enabled, duckAmount, sensitivity) { try {
 // AUDIO ANALYSIS (19-20)
 // ===========================================================================
 function detectSilence(trackIndex, clipIndex, thresholdDb, minDurationMs) { try { var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r; thresholdDb = parseFloat(thresholdDb); if (isNaN(thresholdDb)) thresholdDb = -40; minDurationMs = parseFloat(minDurationMs); if (isNaN(minDurationMs)) minDurationMs = 500; var cs = _timeToSeconds(r.clip.start); var ce = _timeToSeconds(r.clip.end); var mp = ""; if (r.clip.projectItem && r.clip.projectItem.getMediaPath) mp = r.clip.projectItem.getMediaPath()||""; return _ok({trackIndex:parseInt(trackIndex,10)||0, clipIndex:parseInt(clipIndex,10)||0, thresholdDb:thresholdDb, minDurationMs:minDurationMs, clipStart:cs, clipEnd:ce, clipDuration:ce-cs, mediaPath:mp, note:"Silence detection requires audio waveform analysis via the media engine.", silenceRegions:[]}); } catch(e) { return _err("detectSilence failed: "+e.message); } }
-function getAudioPeakLevel(trackIndex, clipIndex) { try { var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r; var p = _findVolumeParam(r.clip); var cl = p?p.getValue():0; var mp = ""; if (r.clip.projectItem && r.clip.projectItem.getMediaPath) mp = r.clip.projectItem.getMediaPath()||""; return _ok({trackIndex:parseInt(trackIndex,10)||0, clipIndex:parseInt(clipIndex,10)||0, currentLevelDb:cl, mediaPath:mp, note:"True peak level analysis requires the media engine."}); } catch(e) { return _err("getAudioPeakLevel failed: "+e.message); } }
+function getAudioPeakLevel(trackIndex, clipIndex) { try { var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r; var p = _findVolumeParam(r.clip); var cl = p?_amplitudeToDb(p.getValue()):-96; var mp = ""; if (r.clip.projectItem && r.clip.projectItem.getMediaPath) mp = r.clip.projectItem.getMediaPath()||""; return _ok({trackIndex:parseInt(trackIndex,10)||0, clipIndex:parseInt(clipIndex,10)||0, currentLevelDb:cl, mediaPath:mp, note:"True peak level analysis requires the media engine."}); } catch(e) { return _err("getAudioPeakLevel failed: "+e.message); } }
 
 // ===========================================================================
 // AUDIO TRACK MANAGEMENT (21-26)
@@ -688,21 +1336,28 @@ function muteVideoTrack(trackIndex, muted) { try { var r = _getVideoTrack(trackI
 function setVideoTrackTarget(trackIndex, targeted) { try { var r = _getVideoTrack(trackIndex); if (typeof r === "string") return r; var tv = (targeted===true||targeted==="true"||targeted===1)?true:false; if (r.track.setTargeted) r.track.setTargeted(tv, true); else return _err("Track targeting not available"); return _ok({trackIndex:parseInt(trackIndex,10)||0, targeted:tv}); } catch(e) { return _err("setVideoTrackTarget failed: "+e.message); } }
 
 // ---------------------------------------------------------------------------
-// exportSequence(outputPath, presetPath)
+// exportSequence(sequenceId, outputPath, presetPath)
 // ---------------------------------------------------------------------------
-function exportSequence(outputPath, presetPath) {
+function exportSequence(sequenceId, outputPath, presetPath) {
     try {
         if (!app.project) {
             return _err("No project is open");
         }
 
-        var seq = app.project.activeSequence;
-        if (!seq) {
-            return _err("No active sequence");
-        }
+        var resolved = _mcpResolveSequence(sequenceId);
+        if (resolved.error) return _err(resolved.error);
+        var seq = resolved.sequence;
 
         if (!outputPath || outputPath === "") {
             return _err("outputPath is required");
+        }
+
+        if (!presetPath || presetPath === "") {
+            return _err("presetPath is required; configure a real Adobe Media Encoder .epr file");
+        }
+        var presetFile = new File(String(presetPath));
+        if (!presetFile.exists) {
+            return _err("Export preset does not exist: " + presetPath);
         }
 
         // Use Adobe Media Encoder for export
@@ -712,48 +1367,45 @@ function exportSequence(outputPath, presetPath) {
             // Start AME if it is not already running
             encoder.launchEncoder();
 
-            // Determine the export preset
-            var preset = presetPath || "";
-
-            if (preset === "") {
-                // Use a built-in preset path as fallback
-                // Common preset locations:
-                // macOS: /Applications/Adobe Media Encoder .../MediaIO/systempresets/
-                // Windows: C:\Program Files\Adobe\Adobe Media Encoder ...\MediaIO\systempresets\
-                preset = "/Applications/Adobe Media Encoder 2024/Adobe Media Encoder 2024.app/Contents/MediaIO/systempresets/4B434D58_48323634/Match Source - High bitrate.epr";
-            }
-
             // Queue the export job in AME
             var jobID = encoder.encodeSequence(
                 seq,
                 outputPath,
-                preset,
+                presetFile.fsName,
                 0,  // WorkAreaType: 0 = entire sequence
                 1   // removeOnCompletion: 1 = remove from queue when done
             );
+
+            if (!jobID || String(jobID) === "0") {
+                return _err("Adobe Media Encoder did not return an export job ID");
+            }
 
             // Start the render queue
             encoder.startBatch();
 
             return _ok({
                 outputPath: outputPath,
-                presetPath: preset,
-                jobID: jobID || "queued",
+                presetPath: presetFile.fsName,
+                jobID: String(jobID),
                 status: "export_queued",
                 sequenceName: seq.name || ""
             });
         } else {
             // Fallback: use direct export if encoder is not available
             // This blocks until the export is complete
-            seq.exportAsMediaDirect(
+            var directResult = seq.exportAsMediaDirect(
                 outputPath,
-                presetPath || "",
+                presetFile.fsName,
                 0  // WorkAreaType
             );
 
+            if (!(new File(String(outputPath))).exists) {
+                return _err("Direct export returned without creating output: " + outputPath + " (result " + directResult + ")");
+            }
+
             return _ok({
                 outputPath: outputPath,
-                presetPath: presetPath || "default",
+                presetPath: presetFile.fsName,
                 status: "export_complete",
                 sequenceName: seq.name || ""
             });
@@ -805,12 +1457,18 @@ function exportDirect(sequenceIndex, outputPath, presetPath, workAreaType) {
         if (!presetPath || presetPath === "") {
             return _err("presetPath is required for direct export");
         }
+        var directPresetFile = new File(String(presetPath));
+        if (!directPresetFile.exists) return _err("Export preset does not exist: " + presetPath);
 
-        seq.exportAsMediaDirect(outputPath, presetPath, workAreaType);
+        var directResult = seq.exportAsMediaDirect(outputPath, directPresetFile.fsName, workAreaType);
+        var directOutputFile = new File(String(outputPath));
+        if (directResult === false || !directOutputFile.exists) {
+            return _err("Direct export did not create output: " + outputPath + " (result " + directResult + ")");
+        }
 
         return _ok({
             outputPath: outputPath,
-            presetPath: presetPath,
+            presetPath: directPresetFile.fsName,
             workAreaType: workAreaType,
             status: "export_complete",
             sequenceName: seq.name || ""
@@ -831,8 +1489,9 @@ function exportViaAME(sequenceIndex, outputPath, presetPath, workAreaType, remov
         }
 
         var encoder = app.encoder;
-        if (!encoder) {
-            return _err("app.encoder is not available");
+        if (!encoder || typeof encoder.launchEncoder !== "function" ||
+            typeof encoder.encodeSequence !== "function" || typeof encoder.startBatch !== "function") {
+            return _err("Adobe Media Encoder sequence export is not supported in this Premiere Pro version");
         }
 
         sequenceIndex = parseInt(sequenceIndex, 10);
@@ -863,27 +1522,42 @@ function exportViaAME(sequenceIndex, outputPath, presetPath, workAreaType, remov
         if (!presetPath || presetPath === "") {
             return _err("presetPath is required");
         }
+        var amePresetFile = new File(String(presetPath));
+        if (!amePresetFile.exists) return _err("Export preset does not exist: " + presetPath);
 
         // Launch AME if needed
-        encoder.launchEncoder();
+        var launchStatus = encoder.launchEncoder();
+        if (launchStatus !== 0) return _err("launchEncoder failed with status " + launchStatus);
 
         // Queue the export job
         var jobID = encoder.encodeSequence(
             seq,
             outputPath,
-            presetPath,
+            amePresetFile.fsName,
             workAreaType,
             removeOnDone
         );
 
+        if (typeof jobID !== "string") {
+            return _err("Adobe Media Encoder did not return an export job ID");
+        }
+        jobID = jobID.replace(/^\s+|\s+$/g, "");
+        if (!jobID || jobID === "0") return _err("Adobe Media Encoder did not return an export job ID");
+
+        var batchStatus = encoder.startBatch();
+        if (batchStatus !== 0) {
+            return _err("Export job " + jobID + " was queued, but startBatch failed with status " + batchStatus);
+        }
+
         return _ok({
             outputPath: outputPath,
-            presetPath: presetPath,
+            presetPath: amePresetFile.fsName,
             workAreaType: workAreaType,
             removeOnDone: removeOnDone,
-            jobID: jobID || "queued",
+            jobID: jobID,
             status: "queued_in_ame",
-            sequenceName: seq.name || ""
+            sequenceName: seq.name || "",
+            sequenceID: String(seq.sequenceID || "")
         });
     } catch (e) {
         return _err("exportViaAME failed: " + e.message);
@@ -990,8 +1664,8 @@ function exportAAF(sequenceIndex, outputPath, optionsJson) {
 
         var mixdownVideo = opts.mixdown !== undefined ? (opts.mixdown ? 1 : 0) : 0;
         var explodeToMono = opts.explode !== undefined ? (opts.explode ? 1 : 0) : 0;
-        var sampleRate = parseInt(opts.sampleRate, 10) || 48000;
-        var bitsPerSample = parseInt(opts.bitsPerSample, 10) || 16;
+        var sampleRate = parseInt(opts.sampleRate !== undefined ? opts.sampleRate : opts.sample_rate, 10) || 48000;
+        var bitsPerSample = parseInt(opts.bitsPerSample !== undefined ? opts.bitsPerSample : opts.bits_per_sample, 10) || 16;
 
         seq.exportAsAAF(outputPath, mixdownVideo, explodeToMono, sampleRate, bitsPerSample);
 
@@ -1049,9 +1723,9 @@ function exportOMF(sequenceIndex, outputPath, optionsJson) {
             opts = JSON.parse(optionsJson);
         }
 
-        var sampleRate = parseInt(opts.sampleRate, 10) || 48000;
-        var bitsPerSample = parseInt(opts.bitsPerSample, 10) || 16;
-        var handleFrames = parseInt(opts.handleFrames, 10) || 0;
+        var sampleRate = parseInt(opts.sampleRate !== undefined ? opts.sampleRate : opts.sample_rate, 10) || 48000;
+        var bitsPerSample = parseInt(opts.bitsPerSample !== undefined ? opts.bitsPerSample : opts.bits_per_sample, 10) || 16;
+        var handleFrames = parseInt(opts.handleFrames !== undefined ? opts.handleFrames : opts.handle_frames, 10) || 0;
         var encapsulate = opts.encapsulate !== undefined ? (opts.encapsulate ? 1 : 0) : 1;
 
         seq.exportAsOMF(outputPath, sampleRate, bitsPerSample, handleFrames, encapsulate);
@@ -1470,12 +2144,31 @@ function duplicateSequence(sequenceIndex) {
             return _err("No sequence at index " + sequenceIndex);
         }
 
-        // Clone via the project item's duplicate method
-        srcSeq.clone();
+        var beforeCount = app.project.sequences.numSequences;
+        var existingIDs = {};
+        for (var existingIndex = 0; existingIndex < beforeCount; existingIndex++) {
+            existingIDs[String(app.project.sequences[existingIndex].sequenceID || "")] = true;
+        }
+        var cloneResult = srcSeq.clone();
+        if (cloneResult !== true) return _err("Sequence clone returned failure: " + cloneResult);
+        if (app.project.sequences.numSequences !== beforeCount + 1) {
+            return _err("Sequence clone count mismatch: expected " + (beforeCount + 1) + ", got " + app.project.sequences.numSequences);
+        }
 
-        // The duplicated sequence becomes the last one
-        var newIdx = app.project.sequences.numSequences - 1;
-        var newSeq = app.project.sequences[newIdx];
+        var newIdx = -1;
+        var newSeq = null;
+        for (var candidateIndex = 0; candidateIndex < app.project.sequences.numSequences; candidateIndex++) {
+            var candidateSequence = app.project.sequences[candidateIndex];
+            var candidateID = String(candidateSequence.sequenceID || "");
+            if (candidateID && !existingIDs[candidateID]) {
+                if (newSeq) return _err("Sequence clone produced more than one new sequence identity");
+                newIdx = candidateIndex;
+                newSeq = candidateSequence;
+            }
+        }
+        if (!newSeq || String(newSeq.sequenceID || "") === String(srcSeq.sequenceID || "")) {
+            return _err("Sequence clone did not produce a distinct sequence ID");
+        }
 
         return _ok({
             originalName: srcSeq.name || "",
@@ -1569,11 +2262,17 @@ function renameSequence(paramsJson) {
         var oldName = seq.name || "";
         seq.name = newName;
 
+        var actualName = seq.name || "";
+        if (actualName !== newName) {
+            return _err("Premiere did not apply the requested sequence name: expected '" + newName + "', got '" + actualName + "'");
+        }
+
         return _ok({
             oldName: oldName,
-            newName: newName,
+            newName: actualName,
             sequenceIndex: sequenceIndex,
-            sequenceID: seq.sequenceID || ""
+            sequenceID: seq.sequenceID || "",
+            verified: true
         });
     } catch (e) {
         return _err("renameSequence failed: " + e.message);
@@ -1751,12 +2450,16 @@ function setActiveSequence(sequenceIndex) {
             return _err("No sequence at index " + sequenceIndex);
         }
 
-        app.project.activeSequence = seq;
+        var activation = _mcpActivateSequenceAndVerify(seq);
+        if (activation.error) return _err(activation.error);
+        var activeSequence = app.project.activeSequence;
+        var actualSequenceID = activation.data.sequenceID;
 
         return _ok({
-            name: seq.name || "",
-            sequenceID: seq.sequenceID || "",
-            sequenceIndex: sequenceIndex
+            name: activeSequence.name || "",
+            sequenceID: actualSequenceID,
+            sequenceIndex: sequenceIndex,
+            verified: true
         });
     } catch (e) {
         return _err("setActiveSequence failed: " + e.message);
@@ -1842,14 +2545,26 @@ function setPlayheadPosition(seconds) {
             return _err("No active sequence");
         }
 
-        seconds = parseFloat(seconds) || 0;
+        seconds = parseFloat(seconds);
+        if (isNaN(seconds) || !isFinite(seconds) || seconds < 0) {
+            return _err("seconds must be a finite non-negative number");
+        }
         var newTime = _secondsToTime(seconds);
         seq.setPlayerPosition(newTime.ticks);
 
+        var actualPosition = seq.getPlayerPosition();
+        var actualSeconds = _timeToSeconds(actualPosition);
+        var tolerance = Math.max(0.001, 1.1 / _mcpSequenceFPS(seq));
+        if (Math.abs(actualSeconds - seconds) > tolerance) {
+            return _err("Premiere playhead readback mismatch: expected " + seconds + ", got " + actualSeconds);
+        }
+
         return _ok({
-            seconds: seconds,
+            seconds: actualSeconds,
+            ticks: actualPosition ? (actualPosition.ticks || "") : "",
             sequenceName: seq.name || "",
-            sequenceID: seq.sequenceID || ""
+            sequenceID: seq.sequenceID || "",
+            verified: true
         });
     } catch (e) {
         return _err("setPlayheadPosition failed: " + e.message);
@@ -2123,9 +2838,31 @@ function createNestedSequence(paramsJson) {
 function autoReframeSequence(paramsJson) {
     try {
         var params = JSON.parse(paramsJson);
-        var numerator = parseInt(params.numerator, 10) || 9;
-        var denominator = parseInt(params.denominator, 10) || 16;
-        var motionPreset = params.motionPreset || "default";
+        var rawNumerator = parseFloat(params.numerator);
+        var rawDenominator = parseFloat(params.denominator);
+        var numerator = parseInt(params.numerator, 10);
+        var denominator = parseInt(params.denominator, 10);
+        var motionPreset = params.motionPreset === undefined ? "default" : String(params.motionPreset);
+        var expectedSourceID = params.sourceSequenceID === undefined || params.sourceSequenceID === null ? "" :
+            String(params.sourceSequenceID).replace(/^\s+|\s+$/g, "");
+
+        if (!expectedSourceID) return _err("sourceSequenceID is required");
+        if (isNaN(rawNumerator) || rawNumerator !== Math.floor(rawNumerator) ||
+            numerator <= 0 || numerator > 10000 ||
+            isNaN(rawDenominator) || rawDenominator !== Math.floor(rawDenominator) ||
+            denominator <= 0 || denominator > 10000) {
+            return _err("numerator and denominator must be positive integers no greater than 10000");
+        }
+        if (motionPreset !== "slower" && motionPreset !== "default" && motionPreset !== "faster") {
+            return _err("motionPreset must be slower, default, or faster");
+        }
+        var useNestedSequences = false;
+        if (params.useNestedSequences !== undefined) {
+            if (params.useNestedSequences !== true && params.useNestedSequences !== false) {
+                return _err("useNestedSequences must be a boolean");
+            }
+            useNestedSequences = params.useNestedSequences;
+        }
 
         if (!app.project) {
             return _err("No project is open");
@@ -2135,20 +2872,108 @@ function autoReframeSequence(paramsJson) {
         if (!seq) {
             return _err("No active sequence");
         }
+        var sourceID = String(seq.sequenceID || "");
+        if (!sourceID) return _err("The active sequence has no readable sequence ID");
+        if (sourceID !== expectedSourceID) {
+            return _err("Active sequence mismatch: expected " + expectedSourceID + ", got " + sourceID);
+        }
 
-        // autoReframeSequence is available in Premiere Pro 2020+
-        if (seq.autoReframeSequence) {
-            seq.autoReframeSequence(numerator, denominator, motionPreset);
-        } else {
+        if (typeof seq.autoReframeSequence !== "function") {
             return _err("autoReframeSequence is not supported in this Premiere Pro version");
+        }
+
+        var requestedName = "";
+        var explicitName = params.newName !== undefined && params.newName !== null && String(params.newName).replace(/^\s+|\s+$/g, "") !== "";
+        if (explicitName) {
+            requestedName = String(params.newName).replace(/^\s+|\s+$/g, "");
+            if (requestedName.length > 255) return _err("newName must be 255 characters or fewer");
+        } else {
+            requestedName = String(seq.name || "Sequence") + " - " + numerator + "x" + denominator + " Auto Reframe";
+        }
+
+        var existingIDs = {};
+        var existingNames = {};
+        var beforeCount = app.project.sequences.numSequences;
+        for (var existingIndex = 0; existingIndex < beforeCount; existingIndex++) {
+            var existingSequence = app.project.sequences[existingIndex];
+            var existingID = String(existingSequence.sequenceID || "");
+            if (existingID) existingIDs[existingID] = true;
+            existingNames[String(existingSequence.name || "")] = true;
+        }
+        if (explicitName && existingNames[requestedName]) {
+            return _err("A sequence named '" + requestedName + "' already exists; choose a unique newName");
+        }
+        if (!explicitName && existingNames[requestedName]) {
+            var baseName = requestedName;
+            var suffix = 2;
+            while (existingNames[requestedName] && suffix < 10000) {
+                requestedName = baseName + " (" + suffix + ")";
+                suffix++;
+            }
+            if (existingNames[requestedName]) return _err("Could not choose a unique Auto Reframe sequence name");
+        }
+
+        var returnedSequence = seq.autoReframeSequence(
+            numerator,
+            denominator,
+            motionPreset,
+            requestedName,
+            useNestedSequences
+        );
+        if (!returnedSequence) return _err("Premiere did not return the new Auto Reframe sequence");
+        if (app.project.sequences.numSequences !== beforeCount + 1) {
+            return _err("Auto Reframe sequence count mismatch: expected " + (beforeCount + 1) + ", got " + app.project.sequences.numSequences);
+        }
+
+        var returnedID = String(returnedSequence.sequenceID || "");
+        if (!returnedID || returnedID === sourceID || existingIDs[returnedID]) {
+            return _err("Auto Reframe did not return a distinct new sequence identity");
+        }
+        var newSequence = null;
+        var newIdentityCount = 0;
+        for (var candidateIndex = 0; candidateIndex < app.project.sequences.numSequences; candidateIndex++) {
+            var candidate = app.project.sequences[candidateIndex];
+            var candidateID = String(candidate.sequenceID || "");
+            if (candidateID && !existingIDs[candidateID]) {
+                newIdentityCount++;
+                if (candidateID === returnedID) newSequence = candidate;
+            }
+        }
+        if (newIdentityCount !== 1 || !newSequence) {
+            return _err("Auto Reframe did not create exactly one discoverable sequence");
+        }
+        if (String(newSequence.name || "") !== requestedName) {
+            return _err("Premiere named the Auto Reframe sequence '" + String(newSequence.name || "") + "' instead of '" + requestedName + "'");
+        }
+
+        var actualSpec = _mcpActualSequenceSpec(newSequence);
+        if (actualSpec.width <= 0 || actualSpec.height <= 0) {
+            return _err("Could not read back Auto Reframe sequence dimensions");
+        }
+        var requestedRatio = numerator / denominator;
+        var actualRatio = actualSpec.width / actualSpec.height;
+        if (Math.abs(actualRatio - requestedRatio) > 0.01) {
+            return _err("Auto Reframe aspect ratio readback mismatch: requested " + numerator + ":" + denominator + ", got " + actualSpec.width + "x" + actualSpec.height);
+        }
+
+        var activated = _mcpActivateSequenceAndVerify(newSequence);
+        if (activated.error) {
+            return _err("Auto Reframe created sequence " + returnedID + " but could not verify derivative activation: " + activated.error);
         }
 
         return _ok({
             numerator: numerator,
             denominator: denominator,
             motionPreset: motionPreset,
-            sequenceName: seq.name || "",
-            sequenceID: seq.sequenceID || ""
+            useNestedSequences: useNestedSequences,
+            sourceSequenceName: seq.name || "",
+            sourceSequenceID: sourceID,
+            sequenceName: newSequence.name || "",
+            sequenceID: returnedID,
+            activeSequenceID: activated.data.sequenceID,
+            frameSizeHorizontal: actualSpec.width,
+            frameSizeVertical: actualSpec.height,
+            verified: true
         });
     } catch (e) {
         return _err("autoReframeSequence failed: " + e.message);
@@ -2301,11 +3126,11 @@ function getSequenceMarkers() {
 function addSequenceMarker(paramsJson) {
     try {
         var params = JSON.parse(paramsJson);
-        var time = parseFloat(params.time) || 0;
+        var time = parseFloat(params.time);
         var name = params.name || "";
         var comment = params.comment || "";
-        var color = parseInt(params.color, 10) || 0;
-        var duration = parseFloat(params.duration) || 0;
+        var color = params.color === undefined ? 0 : parseInt(params.color, 10);
+        var duration = params.duration === undefined ? 0 : parseFloat(params.duration);
 
         if (!app.project) {
             return _err("No project is open");
@@ -2319,6 +3144,22 @@ function addSequenceMarker(paramsJson) {
         if (!seq.markers) {
             return _err("Sequence does not support markers");
         }
+        if (isNaN(time) || !isFinite(time) || time < 0) return _err("time must be a finite non-negative number");
+        if (isNaN(duration) || !isFinite(duration) || duration < 0) return _err("duration must be a finite non-negative number");
+        if (isNaN(color) || color < 0 || color > 7 || color !== parseFloat(params.color === undefined ? 0 : params.color)) {
+            return _err("color must be an integer from 0 through 7");
+        }
+
+        function markerCount(markers) {
+            var count = 0;
+            var current = markers.getFirstMarker();
+            while (current) {
+                count++;
+                current = markers.getNextMarker(current);
+            }
+            return count;
+        }
+        var beforeCount = markerCount(seq.markers);
 
         var newMarker = seq.markers.createMarker(time);
         if (newMarker) {
@@ -2332,14 +3173,31 @@ function addSequenceMarker(paramsJson) {
             return _err("Failed to create marker");
         }
 
+        var afterCount = markerCount(seq.markers);
+        if (afterCount !== beforeCount + 1) {
+            return _err("Marker count readback mismatch: expected " + (beforeCount + 1) + ", got " + afterCount);
+        }
+        var actualStart = _timeToSeconds(newMarker.start);
+        var actualEnd = _timeToSeconds(newMarker.end);
+        var tolerance = Math.max(0.001, 1.1 / _mcpSequenceFPS(seq));
+        if (Math.abs(actualStart - time) > tolerance) return _err("Marker start readback mismatch");
+        if (duration > 0 && Math.abs(actualEnd - (time + duration)) > tolerance) return _err("Marker duration readback mismatch");
+        if (String(newMarker.name || "") !== String(name) || String(newMarker.comments || "") !== String(comment)) {
+            return _err("Marker text readback mismatch");
+        }
+        if (newMarker.colorIndex !== undefined && parseInt(newMarker.colorIndex, 10) !== color) {
+            return _err("Marker color readback mismatch");
+        }
+
         return _ok({
-            name: name,
-            comment: comment,
-            time: time,
-            duration: duration,
-            color: color,
+            name: newMarker.name || "",
+            comment: newMarker.comments || "",
+            time: actualStart,
+            duration: duration > 0 ? actualEnd - actualStart : 0,
+            color: newMarker.colorIndex !== undefined ? newMarker.colorIndex : color,
             sequenceName: seq.name || "",
-            sequenceID: seq.sequenceID || ""
+            sequenceID: seq.sequenceID || "",
+            verified: true
         });
     } catch (e) {
         return _err("addSequenceMarker failed: " + e.message);
@@ -2471,6 +3329,153 @@ function _getClip(track, clipIndex) {
     return track.clips[clipIndex];
 }
 
+function _mcpMutationTolerance(seq) {
+    var fps = 24;
+    try { fps = _mcpSequenceFPS(seq); } catch (ignoreFPS) {}
+    if (isNaN(fps) || !isFinite(fps) || fps <= 0) fps = 24;
+    return Math.max(0.002, 1.1 / fps);
+}
+
+function _mcpClipPlaybackRate(clip) {
+    var reversed = false;
+    try {
+        if (typeof clip.isSpeedReversed === "function") reversed = !!clip.isSpeedReversed();
+        else if (clip.isSpeedReversed === true) reversed = true;
+    } catch (ignoreReverse) {}
+    var rate = 1;
+    try {
+        if (clip.getSpeed) {
+            rate = Number(clip.getSpeed());
+            if (Math.abs(rate) > 10) rate = rate / 100;
+        }
+    } catch (speedErr) {
+        return { error: "Could not read clip playback speed: " + speedErr.message };
+    }
+    if (reversed || isNaN(rate) || !isFinite(rate) || rate <= 0) {
+        return { error: "Verified trimming is not supported for reversed or invalid-speed clips" };
+    }
+    return { value: rate };
+}
+
+function _mcpProjectItemDurationSeconds(projectItem) {
+    if (!projectItem) return null;
+    var raw = null;
+    try {
+        if (projectItem.getMediaDuration) raw = projectItem.getMediaDuration();
+    } catch (ignoreMediaDuration) {}
+    if (raw === null || raw === undefined || raw === "") {
+        try { if (projectItem.duration !== undefined) raw = projectItem.duration; } catch (ignoreDuration) {}
+    }
+    var seconds = null;
+    if (raw && typeof raw === "object" && raw.seconds !== undefined) seconds = Number(raw.seconds);
+    else if (raw !== null && raw !== undefined && raw !== "") {
+        seconds = Number(raw);
+        // Premiere commonly returns media duration as a tick string.
+        if (!isNaN(seconds) && isFinite(seconds) && Math.abs(seconds) > 100000000) seconds = seconds / 254016000000;
+    }
+    if (seconds === null || isNaN(seconds) || !isFinite(seconds) || seconds <= 0) return null;
+    return seconds;
+}
+
+function _mcpReadClipTiming(clip) {
+    var state = {
+        start: _timeToSeconds(clip.start),
+        end: _timeToSeconds(clip.end),
+        inPoint: _timeToSeconds(clip.inPoint),
+        outPoint: _timeToSeconds(clip.outPoint),
+        mediaDuration: _mcpProjectItemDurationSeconds(clip.projectItem)
+    };
+    if (isNaN(state.start) || !isFinite(state.start) || state.start < 0 ||
+        isNaN(state.end) || !isFinite(state.end) || state.end <= state.start ||
+        isNaN(state.inPoint) || !isFinite(state.inPoint) || state.inPoint < 0 ||
+        isNaN(state.outPoint) || !isFinite(state.outPoint) || state.outPoint <= state.inPoint) {
+        return { error: "Clip has invalid timeline or source bounds" };
+    }
+    var rate = _mcpClipPlaybackRate(clip);
+    if (rate.error) return rate;
+    state.rate = rate.value;
+    if (state.mediaDuration !== null && state.outPoint > state.mediaDuration + 0.02) {
+        return { error: "Clip source out point exceeds the media duration exposed by Premiere" };
+    }
+    return state;
+}
+
+function _mcpResolveMutationClip(seq, trackType, trackIndex, clipIndex) {
+    var normalizedType = String(trackType || "").toLowerCase();
+    if (normalizedType !== "video" && normalizedType !== "audio") {
+        return { error: "trackType must be 'video' or 'audio'" };
+    }
+    var parsedTrack = _mcpNonNegativeIndex(trackIndex, "trackIndex");
+    if (parsedTrack.error) return parsedTrack;
+    var parsedClip = _mcpNonNegativeIndex(clipIndex, "clipIndex");
+    if (parsedClip.error) return parsedClip;
+    var tracks = normalizedType === "audio" ? seq.audioTracks : seq.videoTracks;
+    if (!tracks || parsedTrack.value >= tracks.numTracks) {
+        return { error: normalizedType + " track index " + parsedTrack.value + " out of range" };
+    }
+    var track = tracks[parsedTrack.value];
+    try {
+        if (track.isLocked && track.isLocked()) return { error: "Target track is locked" };
+    } catch (ignoreLock) {}
+    if (!track.clips || parsedClip.value >= track.clips.numItems) {
+        return { error: "Clip index " + parsedClip.value + " out of range on " + normalizedType + " track " + parsedTrack.value };
+    }
+    var clip = track.clips[parsedClip.value];
+    var state = _mcpReadClipTiming(clip);
+    if (state.error) return state;
+    return {
+        trackType: normalizedType,
+        trackIndex: parsedTrack.value,
+        clipIndex: parsedClip.value,
+        track: track,
+        clip: clip,
+        state: state
+    };
+}
+
+function _mcpClipTimingMatches(clip, expected, timelineTolerance, sourceTolerance) {
+    var actual = _mcpReadClipTiming(clip);
+    if (actual.error) return { error: actual.error };
+    var fields = ["start", "end", "inPoint", "outPoint"];
+    for (var i = 0; i < fields.length; i++) {
+        var field = fields[i];
+        var tolerance = (field === "start" || field === "end") ? timelineTolerance : sourceTolerance;
+        if (Math.abs(actual[field] - expected[field]) > tolerance) {
+            return { error: field + " read back as " + actual[field] + ", expected " + expected[field], actual: actual };
+        }
+    }
+    return { actual: actual };
+}
+
+function _mcpWriteClipTiming(clip, state) {
+    try {
+        var currentOut = _timeToSeconds(clip.outPoint);
+        if (state.inPoint >= currentOut) {
+            clip.outPoint = _secondsToTime(state.outPoint);
+            clip.inPoint = _secondsToTime(state.inPoint);
+        } else {
+            clip.inPoint = _secondsToTime(state.inPoint);
+            clip.outPoint = _secondsToTime(state.outPoint);
+        }
+        var currentEnd = _timeToSeconds(clip.end);
+        if (state.start >= currentEnd) {
+            clip.end = _secondsToTime(state.end);
+            clip.start = _secondsToTime(state.start);
+        } else {
+            clip.start = _secondsToTime(state.start);
+            clip.end = _secondsToTime(state.end);
+        }
+        return { written: true };
+    } catch (writeErr) {
+        return { error: writeErr.message };
+    }
+}
+
+function _mcpRestoreClipTiming(clip, state, timelineTolerance, sourceTolerance) {
+    _mcpWriteClipTiming(clip, state);
+    return !_mcpClipTimingMatches(clip, state, timelineTolerance, sourceTolerance).error;
+}
+
 function _buildClipInfo(clip, clipIndex, trackType, trackIndex) {
     var info = {
         index: clipIndex,
@@ -2498,16 +3503,23 @@ function insertClip(projectItemIndex, time, vTrackIndex, aTrackIndex) {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
-        projectItemIndex = parseInt(projectItemIndex, 10) || 0;
-        time = parseFloat(time) || 0;
-        vTrackIndex = parseInt(vTrackIndex, 10) || 0;
-        aTrackIndex = parseInt(aTrackIndex, 10) || 0;
+        projectItemIndex = parseInt(projectItemIndex, 10);
+        time = parseFloat(time);
+        vTrackIndex = parseInt(vTrackIndex, 10);
+        aTrackIndex = parseInt(aTrackIndex, 10);
+        if (isNaN(projectItemIndex) || projectItemIndex < 0) return _err("projectItemIndex must be a non-negative integer");
+        if (isNaN(time) || time < 0) return _err("time must be a non-negative number");
+        if (isNaN(vTrackIndex) || vTrackIndex < 0 || isNaN(aTrackIndex) || aTrackIndex < 0) return _err("track indices must be non-negative integers");
         if (!app.project.rootItem.children || projectItemIndex >= app.project.rootItem.children.numItems)
             return _err("Project item index " + projectItemIndex + " out of range");
         var pi = app.project.rootItem.children[projectItemIndex];
         if (!pi) return _err("No project item at index " + projectItemIndex);
-        seq.insertClip(pi, _secondsToTime(time), vTrackIndex, aTrackIndex);
-        return _ok({ action: "insert", projectItemName: pi.name || "", time: time, vTrackIndex: vTrackIndex, aTrackIndex: aTrackIndex });
+        var insertResult = seq.insertClip(pi, _secondsToTime(time), vTrackIndex, aTrackIndex);
+        if (insertResult !== true) return _err("Sequence.insertClip returned failure: " + insertResult);
+        var insertedVideo = vTrackIndex < seq.videoTracks.numTracks ? _mcpFindClipAtPosition(seq.videoTracks[vTrackIndex], pi, time) : null;
+        var insertedAudio = aTrackIndex < seq.audioTracks.numTracks ? _mcpFindClipAtPosition(seq.audioTracks[aTrackIndex], pi, time) : null;
+        if (!insertedVideo && !insertedAudio) return _err("Insert returned success but no matching timeline clip was found at " + time + " seconds");
+        return _ok({ action: "insert", projectItemName: pi.name || "", time: time, vTrackIndex: vTrackIndex, aTrackIndex: aTrackIndex, videoClipIndex: insertedVideo ? insertedVideo.clipIndex : -1, audioClipIndex: insertedAudio ? insertedAudio.clipIndex : -1, verified: true });
     } catch (e) { return _err("insertClip failed: " + e.message); }
 }
 
@@ -2519,16 +3531,23 @@ function overwriteClip(projectItemIndex, time, vTrackIndex, aTrackIndex) {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
-        projectItemIndex = parseInt(projectItemIndex, 10) || 0;
-        time = parseFloat(time) || 0;
-        vTrackIndex = parseInt(vTrackIndex, 10) || 0;
-        aTrackIndex = parseInt(aTrackIndex, 10) || 0;
+        projectItemIndex = parseInt(projectItemIndex, 10);
+        time = parseFloat(time);
+        vTrackIndex = parseInt(vTrackIndex, 10);
+        aTrackIndex = parseInt(aTrackIndex, 10);
+        if (isNaN(projectItemIndex) || projectItemIndex < 0) return _err("projectItemIndex must be a non-negative integer");
+        if (isNaN(time) || time < 0) return _err("time must be a non-negative number");
+        if (isNaN(vTrackIndex) || vTrackIndex < 0 || isNaN(aTrackIndex) || aTrackIndex < 0) return _err("track indices must be non-negative integers");
         if (!app.project.rootItem.children || projectItemIndex >= app.project.rootItem.children.numItems)
             return _err("Project item index " + projectItemIndex + " out of range");
         var pi = app.project.rootItem.children[projectItemIndex];
         if (!pi) return _err("No project item at index " + projectItemIndex);
-        seq.overwriteClip(pi, _secondsToTime(time), vTrackIndex, aTrackIndex);
-        return _ok({ action: "overwrite", projectItemName: pi.name || "", time: time, vTrackIndex: vTrackIndex, aTrackIndex: aTrackIndex });
+        var overwriteResult = seq.overwriteClip(pi, _secondsToTime(time), vTrackIndex, aTrackIndex);
+        if (overwriteResult !== true) return _err("Sequence.overwriteClip returned failure: " + overwriteResult);
+        var overwrittenVideo = vTrackIndex < seq.videoTracks.numTracks ? _mcpFindClipAtPosition(seq.videoTracks[vTrackIndex], pi, time) : null;
+        var overwrittenAudio = aTrackIndex < seq.audioTracks.numTracks ? _mcpFindClipAtPosition(seq.audioTracks[aTrackIndex], pi, time) : null;
+        if (!overwrittenVideo && !overwrittenAudio) return _err("Overwrite returned success but no matching timeline clip was found at " + time + " seconds");
+        return _ok({ action: "overwrite", projectItemName: pi.name || "", time: time, vTrackIndex: vTrackIndex, aTrackIndex: aTrackIndex, videoClipIndex: overwrittenVideo ? overwrittenVideo.clipIndex : -1, audioClipIndex: overwrittenAudio ? overwrittenAudio.clipIndex : -1, verified: true });
     } catch (e) { return _err("overwriteClip failed: " + e.message); }
 }
 
@@ -2546,7 +3565,11 @@ function removeClipFromTrack(trackType, trackIndex, clipIndex, ripple) {
         if (!clip) return _err("Clip not found at index " + clipIndex);
         var clipName = clip.name || "";
         var doRipple = (ripple === true || ripple === "true" || ripple === 1);
+        var beforeCount = track.clips ? track.clips.numItems : 0;
+        var removedIdentity = _mcpClipIdentity(clip);
         clip.remove(doRipple, true);
+        var removalCheck = _mcpVerifyClipRemoved(track, removedIdentity, beforeCount);
+        if (removalCheck.error) return _err("removeClipFromTrack could not verify removal: " + removalCheck.error);
         return _ok({ action: "remove", clipName: clipName, trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, ripple: doRipple });
     } catch (e) { return _err("removeClipFromTrack failed: " + e.message); }
 }
@@ -2559,14 +3582,45 @@ function moveClip(trackType, trackIndex, clipIndex, newStartTime) {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
-        var track = _getTrack(seq, trackType, trackIndex);
-        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
-        var clip = _getClip(track, clipIndex);
-        if (!clip) return _err("Clip not found at index " + clipIndex);
-        newStartTime = parseFloat(newStartTime) || 0;
-        var oldStart = _timeToSeconds(clip.start);
-        clip.start = _secondsToTime(newStartTime);
-        return _ok({ action: "move", clipName: clip.name || "", trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, oldStartTime: oldStart, newStartTime: newStartTime });
+        var resolved = _mcpResolveMutationClip(seq, trackType, trackIndex, clipIndex);
+        if (resolved.error) return _err(resolved.error);
+        var parsedStart = _mcpStrictNumber(newStartTime, "newStartTime");
+        if (parsedStart.error) return _err(parsedStart.error);
+        if (parsedStart.value < 0) return _err("newStartTime must be non-negative");
+        var original = resolved.state;
+        var duration = original.end - original.start;
+        var expectedEnd = parsedStart.value + duration;
+        if (!isFinite(expectedEnd)) return _err("The requested clip end time is not finite");
+        var timelineTolerance = _mcpMutationTolerance(seq);
+        var sourceTolerance = timelineTolerance * original.rate;
+        var expected = {
+            start: parsedStart.value,
+            end: expectedEnd,
+            inPoint: original.inPoint,
+            outPoint: original.outPoint
+        };
+        var moveWrite = _mcpWriteClipTiming(resolved.clip, expected);
+        if (moveWrite.error) {
+            var moveRestored = _mcpRestoreClipTiming(resolved.clip, original, timelineTolerance, sourceTolerance);
+            return _err("Premiere could not write the requested clip timing: " + moveWrite.error + (moveRestored ? "; original timing was restored" : "; original timing could not be fully restored"));
+        }
+        var verification = _mcpClipTimingMatches(resolved.clip, expected, timelineTolerance, sourceTolerance);
+        if (verification.error) {
+            var restored = _mcpRestoreClipTiming(resolved.clip, original, timelineTolerance, sourceTolerance);
+            return _err("Premiere did not move the clip as requested: " + verification.error + (restored ? "; original timing was restored" : "; original timing could not be fully restored"));
+        }
+        return _ok({
+            action: "move",
+            clipName: resolved.clip.name || "",
+            trackType: resolved.trackType,
+            trackIndex: resolved.trackIndex,
+            clipIndex: resolved.clipIndex,
+            oldStartTime: original.start,
+            newStartTime: verification.actual.start,
+            oldEndTime: original.end,
+            newEndTime: verification.actual.end,
+            verified: true
+        });
     } catch (e) { return _err("moveClip failed: " + e.message); }
 }
 
@@ -2639,29 +3693,65 @@ function razorClip(trackType, trackIndex, time) {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
+        trackType = String(trackType || "video").toLowerCase();
+        if (trackType !== "video" && trackType !== "audio") return _err("trackType must be video or audio");
+        trackIndex = parseInt(trackIndex, 10);
+        if (isNaN(trackIndex) || trackIndex < 0) return _err("trackIndex must be a non-negative integer");
         var track = _getTrack(seq, trackType, trackIndex);
         if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
-        time = parseFloat(time) || 0;
+        time = parseFloat(time);
+        if (isNaN(time) || time < 0) return _err("time must be a non-negative number");
         var razorTime = _secondsToTime(time);
-        var found = false;
+        var targetClip = null;
+        var originalStart = 0;
+        var originalEnd = 0;
+        var sourceIdentity = "";
         if (track.clips) {
             for (var i = 0; i < track.clips.numItems; i++) {
                 var c = track.clips[i];
                 if (time > _timeToSeconds(c.start) && time < _timeToSeconds(c.end)) {
-                    if (typeof qe !== "undefined" && qe.project) {
-                        var qeSeq = qe.project.getActiveSequence();
-                        if (qeSeq) {
-                            var qeTrack = (trackType === "audio") ? qeSeq.getAudioTrackAt(parseInt(trackIndex, 10) || 0) : qeSeq.getVideoTrackAt(parseInt(trackIndex, 10) || 0);
-                            if (qeTrack) { qeTrack.razor(razorTime.ticks); found = true; }
-                        }
-                    }
-                    if (!found) { c.end = razorTime; found = true; }
+                    targetClip = c;
+                    originalStart = _timeToSeconds(c.start);
+                    originalEnd = _timeToSeconds(c.end);
+                    sourceIdentity = _mcpProjectItemIdentity(c.projectItem);
                     break;
                 }
             }
         }
-        if (!found) return _err("No clip found at time " + time + " on " + trackType + " track " + trackIndex);
-        return _ok({ action: "razor", trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, time: time });
+        if (!targetClip) return _err("No clip found at time " + time + " on " + trackType + " track " + trackIndex);
+
+        app.enableQE();
+        if (typeof qe === "undefined" || !qe.project) return _err("Razor requires Premiere's QE DOM");
+        var qeSeq = qe.project.getActiveSequence();
+        if (!qeSeq) return _err("QE active sequence is unavailable");
+        var qeTrack = (trackType === "audio") ? qeSeq.getAudioTrackAt(trackIndex) : qeSeq.getVideoTrackAt(trackIndex);
+        if (!qeTrack || !qeTrack.razor) return _err("QE razor is unavailable on " + trackType + " track " + trackIndex);
+
+        var beforeCount = track.clips.numItems;
+        qeTrack.razor(razorTime.ticks);
+
+        var tolerance = Math.max(0.02, 1.1 / _mcpSequenceFPS(seq));
+        var leftIndex = -1;
+        var rightIndex = -1;
+        for (var resultIndex = 0; resultIndex < track.clips.numItems; resultIndex++) {
+            var resultClip = track.clips[resultIndex];
+            if (_mcpProjectItemIdentity(resultClip.projectItem) !== sourceIdentity) continue;
+            var resultStart = _timeToSeconds(resultClip.start);
+            var resultEnd = _timeToSeconds(resultClip.end);
+            if (Math.abs(resultStart - originalStart) <= tolerance && Math.abs(resultEnd - time) <= tolerance) leftIndex = resultIndex;
+            if (Math.abs(resultStart - time) <= tolerance && Math.abs(resultEnd - originalEnd) <= tolerance) rightIndex = resultIndex;
+        }
+        if (track.clips.numItems !== beforeCount + 1 || leftIndex < 0 || rightIndex < 0 || leftIndex === rightIndex) {
+            var razorRollbackVerified = false;
+            try {
+                if (app.project.undo) {
+                    app.project.undo();
+                    razorRollbackVerified = track.clips.numItems === beforeCount;
+                }
+            } catch (razorUndoError) {}
+            return _err("Razor split could not be verified" + (razorRollbackVerified ? "; change was undone" : "; inspect the timeline before continuing"));
+        }
+        return _ok({ action: "razor", trackType: trackType, trackIndex: trackIndex, time: time, leftClipIndex: leftIndex, rightClipIndex: rightIndex, verified: true });
     } catch (e) { return _err("razorClip failed: " + e.message); }
 }
 
@@ -2913,17 +4003,51 @@ function trimClipStart(trackType, trackIndex, clipIndex, newStartTime) {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
-        var track = _getTrack(seq, trackType, trackIndex);
-        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
-        var clip = _getClip(track, clipIndex);
-        if (!clip) return _err("Clip not found at index " + clipIndex);
-        newStartTime = parseFloat(newStartTime) || 0;
-        var oldStart = _timeToSeconds(clip.start);
-        var oldIP = _timeToSeconds(clip.inPoint);
-        var delta = newStartTime - oldStart;
-        clip.inPoint = _secondsToTime(oldIP + delta);
-        clip.start = _secondsToTime(newStartTime);
-        return _ok({ action: "trimStart", clipName: clip.name || "", oldStart: oldStart, newStart: newStartTime, oldInPoint: oldIP, newInPoint: oldIP + delta, trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0 });
+        var resolved = _mcpResolveMutationClip(seq, trackType, trackIndex, clipIndex);
+        if (resolved.error) return _err(resolved.error);
+        var parsedStart = _mcpStrictNumber(newStartTime, "newStartTime");
+        if (parsedStart.error) return _err(parsedStart.error);
+        if (parsedStart.value < 0) return _err("newStartTime must be non-negative");
+        var original = resolved.state;
+        var timelineTolerance = _mcpMutationTolerance(seq);
+        var sourceTolerance = timelineTolerance * original.rate;
+        if (parsedStart.value >= original.end - timelineTolerance) {
+            return _err("newStartTime must leave at least one frame before the clip end");
+        }
+        var delta = parsedStart.value - original.start;
+        var newInPoint = original.inPoint + (delta * original.rate);
+        if (!isFinite(newInPoint) || newInPoint < -sourceTolerance || newInPoint >= original.outPoint - sourceTolerance) {
+            return _err("Requested start trim exceeds the available source range");
+        }
+        if (newInPoint < 0) newInPoint = 0;
+        var expected = {
+            start: parsedStart.value,
+            end: original.end,
+            inPoint: newInPoint,
+            outPoint: original.outPoint
+        };
+        var startWrite = _mcpWriteClipTiming(resolved.clip, expected);
+        if (startWrite.error) {
+            var startRestored = _mcpRestoreClipTiming(resolved.clip, original, timelineTolerance, sourceTolerance);
+            return _err("Premiere could not write the requested start trim: " + startWrite.error + (startRestored ? "; original timing was restored" : "; original timing could not be fully restored"));
+        }
+        var verification = _mcpClipTimingMatches(resolved.clip, expected, timelineTolerance, sourceTolerance);
+        if (verification.error) {
+            var restored = _mcpRestoreClipTiming(resolved.clip, original, timelineTolerance, sourceTolerance);
+            return _err("Premiere did not trim the clip start as requested: " + verification.error + (restored ? "; original timing was restored" : "; original timing could not be fully restored"));
+        }
+        return _ok({
+            action: "trimStart",
+            clipName: resolved.clip.name || "",
+            oldStart: original.start,
+            newStart: verification.actual.start,
+            oldInPoint: original.inPoint,
+            newInPoint: verification.actual.inPoint,
+            trackType: resolved.trackType,
+            trackIndex: resolved.trackIndex,
+            clipIndex: resolved.clipIndex,
+            verified: true
+        });
     } catch (e) { return _err("trimClipStart failed: " + e.message); }
 }
 
@@ -2935,17 +4059,55 @@ function trimClipEnd(trackType, trackIndex, clipIndex, newEndTime) {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
-        var track = _getTrack(seq, trackType, trackIndex);
-        if (!track) return _err("Track not found: " + trackType + "[" + trackIndex + "]");
-        var clip = _getClip(track, clipIndex);
-        if (!clip) return _err("Clip not found at index " + clipIndex);
-        newEndTime = parseFloat(newEndTime) || 0;
-        var oldEnd = _timeToSeconds(clip.end);
-        var oldOP = _timeToSeconds(clip.outPoint);
-        var delta = newEndTime - oldEnd;
-        clip.outPoint = _secondsToTime(oldOP + delta);
-        clip.end = _secondsToTime(newEndTime);
-        return _ok({ action: "trimEnd", clipName: clip.name || "", oldEnd: oldEnd, newEnd: newEndTime, oldOutPoint: oldOP, newOutPoint: oldOP + delta, trackType: trackType, trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0 });
+        var resolved = _mcpResolveMutationClip(seq, trackType, trackIndex, clipIndex);
+        if (resolved.error) return _err(resolved.error);
+        var parsedEnd = _mcpStrictNumber(newEndTime, "newEndTime");
+        if (parsedEnd.error) return _err(parsedEnd.error);
+        var original = resolved.state;
+        var timelineTolerance = _mcpMutationTolerance(seq);
+        var sourceTolerance = timelineTolerance * original.rate;
+        if (parsedEnd.value <= original.start + timelineTolerance) {
+            return _err("newEndTime must leave at least one frame after the clip start");
+        }
+        var delta = parsedEnd.value - original.end;
+        var newOutPoint = original.outPoint + (delta * original.rate);
+        if (!isFinite(newOutPoint) || newOutPoint <= original.inPoint + sourceTolerance) {
+            return _err("Requested end trim exceeds the available source range");
+        }
+        if (delta > timelineTolerance && original.mediaDuration === null) {
+            return _err("Premiere does not expose the source duration required to verify an end extension");
+        }
+        if (original.mediaDuration !== null && newOutPoint > original.mediaDuration + sourceTolerance) {
+            return _err("Requested end trim exceeds the source media duration");
+        }
+        var expected = {
+            start: original.start,
+            end: parsedEnd.value,
+            inPoint: original.inPoint,
+            outPoint: newOutPoint
+        };
+        var endWrite = _mcpWriteClipTiming(resolved.clip, expected);
+        if (endWrite.error) {
+            var endRestored = _mcpRestoreClipTiming(resolved.clip, original, timelineTolerance, sourceTolerance);
+            return _err("Premiere could not write the requested end trim: " + endWrite.error + (endRestored ? "; original timing was restored" : "; original timing could not be fully restored"));
+        }
+        var verification = _mcpClipTimingMatches(resolved.clip, expected, timelineTolerance, sourceTolerance);
+        if (verification.error) {
+            var restored = _mcpRestoreClipTiming(resolved.clip, original, timelineTolerance, sourceTolerance);
+            return _err("Premiere did not trim the clip end as requested: " + verification.error + (restored ? "; original timing was restored" : "; original timing could not be fully restored"));
+        }
+        return _ok({
+            action: "trimEnd",
+            clipName: resolved.clip.name || "",
+            oldEnd: original.end,
+            newEnd: verification.actual.end,
+            oldOutPoint: original.outPoint,
+            newOutPoint: verification.actual.outPoint,
+            trackType: resolved.trackType,
+            trackIndex: resolved.trackIndex,
+            clipIndex: resolved.clipIndex,
+            verified: true
+        });
     } catch (e) { return _err("trimClipEnd failed: " + e.message); }
 }
 
@@ -3229,7 +4391,8 @@ function saveProject() {
         if (!app.project) {
             return _err("No project is open");
         }
-        app.project.save();
+        var saveResult = app.project.save();
+        if (saveResult !== 0) return _err("Project save failed with status " + saveResult);
         return _ok({
             saved: true,
             projectName: app.project.name || "",
@@ -3251,7 +4414,13 @@ function saveProjectAs(path) {
         if (!path || path === "") {
             return _err("path is required");
         }
-        app.project.saveAs(path);
+        var saveAsResult = app.project.saveAs(path);
+        if (saveAsResult !== 0) return _err("Project save-as failed with status " + saveAsResult);
+        var expectedProjectPath = (new File(String(path))).fsName;
+        var actualProjectPath = (new File(String(app.project.path || ""))).fsName;
+        if (String(actualProjectPath).toLowerCase() !== String(expectedProjectPath).toLowerCase()) {
+            return _err("Project save-as path readback mismatch: " + actualProjectPath);
+        }
         return _ok({
             saved: true,
             newPath: path,
@@ -3273,7 +4442,8 @@ function closeProject(saveFirst) {
         var projectName = app.project.name || "";
 
         if (saveFirst === true || saveFirst === "true") {
-            app.project.save();
+            var closeSaveResult = app.project.save();
+            if (closeSaveResult !== 0) return _err("Project save before close failed with status " + closeSaveResult);
         }
 
         app.project.closeDocument();
@@ -3371,6 +4541,14 @@ function importFiles(paramsJson) {
             return _err("filePaths array is required and must not be empty");
         }
 
+        var requestedCanonicalPaths = [];
+        for (var requestedIndex = 0; requestedIndex < filePaths.length; requestedIndex++) {
+            var requestedFile = new File(String(filePaths[requestedIndex] || ""));
+            if (!requestedFile.exists) return _err("Media file does not exist: " + filePaths[requestedIndex]);
+            requestedCanonicalPaths.push(String(requestedFile.fsName).toLowerCase());
+            filePaths[requestedIndex] = requestedFile.fsName;
+        }
+
         var targetBin = app.project.rootItem;
         if (targetBinPath && targetBinPath !== "") {
             var resolved = _findBinByPath(targetBinPath);
@@ -3401,12 +4579,47 @@ function importFiles(paramsJson) {
             }
         }
 
+        function mediaPathCounts(bin) {
+            var paths = [];
+            if (!bin || !bin.children) return paths;
+            for (var itemIndex = 0; itemIndex < bin.children.numItems; itemIndex++) {
+                var child = bin.children[itemIndex];
+                if (!child || !child.getMediaPath) continue;
+                var childPath = String(child.getMediaPath() || "");
+                if (childPath) paths.push(String((new File(childPath)).fsName).toLowerCase());
+            }
+            return paths;
+        }
+        function pathOccurrenceCount(paths, value) {
+            var count = 0;
+            for (var pathIndex = 0; pathIndex < paths.length; pathIndex++) if (paths[pathIndex] === value) count++;
+            return count;
+        }
+
+        var beforeChildCount = targetBin.children ? targetBin.children.numItems : 0;
+        var beforeMediaPaths = mediaPathCounts(targetBin);
         var suppressUI = true;
         var importAsNumberedStill = false;
         var success = app.project.importFiles(filePaths, suppressUI, targetBin, importAsNumberedStill);
+        if (success !== true) return _err("Premiere importFiles returned failure");
+
+        var afterChildCount = targetBin.children ? targetBin.children.numItems : 0;
+        var afterMediaPaths = mediaPathCounts(targetBin);
+        for (var verifyIndex = 0; verifyIndex < requestedCanonicalPaths.length; verifyIndex++) {
+            var verifyPath = requestedCanonicalPaths[verifyIndex];
+            var requestedOccurrences = pathOccurrenceCount(requestedCanonicalPaths.slice(0, verifyIndex + 1), verifyPath);
+            var addedOccurrences = pathOccurrenceCount(afterMediaPaths, verifyPath) - pathOccurrenceCount(beforeMediaPaths, verifyPath);
+            if (addedOccurrences < requestedOccurrences) {
+                return _err("Import readback did not find a new project item for: " + filePaths[verifyIndex]);
+            }
+        }
+        if (afterChildCount < beforeChildCount + filePaths.length) {
+            return _err("Import count mismatch: expected at least " + filePaths.length + " new items, got " + (afterChildCount - beforeChildCount));
+        }
 
         return _ok({
-            imported: success ? true : false,
+            imported: true,
+            importedCount: afterChildCount - beforeChildCount,
             fileCount: filePaths.length,
             targetBin: targetBinPath || "/",
             filePaths: filePaths
@@ -3861,8 +5074,20 @@ function relinkMedia(paramsJson) {
         if (!targetFile.exists) return _err("Target media file does not exist: " + newMediaPath);
 
         if (item.changeMediaPath) {
-            var success = item.changeMediaPath(newMediaPath, true);
-            return _ok({ relinked: success ? true : false, itemPath: itemPath, itemName: item.name || "", newMediaPath: newMediaPath });
+            var canonicalTargetPath = targetFile.fsName;
+            var changeResult = item.changeMediaPath(canonicalTargetPath, true);
+            // Premiere's ProjectItem.changeMediaPath returns 0 on success.
+            if (changeResult !== 0) {
+                return _err("changeMediaPath failed with status " + changeResult + " for " + canonicalTargetPath);
+            }
+            if (!item.getMediaPath) return _err("Relink completed but getMediaPath readback is unavailable");
+            var actualMediaPath = String(item.getMediaPath() || "");
+            if (!actualMediaPath) return _err("Relink completed but Premiere returned an empty media path");
+            var canonicalActualPath = (new File(actualMediaPath)).fsName;
+            if (String(canonicalActualPath).toLowerCase() !== String(canonicalTargetPath).toLowerCase()) {
+                return _err("Relink readback mismatch: expected " + canonicalTargetPath + ", got " + canonicalActualPath);
+            }
+            return _ok({ relinked: true, itemPath: itemPath, itemName: item.name || "", newMediaPath: canonicalActualPath });
         } else {
             return _err("Item does not support changeMediaPath");
         }
@@ -4104,6 +5329,83 @@ function getProjectSettings() {
 // Transitions
 // ---------------------------------------------------------------------------
 
+function _captureTransitionState(track) {
+    if (!track || !track.transitions) return null;
+    var state = [];
+    for (var i = 0; i < track.transitions.numItems; i++) {
+        var transition = track.transitions[i];
+        state.push(_transitionIdentity(transition));
+    }
+    return state;
+}
+
+function _transitionIdentity(transition) {
+    if (!transition) return "missing";
+    if (transition.nodeId !== undefined && transition.nodeId !== null && String(transition.nodeId) !== "") {
+        return "node:" + String(transition.nodeId);
+    }
+    return [
+        String(transition.displayName || transition.name || transition.matchName || ""),
+        _timeToSeconds(transition.start),
+        _timeToSeconds(transition.end)
+    ].join("|");
+}
+
+function _verifyTransitionRemoved(track, removedIdentity, beforeCount) {
+    if (!track || !track.transitions) return { error: "Premiere no longer exposes the transition collection for verification" };
+    if (track.transitions.numItems !== beforeCount - 1) {
+        return { error: "Transition count did not decrease from " + beforeCount + " to " + (beforeCount - 1) };
+    }
+    for (var i = 0; i < track.transitions.numItems; i++) {
+        if (_transitionIdentity(track.transitions[i]) === removedIdentity) {
+            return { error: "The removed transition is still present in Premiere's transition collection" };
+        }
+    }
+    return { verified: true };
+}
+
+function _findAddedTransition(track, beforeState) {
+    if (!track || !track.transitions || !beforeState) return null;
+    if (track.transitions.numItems <= beforeState.length) return null;
+    var matchedBefore = [];
+    for (var i = 0; i < beforeState.length; i++) matchedBefore[i] = false;
+    for (var ti = 0; ti < track.transitions.numItems; ti++) {
+        var candidate = track.transitions[ti];
+        var identity = _transitionIdentity(candidate);
+        var matched = false;
+        for (var bi = 0; bi < beforeState.length; bi++) {
+            if (!matchedBefore[bi] && beforeState[bi] === identity) {
+                matchedBefore[bi] = true;
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) return { transition: candidate, index: ti };
+    }
+    return null;
+}
+
+function _verifiedTransitionData(track, beforeState, requestedName, requestedDuration) {
+    var added = _findAddedTransition(track, beforeState);
+    if (!added || !added.transition) return { error: "QE did not add a verifiable transition" };
+    var transition = added.transition;
+    var actualName = String(transition.displayName || transition.name || transition.matchName || "");
+    var actualDuration = _timeToSeconds(transition.end) - _timeToSeconds(transition.start);
+    if (!actualName) return { error: "Premiere added a transition whose name could not be verified" };
+    if (isNaN(actualDuration) || actualDuration <= 0) return { error: "Premiere added a transition whose duration could not be verified" };
+    return {
+        data: {
+            transitionIndex: added.index,
+            transitionName: actualName,
+            requestedTransitionName: requestedName,
+            duration: actualDuration,
+            requestedDuration: requestedDuration,
+            durationAdjusted: Math.abs(actualDuration - requestedDuration) > 0.002,
+            verified: true
+        }
+    };
+}
+
 function addVideoTransition(trackIndex, clipIndex, transitionName, duration, applyToEnd) {
     try {
         if (!app.project) return _err("No project is open");
@@ -4114,6 +5416,10 @@ function addVideoTransition(trackIndex, clipIndex, transitionName, duration, app
         duration = parseFloat(duration) || 1.0;
         transitionName = transitionName || "Cross Dissolve";
         if (applyToEnd === undefined) applyToEnd = true;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
+        var domTrack = seq.videoTracks[trackIndex];
+        var beforeState = _captureTransitionState(domTrack);
+        if (!beforeState) return _err("Premiere does not expose transitions for readback verification");
         app.enableQE();
         var qeSeq = qe.project.getActiveSequence();
         if (!qeSeq) return _err("QE: no active sequence");
@@ -4124,7 +5430,12 @@ function addVideoTransition(trackIndex, clipIndex, transitionName, duration, app
         var tr = qe.project.getVideoTransitionByName(transitionName);
         if (!tr) return _err("QE: video transition '" + transitionName + "' not found");
         qeClip.addTransition(tr, applyToEnd, duration.toString());
-        return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, transitionName: transitionName, duration: duration, applyToEnd: applyToEnd });
+        var verified = _verifiedTransitionData(domTrack, beforeState, transitionName, duration);
+        if (verified.error) return _err(verified.error + ": " + transitionName);
+        verified.data.trackIndex = trackIndex;
+        verified.data.clipIndex = clipIndex;
+        verified.data.applyToEnd = applyToEnd;
+        return _ok(verified.data);
     } catch (e) { return _err("addVideoTransition failed: " + e.message); }
 }
 
@@ -4137,6 +5448,10 @@ function addAudioTransition(trackIndex, clipIndex, transitionName, duration) {
         clipIndex = parseInt(clipIndex, 10) || 0;
         duration = parseFloat(duration) || 1.0;
         transitionName = transitionName || "Constant Power";
+        if (trackIndex >= seq.audioTracks.numTracks) return _err("Audio track index out of range");
+        var domTrack = seq.audioTracks[trackIndex];
+        var beforeState = _captureTransitionState(domTrack);
+        if (!beforeState) return _err("Premiere does not expose transitions for readback verification");
         app.enableQE();
         var qeSeq = qe.project.getActiveSequence();
         if (!qeSeq) return _err("QE: no active sequence");
@@ -4147,7 +5462,11 @@ function addAudioTransition(trackIndex, clipIndex, transitionName, duration) {
         var tr = qe.project.getAudioTransitionByName(transitionName);
         if (!tr) return _err("QE: audio transition '" + transitionName + "' not found");
         qeClip.addTransition(tr, true, duration.toString());
-        return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, transitionName: transitionName, duration: duration });
+        var verified = _verifiedTransitionData(domTrack, beforeState, transitionName, duration);
+        if (verified.error) return _err(verified.error + ": " + transitionName);
+        verified.data.trackIndex = trackIndex;
+        verified.data.clipIndex = clipIndex;
+        return _ok(verified.data);
     } catch (e) { return _err("addAudioTransition failed: " + e.message); }
 }
 
@@ -4156,17 +5475,29 @@ function removeTransition(trackType, trackIndex, transitionIndex) {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
-        trackIndex = parseInt(trackIndex, 10) || 0;
-        transitionIndex = parseInt(transitionIndex, 10) || 0;
+        trackType = String(trackType || "video").toLowerCase();
+        if (trackType !== "video" && trackType !== "audio") return _err("trackType must be 'video' or 'audio'");
+        trackIndex = Number(trackIndex);
+        transitionIndex = Number(transitionIndex);
+        if (isNaN(trackIndex) || !isFinite(trackIndex) || trackIndex < 0 || Math.floor(trackIndex) !== trackIndex) return _err("trackIndex must be a non-negative integer");
+        if (isNaN(transitionIndex) || !isFinite(transitionIndex) || transitionIndex < 0 || Math.floor(transitionIndex) !== transitionIndex) return _err("transitionIndex must be a non-negative integer");
         var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
         if (trackIndex >= tracks.numTracks) return _err("Track index " + trackIndex + " out of range");
         var track = tracks[trackIndex];
         if (!track.transitions || transitionIndex >= track.transitions.numItems)
             return _err("Transition index " + transitionIndex + " out of range on track " + trackIndex);
+        var beforeCount = track.transitions.numItems;
         var t = track.transitions[transitionIndex];
-        var tName = t.matchName || t.name || "";
-        t.remove(false, false);
-        return _ok({ trackType: trackType || "video", trackIndex: trackIndex, transitionIndex: transitionIndex, removed: tName });
+        if (!t || typeof t.remove !== "function") return _err("Transition does not support removal in this Premiere version");
+        var tName = t.displayName || t.matchName || t.name || "";
+        var removedIdentity = _transitionIdentity(t);
+        var removalStatus = t.remove(false, false);
+        if (removalStatus !== undefined && removalStatus !== null && removalStatus !== 0 && removalStatus !== true) {
+            return _err("Premiere rejected transition removal (status " + String(removalStatus) + ")");
+        }
+        var verification = _verifyTransitionRemoved(track, removedIdentity, beforeCount);
+        if (verification.error) return _err("Could not verify transition removal: " + verification.error);
+        return _ok({ trackType: trackType, trackIndex: trackIndex, transitionIndex: transitionIndex, removed: tName, removedIdentity: removedIdentity, verified: true });
     } catch (e) { return _err("removeTransition failed: " + e.message); }
 }
 
@@ -4260,6 +5591,12 @@ function applyVideoEffect(trackIndex, clipIndex, effectName) {
         trackIndex = parseInt(trackIndex, 10) || 0;
         clipIndex = parseInt(clipIndex, 10) || 0;
         if (!effectName || effectName === "") return _err("effectName is required");
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
+        var domTrack = seq.videoTracks[trackIndex];
+        if (!domTrack.clips || clipIndex >= domTrack.clips.numItems) return _err("Clip index out of range");
+        var domClip = domTrack.clips[clipIndex];
+        if (!domClip.components) return _err("Premiere does not expose clip components for effect verification");
+        var beforeCount = domClip.components.numItems;
         app.enableQE();
         var qeSeq = qe.project.getActiveSequence();
         if (!qeSeq) return _err("QE: no active sequence");
@@ -4270,7 +5607,16 @@ function applyVideoEffect(trackIndex, clipIndex, effectName) {
         var fx = qe.project.getVideoEffectByName(effectName);
         if (!fx) return _err("QE: video effect '" + effectName + "' not found");
         qeClip.addVideoEffect(fx);
-        return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, effectName: effectName });
+        var afterCount = domClip.components ? domClip.components.numItems : 0;
+        if (afterCount <= beforeCount) return _err("QE did not attach a verifiable video effect: " + effectName);
+        var added = domClip.components[afterCount - 1];
+        return _ok({
+            trackIndex: trackIndex,
+            clipIndex: clipIndex,
+            effectName: added ? (added.displayName || added.matchName || effectName) : effectName,
+            componentIndex: afterCount - 1,
+            verified: true
+        });
     } catch (e) { return _err("applyVideoEffect failed: " + e.message); }
 }
 
@@ -4326,6 +5672,63 @@ function getClipEffects(trackType, trackIndex, clipIndex) {
     } catch (e) { return _err("getClipEffects failed: " + e.message); }
 }
 
+function _componentParamValueForMessage(value) {
+    try {
+        var encoded = JSON.stringify(value);
+        if (encoded !== undefined) return encoded;
+    } catch (ignore) {}
+    return String(value);
+}
+
+function _componentParamValuesEquivalent(actual, expected) {
+    if (actual === expected) return true;
+    if (actual === null || actual === undefined || expected === null || expected === undefined) return false;
+
+    if (typeof expected === "number") {
+        var actualNumber = (typeof actual === "number") ? actual : parseFloat(actual);
+        if (isNaN(actualNumber) || !isFinite(actualNumber)) return false;
+        var tolerance = Math.max(0.000001, Math.abs(expected) * 0.00001);
+        return Math.abs(actualNumber - expected) <= tolerance;
+    }
+    if (typeof expected === "boolean") {
+        return actual === expected || actual === (expected ? 1 : 0);
+    }
+    if (expected instanceof Array) {
+        if (!(actual instanceof Array) || actual.length !== expected.length) return false;
+        for (var i = 0; i < expected.length; i++) {
+            if (!_componentParamValuesEquivalent(actual[i], expected[i])) return false;
+        }
+        return true;
+    }
+    if (typeof expected === "string") {
+        if (String(actual) === expected) return true;
+        if (typeof actual === "string" && actual.length > 1 && actual.charAt(0) === "{") {
+            try {
+                var parsed = JSON.parse(actual);
+                if (parsed && (parsed.textEditValue === expected || parsed.text === expected)) return true;
+            } catch (ignoreJSON) {}
+        }
+        return false;
+    }
+    try { return JSON.stringify(actual) === JSON.stringify(expected); }
+    catch (ignoreObject) { return false; }
+}
+
+function _setComponentParamAndVerify(param, requestedValue) {
+    if (!param || typeof param.setValue !== "function") return { error: "Component parameter is not writable" };
+    if (typeof param.getValue !== "function") return { error: "Component parameter cannot be read back" };
+    var status = param.setValue(requestedValue, true);
+    if (status !== 0) return { error: "ComponentParam.setValue returned failure status " + String(status) };
+    var actualValue = param.getValue();
+    if (!_componentParamValuesEquivalent(actualValue, requestedValue)) {
+        return {
+            error: "Premiere read back " + _componentParamValueForMessage(actualValue) +
+                " instead of " + _componentParamValueForMessage(requestedValue)
+        };
+    }
+    return { value: actualValue, status: status };
+}
+
 function setEffectParameter(trackType, trackIndex, clipIndex, componentIndex, paramIndex, value) {
     try {
         if (!app.project) return _err("No project is open");
@@ -4343,8 +5746,10 @@ function setEffectParameter(trackType, trackIndex, clipIndex, componentIndex, pa
         if (!comp.properties || paramIndex >= comp.properties.numItems) return _err("Parameter index out of range");
         var param = comp.properties[paramIndex];
         var numVal = parseFloat(value);
-        if (isNaN(numVal)) { param.setValue(value, true); } else { param.setValue(numVal, true); }
-        return _ok({ trackType: trackType || "video", trackIndex: trackIndex, clipIndex: clipIndex, componentIndex: componentIndex, paramIndex: paramIndex, paramName: param.displayName || "", value: value });
+        var requestedValue = isNaN(numVal) ? value : numVal;
+        var write = _setComponentParamAndVerify(param, requestedValue);
+        if (write.error) return _err("Could not set effect parameter: " + write.error);
+        return _ok({ trackType: trackType || "video", trackIndex: trackIndex, clipIndex: clipIndex, componentIndex: componentIndex, paramIndex: paramIndex, paramName: param.displayName || "", value: write.value, verified: true });
     } catch (e) { return _err("setEffectParameter failed: " + e.message); }
 }
 
@@ -4490,22 +5895,42 @@ function _findProperty(comp, displayName) {
 function setPosition(trackIndex, clipIndex, x, y) {
     try {
         if (!app.project) return _err("No project is open");
+        var rawTrackIndex = parseFloat(trackIndex);
+        var rawClipIndex = parseFloat(clipIndex);
+        trackIndex = parseInt(trackIndex, 10);
+        clipIndex = parseInt(clipIndex, 10);
+        x = parseFloat(x);
+        y = parseFloat(y);
+        if (isNaN(rawTrackIndex) || rawTrackIndex !== Math.floor(rawTrackIndex) || trackIndex < 0) return _err("trackIndex must be a non-negative integer");
+        if (isNaN(rawClipIndex) || rawClipIndex !== Math.floor(rawClipIndex) || clipIndex < 0) return _err("clipIndex must be a non-negative integer");
+        if (isNaN(x) || !isFinite(x) || x < -10 || x > 10) return _err("x must be a finite normalized coordinate between -10 and 10");
+        if (isNaN(y) || !isFinite(y) || y < -10 || y > 10) return _err("y must be a finite normalized coordinate between -10 and 10");
         var m = _getMotionComponent(trackIndex, clipIndex);
         if (!m) return _err("Could not access Motion component");
         var p = _findProperty(m, "Position"); if (!p) return _err("Position property not found");
-        x = parseFloat(x); y = parseFloat(y); p.setValue([x, y], true);
-        return _ok({ trackIndex: parseInt(trackIndex,10), clipIndex: parseInt(clipIndex,10), x: x, y: y });
+        var write = _setComponentParamAndVerify(p, [x, y]);
+        if (write.error) return _err("Could not set Position: " + write.error);
+        return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, x: write.value[0], y: write.value[1], verified: true });
     } catch (e) { return _err("setPosition failed: " + e.message); }
 }
 
 function setScale(trackIndex, clipIndex, scale) {
     try {
         if (!app.project) return _err("No project is open");
+        var rawTrackIndex = parseFloat(trackIndex);
+        var rawClipIndex = parseFloat(clipIndex);
+        trackIndex = parseInt(trackIndex, 10);
+        clipIndex = parseInt(clipIndex, 10);
+        scale = parseFloat(scale);
+        if (isNaN(rawTrackIndex) || rawTrackIndex !== Math.floor(rawTrackIndex) || trackIndex < 0) return _err("trackIndex must be a non-negative integer");
+        if (isNaN(rawClipIndex) || rawClipIndex !== Math.floor(rawClipIndex) || clipIndex < 0) return _err("clipIndex must be a non-negative integer");
+        if (isNaN(scale) || !isFinite(scale) || scale <= 0 || scale > 10000) return _err("scale must be a finite percentage greater than 0 and no greater than 10000");
         var m = _getMotionComponent(trackIndex, clipIndex);
         if (!m) return _err("Could not access Motion component");
         var p = _findProperty(m, "Scale"); if (!p) return _err("Scale property not found");
-        scale = parseFloat(scale); p.setValue(scale, true);
-        return _ok({ trackIndex: parseInt(trackIndex,10), clipIndex: parseInt(clipIndex,10), scale: scale });
+        var write = _setComponentParamAndVerify(p, scale);
+        if (write.error) return _err("Could not set Scale: " + write.error);
+        return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, scale: write.value, verified: true });
     } catch (e) { return _err("setScale failed: " + e.message); }
 }
 
@@ -5200,8 +6625,9 @@ function setMOGRTText(trackIndex, clipIndex, propertyIndex, text) {
         if (!mgtComp) return _err("Clip has no MGT component");
         if (!mgtComp.properties || propertyIndex >= mgtComp.properties.numItems) return _err("Property index " + propertyIndex + " out of range");
         var prop = mgtComp.properties[propertyIndex];
-        prop.setValue(text, true);
-        return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, propertyIndex: propertyIndex, text: text, propertyName: prop.displayName || "" });
+        var write = _setComponentParamAndVerify(prop, text);
+        if (write.error) return _err("Could not set MOGRT text: " + write.error);
+        return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, propertyIndex: propertyIndex, text: write.value, propertyName: prop.displayName || "", verified: true });
     } catch (e) { return _err("setMOGRTText failed: " + e.message); }
 }
 
@@ -5219,13 +6645,20 @@ function setMOGRTProperty(trackIndex, clipIndex, propertyName, value) {
         var mgtComp = clip.getMGTComponent();
         if (!mgtComp) return _err("Clip has no MGT component");
         var found = false;
+        var actualValue = null;
         if (mgtComp.properties) {
             for (var i = 0; i < mgtComp.properties.numItems; i++) {
-                if (mgtComp.properties[i].displayName === propertyName) { mgtComp.properties[i].setValue(value, true); found = true; break; }
+                if (mgtComp.properties[i].displayName === propertyName) {
+                    var write = _setComponentParamAndVerify(mgtComp.properties[i], value);
+                    if (write.error) return _err("Could not set MOGRT property '" + propertyName + "': " + write.error);
+                    actualValue = write.value;
+                    found = true;
+                    break;
+                }
             }
         }
         if (!found) return _err("Property '" + propertyName + "' not found on MOGRT clip");
-        return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, propertyName: propertyName, value: value });
+        return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, propertyName: propertyName, value: actualValue, verified: true });
     } catch (e) { return _err("setMOGRTProperty failed: " + e.message); }
 }
 
@@ -5334,16 +6767,18 @@ function getCaptions(trackIndex) {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
-        trackIndex = parseInt(trackIndex, 10) || 0;
+        trackIndex = parseInt(trackIndex, 10);
+        if (isNaN(trackIndex) || trackIndex < 0) return _err("trackIndex must be a non-negative integer");
         var captions = [];
-        if (seq.captionTracks && trackIndex < seq.captionTracks.numTracks) {
-            var ct = seq.captionTracks[trackIndex];
-            if (ct && ct.clips) { for (var ci = 0; ci < ct.clips.numItems; ci++) { var c = ct.clips[ci]; captions.push({ index: ci, text: c.name || "", startSeconds: _timeToSeconds(c.start), endSeconds: _timeToSeconds(c.end), duration: _timeToSeconds(c.duration) }); } }
-        } else if (trackIndex < seq.videoTracks.numTracks) {
-            var vt = seq.videoTracks[trackIndex];
-            if (vt && vt.clips) { for (var vc = 0; vc < vt.clips.numItems; vc++) { var v = vt.clips[vc]; captions.push({ index: vc, text: v.name || "", startSeconds: _timeToSeconds(v.start), endSeconds: _timeToSeconds(v.end), duration: _timeToSeconds(v.duration) }); } }
+        if (!seq.captionTracks) return _err("This Premiere Pro version does not expose captionTracks; ordinary video clips are not captions");
+        if (trackIndex >= seq.captionTracks.numTracks) return _err("Caption track index " + trackIndex + " out of range");
+        var ct = seq.captionTracks[trackIndex];
+        if (!ct || !ct.clips) return _err("Caption track " + trackIndex + " has no readable clips collection");
+        for (var ci = 0; ci < ct.clips.numItems; ci++) {
+            var c = ct.clips[ci];
+            captions.push({ index: ci, text: c.name || "", startSeconds: _timeToSeconds(c.start), endSeconds: _timeToSeconds(c.end), duration: _timeToSeconds(c.duration) });
         }
-        return _ok({ trackIndex: trackIndex, captionCount: captions.length, captions: captions });
+        return _ok({ trackIndex: trackIndex, captionCount: captions.length, captions: captions, source: "captionTracks" });
     } catch (e) { return _err("getCaptions failed: " + e.message); }
 }
 
@@ -5402,16 +6837,33 @@ function deleteCaption(trackIndex, captionIndex) {
     } catch (e) { return _err("deleteCaption failed: " + e.message); }
 }
 
-function exportCaptions(outputPath, format) {
+function exportCaptions(outputPath, format, expectedSequenceId) {
     try {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
+        expectedSequenceId = expectedSequenceId === undefined || expectedSequenceId === null ? "" :
+            String(expectedSequenceId).replace(/^\s+|\s+$/g, "");
+        if (!expectedSequenceId) return _err("expectedSequenceId is required");
+        var activeSequenceID = String(seq.sequenceID || "");
+        if (!activeSequenceID || activeSequenceID !== expectedSequenceId) {
+            return _err("Active sequence mismatch: expected " + expectedSequenceId + ", got " + (activeSequenceID || "none"));
+        }
         if (!outputPath || outputPath === "") return _err("outputPath is required");
         format = format || "SRT";
-        if (seq.exportCaptions) { seq.exportCaptions(outputPath, format); return _ok({ outputPath: outputPath, format: format, exported: true }); }
+        if (!seq.captionTracks || seq.captionTracks.numTracks === 0) return _err("No caption tracks are available to export");
         var captions = [];
-        if (seq.captionTracks) { for (var t = 0; t < seq.captionTracks.numTracks; t++) { var ct = seq.captionTracks[t]; if (ct.clips) { for (var ci = 0; ci < ct.clips.numItems; ci++) { var c = ct.clips[ci]; captions.push({ text: c.name || "", startSeconds: _timeToSeconds(c.start), endSeconds: _timeToSeconds(c.end) }); } } } }
+        for (var t = 0; t < seq.captionTracks.numTracks; t++) { var ct = seq.captionTracks[t]; if (ct.clips) { for (var ci = 0; ci < ct.clips.numItems; ci++) { var c = ct.clips[ci]; captions.push({ text: c.name || "", startSeconds: _timeToSeconds(c.start), endSeconds: _timeToSeconds(c.end) }); } } }
+        if (captions.length === 0) return _err("Caption tracks contain no captions to export");
+
+        var outputFile = new File(String(outputPath));
+        if (seq.exportCaptions) {
+            var exportResult = seq.exportCaptions(outputFile.fsName, format);
+            if (exportResult === false) return _err("Sequence.exportCaptions returned failure");
+            outputFile = new File(outputFile.fsName);
+            if (!outputFile.exists || outputFile.length <= 0) return _err("Caption export did not create a non-empty file: " + outputFile.fsName);
+            return _ok({ sequenceID: activeSequenceID, sequenceName: String(seq.name || ""), outputPath: outputFile.fsName, format: format, captionCount: captions.length, exported: true, verified: true, method: "sequence_api" });
+        }
         var sep = (format === "VTT" || format === "vtt") ? "." : ",";
         var content = (format === "VTT" || format === "vtt") ? "WEBVTT\n\n" : "";
         for (var i = 0; i < captions.length; i++) {
@@ -5419,31 +6871,18 @@ function exportCaptions(outputPath, format) {
             var _f = function(ts) { var h=Math.floor(ts/3600),m=Math.floor((ts%3600)/60),s=Math.floor(ts%60),ms=Math.round((ts-Math.floor(ts))*1000); return (h<10?"0":"")+h+":"+(m<10?"0":"")+m+":"+(s<10?"0":"")+s+sep+(ms<100?"0":"")+(ms<10?"0":"")+ms; };
             content += (i + 1) + "\n" + _f(cap.startSeconds) + " --> " + _f(cap.endSeconds) + "\n" + cap.text + "\n\n";
         }
-        var f = new File(outputPath); f.open("w"); f.write(content); f.close();
-        return _ok({ outputPath: outputPath, format: format, captionCount: captions.length, exported: true });
+        var f = new File(outputFile.fsName);
+        if (!f.open("w")) return _err("Could not open caption output for writing: " + f.fsName);
+        var writeResult = f.write(content);
+        f.close();
+        var verifiedFile = new File(f.fsName);
+        if (writeResult === false || !verifiedFile.exists || verifiedFile.length <= 0) return _err("Caption sidecar write could not be verified: " + f.fsName);
+        return _ok({ sequenceID: activeSequenceID, sequenceName: String(seq.name || ""), outputPath: f.fsName, format: format, captionCount: captions.length, exported: true, verified: true, method: "sidecar_writer" });
     } catch (e) { return _err("exportCaptions failed: " + e.message); }
 }
 
 function styleCaptions(trackIndex, font, size, color, bgColor, position) {
-    try {
-        if (!app.project) return _err("No project is open");
-        var seq = app.project.activeSequence;
-        if (!seq) return _err("No active sequence");
-        trackIndex = parseInt(trackIndex, 10) || 0;
-        size = parseFloat(size) || 24;
-        var styled = 0;
-        if (seq.captionTracks && trackIndex < seq.captionTracks.numTracks) {
-            var ct = seq.captionTracks[trackIndex];
-            if (ct.clips) {
-                for (var ci = 0; ci < ct.clips.numItems; ci++) {
-                    var clip = ct.clips[ci];
-                    if (clip.components) { for (var comp = 0; comp < clip.components.numItems; comp++) { var component = clip.components[comp]; if (component.properties) { for (var pi = 0; pi < component.properties.numItems; pi++) { var p = component.properties[pi]; var dn = p.displayName || ""; try { if (font && dn === "Font") p.setValue(font, true); else if (size && dn === "Font Size") p.setValue(size, true); else if (color && dn === "Font Color") p.setValue(color, true); else if (bgColor && dn === "Background Color") p.setValue(bgColor, true); else if (position && dn === "Position") p.setValue(position, true); } catch (se) { continue; } } } } }
-                    styled++;
-                }
-            }
-        } else { return _err("Caption track index " + trackIndex + " out of range"); }
-        return _ok({ trackIndex: trackIndex, font: font || "", size: size, color: color || "", bgColor: bgColor || "", position: position || "", captionsStyled: styled });
-    } catch (e) { return _err("styleCaptions failed: " + e.message); }
+    return _err("unsupported styleCaptions: the CEP caption DOM does not expose portable, readable style properties; style captions in Premiere or use a verified MOGRT workflow");
 }
 
 // ===========================================================================
@@ -5781,33 +7220,159 @@ function getMulticamAngles(trackIndex, clipIndex) {
 // Proxy Workflow
 // ===========================================================================
 
+function _mcpResolveProxyItem(projectItemIndex) {
+    var parsedIndex = _mcpNonNegativeIndex(projectItemIndex, "projectItemIndex");
+    if (parsedIndex.error) return { error: parsedIndex.error };
+    if (!app.project) return { error: "No project is open" };
+
+    var root = app.project.rootItem;
+    if (!root || !root.children) return { error: "Project has no items" };
+    if (parsedIndex.value >= root.children.numItems) {
+        return { error: "Project item index " + parsedIndex.value + " out of range" };
+    }
+
+    var item = root.children[parsedIndex.value];
+    if (!item) return { error: "Project item index " + parsedIndex.value + " could not be resolved" };
+    if (typeof item.canProxy !== "function") {
+        return { error: "canProxy is not supported for project item " + parsedIndex.value + " in this Premiere Pro version" };
+    }
+    var canProxy = item.canProxy();
+    if (canProxy !== true && canProxy !== 1) {
+        return { error: "Project item " + parsedIndex.value + " cannot use proxy media" };
+    }
+
+    return { index: parsedIndex.value, item: item };
+}
+
+function _mcpResolveProxyFile(value, label, requiredExtension) {
+    if (typeof value !== "string") return { error: label + " must be an absolute file path" };
+    var path = value.replace(/^\s+|\s+$/g, "");
+    if (!path) return { error: label + " is required" };
+    if (!/^(?:\/|[A-Za-z]:[\\\/]|\\\\|\/\/)/.test(path)) {
+        return { error: label + " must be an absolute file path" };
+    }
+
+    var file = new File(path);
+    if (!file.exists) return { error: label + " does not exist: " + path };
+    var canonicalPath = String(file.fsName);
+    if (requiredExtension && !new RegExp("\\." + requiredExtension + "$", "i").test(canonicalPath)) {
+        return { error: label + " must be a ." + requiredExtension + " file" };
+    }
+    return { file: file, path: canonicalPath };
+}
+
+function _mcpResolveProxyOutputPath(value) {
+    if (typeof value !== "string") return { error: "outputPath must be an absolute file path" };
+    var path = value.replace(/^\s+|\s+$/g, "");
+    if (!path) return { error: "outputPath is required" };
+    if (!/^(?:\/|[A-Za-z]:[\\\/]|\\\\|\/\/)/.test(path)) {
+        return { error: "outputPath must be an absolute file path" };
+    }
+
+    var file = new File(path);
+    if (file.exists) return { error: "outputPath already exists; refusing to overwrite: " + file.fsName };
+    if (!file.parent || !file.parent.exists) {
+        return { error: "outputPath parent directory does not exist: " + (file.parent ? file.parent.fsName : path) };
+    }
+    if (!/\.[^\.\\\/]+$/.test(String(file.fsName))) {
+        return { error: "outputPath must include a file extension that matches the encoder preset" };
+    }
+    return { file: file, path: String(file.fsName) };
+}
+
+function _mcpCanonicalProxyPath(value) {
+    if (value === undefined || value === null || value === "" || value === 0) return "";
+    if (typeof value !== "string") return null;
+    return String((new File(value)).fsName);
+}
+
+function _mcpProxyPathKey(value) {
+    var canonicalPath = _mcpCanonicalProxyPath(value);
+    if (canonicalPath === null) return null;
+    var key = canonicalPath.replace(/\\/g, "/");
+    if (typeof $ !== "undefined" && $.os && String($.os).toLowerCase().indexOf("windows") >= 0) {
+        key = key.toLowerCase();
+    }
+    return key;
+}
+
+function _mcpReadProxyState(item) {
+    if (typeof item.hasProxy !== "function") {
+        return { error: "hasProxy is not supported for this project item in this Premiere Pro version" };
+    }
+    if (typeof item.getProxyPath !== "function") {
+        return { error: "getProxyPath is not supported for this project item in this Premiere Pro version" };
+    }
+
+    var rawHasProxy = item.hasProxy();
+    if (rawHasProxy !== true && rawHasProxy !== false && rawHasProxy !== 1 && rawHasProxy !== 0) {
+        return { error: "hasProxy returned an unsupported value" };
+    }
+    var proxyAttached = rawHasProxy === true || rawHasProxy === 1;
+    var proxyPath = _mcpCanonicalProxyPath(item.getProxyPath());
+    if (proxyPath === null) return { error: "getProxyPath returned an unsupported value" };
+    if (proxyAttached && !proxyPath) return { error: "Proxy state is inconsistent: hasProxy is true but getProxyPath is empty" };
+    if (!proxyAttached && proxyPath) return { error: "Proxy state is inconsistent: hasProxy is false but getProxyPath returned " + proxyPath };
+
+    return {
+        hasProxy: proxyAttached,
+        proxyPath: proxyPath,
+        proxyFileExists: proxyPath ? (new File(proxyPath)).exists : false
+    };
+}
+
 /**
- * createProxy(projectItemIndex, presetPath) - Create proxy for a project item.
+ * createProxy(projectItemIndex, outputPath, presetPath) - Queue proxy media generation.
  */
-function createProxy(projectItemIndex, presetPath) {
+function createProxy(projectItemIndex, outputPath, presetPath) {
     try {
-        if (!app.project) return _err("No project is open");
-        projectItemIndex = parseInt(projectItemIndex, 10) || 0;
-        presetPath = presetPath || "";
-
-        var root = app.project.rootItem;
-        if (!root || !root.children) return _err("Project has no items");
-        if (projectItemIndex >= root.children.numItems) {
-            return _err("Project item index " + projectItemIndex + " out of range");
+        var resolved = _mcpResolveProxyItem(projectItemIndex);
+        if (resolved.error) return _err(resolved.error);
+        var output = _mcpResolveProxyOutputPath(outputPath);
+        if (output.error) return _err(output.error);
+        var preset = _mcpResolveProxyFile(presetPath, "presetPath", "epr");
+        if (preset.error) return _err(preset.error);
+        var item = resolved.item;
+        if (!app.encoder || typeof app.encoder.encodeProjectItem !== "function" ||
+            typeof app.encoder.launchEncoder !== "function" || typeof app.encoder.startBatch !== "function") {
+            return _err("Adobe Media Encoder project-item encoding is not supported in this Premiere Pro version");
         }
 
-        var item = root.children[projectItemIndex];
-        if (!item.createProxy) {
-            return _err("createProxy not supported in this Premiere Pro version");
+        var before = _mcpReadProxyState(item);
+        if (before.error) return _err(before.error);
+        if (before.hasProxy) {
+            return _err("Project item " + resolved.index + " already has proxy media attached at " + before.proxyPath);
         }
 
-        var result = item.createProxy(presetPath);
+        var launchStatus = app.encoder.launchEncoder();
+        if (launchStatus !== 0) return _err("launchEncoder failed with status " + launchStatus);
+
+        // encodeProjectItem returns a string job ID or numeric 0 on failure.
+        // The output is intentionally not attached here: completion is
+        // asynchronous and must be established from a stable output file.
+        var jobID = app.encoder.encodeProjectItem(item, output.path, preset.path, 0, 0);
+        if (typeof jobID !== "string") {
+            return _err("encodeProjectItem did not queue a proxy encode job");
+        }
+        jobID = jobID.replace(/^\s+|\s+$/g, "");
+        if (!jobID || jobID === "0") return _err("encodeProjectItem did not queue a proxy encode job");
+        var batchStatus = app.encoder.startBatch();
+        if (batchStatus !== 0) {
+            return _err("Proxy encode job " + jobID + " was queued, but startBatch failed with status " + batchStatus);
+        }
 
         return _ok({
-            projectItemIndex: projectItemIndex,
+            projectItemIndex: resolved.index,
             itemName: item.name || "",
-            presetPath: presetPath,
-            proxyCreated: result !== false
+            presetPath: preset.path,
+            outputPath: output.path,
+            jobId: jobID,
+            requestAccepted: true,
+            state: "pending_encode",
+            encodePending: true,
+            attachRequired: true,
+            attached: false,
+            verified: false
         });
     } catch (e) {
         return _err("createProxy failed: " + e.message);
@@ -5819,31 +7384,56 @@ function createProxy(projectItemIndex, presetPath) {
  */
 function attachProxy(projectItemIndex, proxyPath) {
     try {
-        if (!app.project) return _err("No project is open");
-        projectItemIndex = parseInt(projectItemIndex, 10) || 0;
-        proxyPath = proxyPath || "";
-
-        if (!proxyPath) return _err("proxyPath is required");
-
-        var root = app.project.rootItem;
-        if (!root || !root.children) return _err("Project has no items");
-        if (projectItemIndex >= root.children.numItems) {
-            return _err("Project item index " + projectItemIndex + " out of range");
-        }
-
-        var item = root.children[projectItemIndex];
-        if (!item.attachProxy) {
+        var resolved = _mcpResolveProxyItem(projectItemIndex);
+        if (resolved.error) return _err(resolved.error);
+        var proxyFile = _mcpResolveProxyFile(proxyPath, "proxyPath", "");
+        if (proxyFile.error) return _err(proxyFile.error);
+        var item = resolved.item;
+        if (typeof item.attachProxy !== "function") {
             return _err("attachProxy not supported in this Premiere Pro version");
         }
 
-        // attachProxy(mediaPath, isHiRes): false = proxy, true = hi-res
-        var result = item.attachProxy(proxyPath, false);
+        var before = _mcpReadProxyState(item);
+        if (before.error) return _err(before.error);
+        if (before.hasProxy) {
+            if (_mcpProxyPathKey(before.proxyPath) === _mcpProxyPathKey(proxyFile.path)) {
+                return _ok({
+                    projectItemIndex: resolved.index,
+                    itemName: item.name || "",
+                    proxyPath: before.proxyPath,
+                    hasProxy: true,
+                    attached: true,
+                    changed: false,
+                    state: "already_attached",
+                    verified: true,
+                    proxyFileExists: before.proxyFileExists
+                });
+            }
+            return _err("Project item " + resolved.index + " already has a different proxy attached at " + before.proxyPath + "; detach it explicitly before attaching another proxy");
+        }
+
+        // attachProxy(mediaPath, isHiRes): 0 assigns proxy media. Adobe's
+        // documented success status is 0.
+        var status = item.attachProxy(proxyFile.path, 0);
+        if (status !== 0) return _err("attachProxy failed with status " + status);
+
+        var after = _mcpReadProxyState(item);
+        if (after.error) return _err(after.error);
+        if (!after.hasProxy) return _err("attachProxy returned success but hasProxy readback is false");
+        if (_mcpProxyPathKey(after.proxyPath) !== _mcpProxyPathKey(proxyFile.path)) {
+            return _err("attachProxy readback mismatch: expected " + proxyFile.path + ", got " + after.proxyPath);
+        }
 
         return _ok({
-            projectItemIndex: projectItemIndex,
+            projectItemIndex: resolved.index,
             itemName: item.name || "",
-            proxyPath: proxyPath,
-            attached: result !== false
+            proxyPath: after.proxyPath,
+            hasProxy: true,
+            attached: true,
+            changed: true,
+            state: "attached",
+            verified: true,
+            proxyFileExists: after.proxyFileExists
         });
     } catch (e) {
         return _err("attachProxy failed: " + e.message);
@@ -5855,29 +7445,18 @@ function attachProxy(projectItemIndex, proxyPath) {
  */
 function hasProxy(projectItemIndex) {
     try {
-        if (!app.project) return _err("No project is open");
-        projectItemIndex = parseInt(projectItemIndex, 10) || 0;
-
-        var root = app.project.rootItem;
-        if (!root || !root.children) return _err("Project has no items");
-        if (projectItemIndex >= root.children.numItems) {
-            return _err("Project item index " + projectItemIndex + " out of range");
-        }
-
-        var item = root.children[projectItemIndex];
-        var proxyExists = false;
-
-        if (item.hasProxy !== undefined) {
-            proxyExists = item.hasProxy();
-        } else if (item.getProxyPath) {
-            var pp = item.getProxyPath();
-            proxyExists = (pp && pp.length > 0);
-        }
+        var resolved = _mcpResolveProxyItem(projectItemIndex);
+        if (resolved.error) return _err(resolved.error);
+        var state = _mcpReadProxyState(resolved.item);
+        if (state.error) return _err(state.error);
 
         return _ok({
-            projectItemIndex: projectItemIndex,
-            itemName: item.name || "",
-            hasProxy: proxyExists
+            projectItemIndex: resolved.index,
+            itemName: resolved.item.name || "",
+            hasProxy: state.hasProxy,
+            proxyPath: state.proxyPath,
+            proxyFileExists: state.proxyFileExists,
+            verified: true
         });
     } catch (e) {
         return _err("hasProxy failed: " + e.message);
@@ -5889,29 +7468,18 @@ function hasProxy(projectItemIndex) {
  */
 function getProxyPath(projectItemIndex) {
     try {
-        if (!app.project) return _err("No project is open");
-        projectItemIndex = parseInt(projectItemIndex, 10) || 0;
-
-        var root = app.project.rootItem;
-        if (!root || !root.children) return _err("Project has no items");
-        if (projectItemIndex >= root.children.numItems) {
-            return _err("Project item index " + projectItemIndex + " out of range");
-        }
-
-        var item = root.children[projectItemIndex];
-        var proxyPath = "";
-
-        if (item.getProxyPath) {
-            proxyPath = item.getProxyPath() || "";
-        } else {
-            return _err("getProxyPath not supported in this Premiere Pro version");
-        }
+        var resolved = _mcpResolveProxyItem(projectItemIndex);
+        if (resolved.error) return _err(resolved.error);
+        var state = _mcpReadProxyState(resolved.item);
+        if (state.error) return _err(state.error);
 
         return _ok({
-            projectItemIndex: projectItemIndex,
-            itemName: item.name || "",
-            proxyPath: proxyPath,
-            hasProxy: proxyPath.length > 0
+            projectItemIndex: resolved.index,
+            itemName: resolved.item.name || "",
+            proxyPath: state.proxyPath,
+            hasProxy: state.hasProxy,
+            proxyFileExists: state.proxyFileExists,
+            verified: true
         });
     } catch (e) {
         return _err("getProxyPath failed: " + e.message);
@@ -5924,21 +7492,30 @@ function getProxyPath(projectItemIndex) {
 function toggleProxies(enabled) {
     try {
         if (!app.project) return _err("No project is open");
-
-        enabled = (enabled === true || enabled === "true" || enabled === 1);
-
-        // Use QE DOM or app.project preferences for proxy toggle
-        app.enableQE();
-        if (qe.project && qe.project.toggleProxies) {
-            qe.project.toggleProxies(enabled);
-        } else if (app.project.setProxyToggleState) {
-            app.project.setProxyToggleState(enabled);
-        } else {
-            return _err("toggleProxies not supported in this Premiere Pro version");
+        if (enabled !== true && enabled !== false) return _err("enabled must be a boolean");
+        if (typeof app.getEnableProxies !== "function" || typeof app.setEnableProxies !== "function") {
+            return _err("Verified proxy playback control is not supported in this Premiere Pro version");
         }
 
+        var beforeRaw = app.getEnableProxies();
+        if (beforeRaw !== 0 && beforeRaw !== 1) return _err("getEnableProxies returned an unsupported value");
+        var before = beforeRaw === 1;
+        var changed = before !== enabled;
+        if (changed) {
+            // setEnableProxies returns 1 when the state was changed.
+            var status = app.setEnableProxies(enabled ? 1 : 0);
+            if (status !== 1) return _err("setEnableProxies failed with status " + status);
+        }
+
+        var afterRaw = app.getEnableProxies();
+        if (afterRaw !== 0 && afterRaw !== 1) return _err("getEnableProxies returned an unsupported readback value");
+        var after = afterRaw === 1;
+        if (after !== enabled) return _err("Proxy playback readback mismatch: requested " + enabled + ", got " + after);
+
         return _ok({
-            proxiesEnabled: enabled
+            proxiesEnabled: after,
+            changed: changed,
+            verified: true
         });
     } catch (e) {
         return _err("toggleProxies failed: " + e.message);
@@ -5950,35 +7527,43 @@ function toggleProxies(enabled) {
  */
 function detachProxy(projectItemIndex) {
     try {
-        if (!app.project) return _err("No project is open");
-        projectItemIndex = parseInt(projectItemIndex, 10) || 0;
-
-        var root = app.project.rootItem;
-        if (!root || !root.children) return _err("Project has no items");
-        if (projectItemIndex >= root.children.numItems) {
-            return _err("Project item index " + projectItemIndex + " out of range");
+        var resolved = _mcpResolveProxyItem(projectItemIndex);
+        if (resolved.error) return _err(resolved.error);
+        var item = resolved.item;
+        var before = _mcpReadProxyState(item);
+        if (before.error) return _err(before.error);
+        if (!before.hasProxy) {
+            return _ok({
+                projectItemIndex: resolved.index,
+                itemName: item.name || "",
+                previousProxyPath: "",
+                hasProxy: false,
+                detached: false,
+                changed: false,
+                state: "already_detached",
+                verified: true
+            });
+        }
+        if (typeof item.detachProxy !== "function") {
+            return _err("detachProxy not supported in this Premiere Pro version");
         }
 
-        var item = root.children[projectItemIndex];
+        var status = item.detachProxy();
+        if (status !== 0) return _err("detachProxy failed with status " + status);
 
-        // Check if proxy exists before detaching
-        var hadProxy = false;
-        if (item.hasProxy) {
-            hadProxy = item.hasProxy();
-        }
-
-        if (item.attachProxy) {
-            // Attaching empty path effectively detaches
-            item.attachProxy("", false);
-        } else {
-            return _err("Proxy detach not supported in this Premiere Pro version");
-        }
+        var after = _mcpReadProxyState(item);
+        if (after.error) return _err(after.error);
+        if (after.hasProxy || after.proxyPath) return _err("detachProxy returned success but proxy readback is still attached");
 
         return _ok({
-            projectItemIndex: projectItemIndex,
+            projectItemIndex: resolved.index,
             itemName: item.name || "",
-            hadProxy: hadProxy,
-            detached: true
+            previousProxyPath: before.proxyPath,
+            hasProxy: false,
+            detached: true,
+            changed: true,
+            state: "detached",
+            verified: true
         });
     } catch (e) {
         return _err("detachProxy failed: " + e.message);
@@ -6454,35 +8039,126 @@ function rippleTrim(trackType, trackIndex, clipIndex, trimEnd, deltaSeconds) {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
-        trackType = String(trackType || "video").toLowerCase();
-        trackIndex = parseInt(trackIndex, 10) || 0;
-        clipIndex = parseInt(clipIndex, 10) || 0;
-        trimEnd = (trimEnd === true || trimEnd === "true" || trimEnd === 1);
-        deltaSeconds = parseFloat(deltaSeconds) || 0;
-        var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
-        if (trackIndex >= tracks.numTracks) return _err("Track index " + trackIndex + " out of range");
-        var track = tracks[trackIndex];
-        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index " + clipIndex + " out of range");
-        var clip = track.clips[clipIndex];
-        var oldEnd = _timeToSeconds(clip.end);
-        var oldStart = _timeToSeconds(clip.start);
-        if (trimEnd) {
-            clip.end = _secondsToTime(oldEnd + deltaSeconds);
-            for (var i = clipIndex + 1; i < track.clips.numItems; i++) {
-                var c = track.clips[i];
-                c.start = _secondsToTime(_timeToSeconds(c.start) + deltaSeconds);
-                c.end = _secondsToTime(_timeToSeconds(c.end) + deltaSeconds);
-            }
-        } else {
-            clip.start = _secondsToTime(oldStart + deltaSeconds);
-            clip.inPoint = _secondsToTime(_timeToSeconds(clip.inPoint) + deltaSeconds);
-            for (var j = clipIndex + 1; j < track.clips.numItems; j++) {
-                var c2 = track.clips[j];
-                c2.start = _secondsToTime(_timeToSeconds(c2.start) + deltaSeconds);
-                c2.end = _secondsToTime(_timeToSeconds(c2.end) + deltaSeconds);
-            }
+        var resolved = _mcpResolveMutationClip(seq, trackType, trackIndex, clipIndex);
+        if (resolved.error) return _err(resolved.error);
+        var trimTail;
+        if (trimEnd === undefined || trimEnd === null || trimEnd === "") trimTail = true;
+        else if (trimEnd === true || trimEnd === "true" || trimEnd === 1 || trimEnd === "1") trimTail = true;
+        else if (trimEnd === false || trimEnd === "false" || trimEnd === 0 || trimEnd === "0") trimTail = false;
+        else return _err("trimEnd must be a boolean");
+        var parsedDelta = _mcpStrictNumber(deltaSeconds, "deltaSeconds");
+        if (parsedDelta.error) return _err(parsedDelta.error);
+        var delta = parsedDelta.value;
+        var original = resolved.state;
+        var timelineTolerance = _mcpMutationTolerance(seq);
+        var sourceTolerance = timelineTolerance * original.rate;
+        var expectedTarget = {
+            start: original.start,
+            end: original.end + delta,
+            inPoint: trimTail ? original.inPoint : original.inPoint - (delta * original.rate),
+            outPoint: trimTail ? original.outPoint + (delta * original.rate) : original.outPoint
+        };
+        if (!isFinite(expectedTarget.end) || expectedTarget.end <= expectedTarget.start + timelineTolerance) {
+            return _err("Ripple trim would leave the selected clip shorter than one frame");
         }
-        return _ok({ trackType: trackType, trackIndex: trackIndex, clipIndex: clipIndex, trimEnd: trimEnd, deltaSeconds: deltaSeconds, newStart: _timeToSeconds(clip.start), newEnd: _timeToSeconds(clip.end) });
+        if (expectedTarget.inPoint < -sourceTolerance || expectedTarget.outPoint <= expectedTarget.inPoint + sourceTolerance) {
+            return _err("Ripple trim exceeds the selected clip's available source range");
+        }
+        if (expectedTarget.inPoint < 0) expectedTarget.inPoint = 0;
+        if (trimTail && delta > timelineTolerance && original.mediaDuration === null) {
+            return _err("Premiere does not expose the source duration required to verify a tail extension");
+        }
+        if (original.mediaDuration !== null && expectedTarget.outPoint > original.mediaDuration + sourceTolerance) {
+            return _err("Ripple trim exceeds the selected clip's source media duration");
+        }
+
+        var later = [];
+        for (var i = resolved.clipIndex + 1; i < resolved.track.clips.numItems; i++) {
+            var laterClip = resolved.track.clips[i];
+            var laterState = _mcpReadClipTiming(laterClip);
+            if (laterState.error) return _err("Cannot safely ripple clip " + i + ": " + laterState.error);
+            var expectedLater = {
+                start: laterState.start + delta,
+                end: laterState.end + delta,
+                inPoint: laterState.inPoint,
+                outPoint: laterState.outPoint
+            };
+            if (!isFinite(expectedLater.start) || !isFinite(expectedLater.end) || expectedLater.start < 0 || expectedLater.end <= expectedLater.start) {
+                return _err("Ripple trim would move downstream clip " + i + " outside the valid timeline range");
+            }
+            later.push({
+                clip: laterClip,
+                clipIndex: i,
+                original: laterState,
+                expected: expectedLater,
+                sourceTolerance: timelineTolerance * laterState.rate
+            });
+        }
+
+        function restoreRipple() {
+            var restored = true;
+            for (var ri = later.length - 1; ri >= 0; ri--) {
+                if (!_mcpRestoreClipTiming(later[ri].clip, later[ri].original, timelineTolerance, later[ri].sourceTolerance)) restored = false;
+            }
+            if (!_mcpRestoreClipTiming(resolved.clip, original, timelineTolerance, sourceTolerance)) restored = false;
+            return restored;
+        }
+
+        function applyTargetTrim() {
+            var write = _mcpWriteClipTiming(resolved.clip, expectedTarget);
+            if (write.error) throw new Error("selected clip timing: " + write.error);
+        }
+
+        function moveLaterClip(entry) {
+            var write = _mcpWriteClipTiming(entry.clip, entry.expected);
+            if (write.error) throw new Error("downstream clip " + entry.clipIndex + " timing: " + write.error);
+        }
+
+        try {
+            if (delta > 0) {
+                // Move downstream material from right to left to avoid
+                // transient overlaps while opening timeline space.
+                for (var pi = later.length - 1; pi >= 0; pi--) {
+                    moveLaterClip(later[pi]);
+                }
+                applyTargetTrim();
+            } else {
+                // Shorten first, then close the released space left to right.
+                applyTargetTrim();
+                for (var ni = 0; ni < later.length; ni++) {
+                    moveLaterClip(later[ni]);
+                }
+            }
+        } catch (mutationErr) {
+            var mutationRestored = restoreRipple();
+            return _err("Ripple trim mutation failed: " + mutationErr.message + (mutationRestored ? "; original timing was restored" : "; original timing could not be fully restored"));
+        }
+
+        var targetVerification = _mcpClipTimingMatches(resolved.clip, expectedTarget, timelineTolerance, sourceTolerance);
+        var verificationError = targetVerification.error ? "selected clip: " + targetVerification.error : "";
+        for (var vi = 0; !verificationError && vi < later.length; vi++) {
+            var laterVerification = _mcpClipTimingMatches(later[vi].clip, later[vi].expected, timelineTolerance, later[vi].sourceTolerance);
+            if (laterVerification.error) verificationError = "downstream clip " + later[vi].clipIndex + ": " + laterVerification.error;
+        }
+        if (verificationError) {
+            var restoredAfterMismatch = restoreRipple();
+            return _err("Premiere did not apply a verifiable ripple trim: " + verificationError + (restoredAfterMismatch ? "; original timing was restored" : "; original timing could not be fully restored"));
+        }
+        return _ok({
+            trackType: resolved.trackType,
+            trackIndex: resolved.trackIndex,
+            clipIndex: resolved.clipIndex,
+            trimEnd: trimTail,
+            deltaSeconds: delta,
+            oldStart: original.start,
+            oldEnd: original.end,
+            newStart: targetVerification.actual.start,
+            newEnd: targetVerification.actual.end,
+            newInPoint: targetVerification.actual.inPoint,
+            newOutPoint: targetVerification.actual.outPoint,
+            shiftedClipCount: later.length,
+            verified: true
+        });
     } catch (e) { return _err("rippleTrim failed: " + e.message); }
 }
 
@@ -6841,22 +8517,61 @@ function rippleDeleteGap(trackType, trackIndex, startTime, endTime) {
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
         trackType = String(trackType || "video").toLowerCase();
-        trackIndex = parseInt(trackIndex, 10) || 0;
-        startTime = parseFloat(startTime) || 0; endTime = parseFloat(endTime) || 0;
-        if (startTime >= endTime) return _err("startTime must be less than endTime");
+        if (trackType !== "video" && trackType !== "audio") return _err("trackType must be video or audio");
+        trackIndex = parseInt(trackIndex, 10);
+        if (isNaN(trackIndex) || trackIndex < 0) return _err("trackIndex must be a non-negative integer");
+        startTime = parseFloat(startTime); endTime = parseFloat(endTime);
+        if (isNaN(startTime) || isNaN(endTime) || startTime < 0 || startTime >= endTime) return _err("startTime must be non-negative and less than endTime");
         var tracks = (trackType === "audio") ? seq.audioTracks : seq.videoTracks;
         if (trackIndex >= tracks.numTracks) return _err("Track index " + trackIndex + " out of range");
         var track = tracks[trackIndex];
-        var duration = endTime - startTime; var removed = [];
-        for (var i = track.clips.numItems - 1; i >= 0; i--) {
-            var clip = track.clips[i]; var cs = _timeToSeconds(clip.start); var ce = _timeToSeconds(clip.end);
-            if (cs >= startTime && ce <= endTime) { clip.remove(true, true); removed.push(i); }
+        var duration = endTime - startTime;
+        var tolerance = 0.001;
+        var plans = [];
+        for (var i = 0; i < track.clips.numItems; i++) {
+            var clip = track.clips[i];
+            var clipStart = _timeToSeconds(clip.start);
+            var clipEnd = _timeToSeconds(clip.end);
+            if (clipStart < endTime - tolerance && clipEnd > startTime + tolerance) {
+                return _err("Requested range is not an empty gap; clip " + i + " overlaps " + startTime + "-" + endTime);
+            }
+            if (clipStart >= endTime - tolerance) {
+                plans.push({ clip: clip, identity: _mcpClipIdentity(clip), start: clipStart, end: clipEnd });
+            }
         }
-        for (var j = 0; j < track.clips.numItems; j++) {
-            var c = track.clips[j]; var cStart = _timeToSeconds(c.start);
-            if (cStart >= endTime - 0.001) { c.start = _secondsToTime(cStart - duration); c.end = _secondsToTime(_timeToSeconds(c.end) - duration); }
+
+        var failure = "";
+        for (var planIndex = 0; planIndex < plans.length; planIndex++) {
+            var plan = plans[planIndex];
+            try {
+                plan.clip.start = _secondsToTime(plan.start - duration);
+                plan.clip.end = _secondsToTime(plan.end - duration);
+                if (Math.abs(_timeToSeconds(plan.clip.start) - (plan.start - duration)) > tolerance ||
+                    Math.abs(_timeToSeconds(plan.clip.end) - (plan.end - duration)) > tolerance ||
+                    _mcpClipIdentity(plan.clip) !== plan.identity) {
+                    failure = "Premiere did not apply the verified ripple shift for clip " + planIndex;
+                    break;
+                }
+            } catch (shiftError) {
+                failure = "Ripple shift failed for clip " + planIndex + ": " + shiftError.message;
+                break;
+            }
         }
-        return _ok({ trackType: trackType, trackIndex: trackIndex, startTime: startTime, endTime: endTime, duration: duration, removedClipIndices: removed });
+
+        if (failure) {
+            var rollbackVerified = true;
+            for (var rollbackIndex = 0; rollbackIndex < plans.length; rollbackIndex++) {
+                try {
+                    plans[rollbackIndex].clip.start = _secondsToTime(plans[rollbackIndex].start);
+                    plans[rollbackIndex].clip.end = _secondsToTime(plans[rollbackIndex].end);
+                    if (Math.abs(_timeToSeconds(plans[rollbackIndex].clip.start) - plans[rollbackIndex].start) > tolerance ||
+                        Math.abs(_timeToSeconds(plans[rollbackIndex].clip.end) - plans[rollbackIndex].end) > tolerance) rollbackVerified = false;
+                } catch (rollbackError) { rollbackVerified = false; }
+            }
+            return _err(failure + (rollbackVerified ? "; changes were rolled back" : "; rollback could not be verified"));
+        }
+
+        return _ok({ trackType: trackType, trackIndex: trackIndex, startTime: startTime, endTime: endTime, duration: duration, shiftedClipCount: plans.length, removedClipIndices: [], verified: true });
     } catch (e) { return _err("rippleDeleteGap failed: " + e.message); }
 }
 
@@ -8897,7 +10612,7 @@ function normalizeAllAudio(targetDb) {
             var track = seq.audioTracks[ti];
             if (!track.clips) continue;
             for (var ci = 0; ci < track.clips.numItems; ci++) {
-                try { var p = _findVolumeParam(track.clips[ci]); if (p) { p.setValue(targetDb, true); normalized++; } } catch (ne) {}
+                try { var p = _findVolumeParam(track.clips[ci]); if (p) { p.setValue(_dbToAmplitude(targetDb), true); normalized++; } } catch (ne) {}
             }
         }
         return _ok({targetDb: targetDb, clipsNormalized: normalized});
@@ -9372,10 +11087,14 @@ function getAudioMixerState() {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
+        app.enableQE();
+        if (typeof qe === "undefined" || !qe.project) return _err("QE DOM is unavailable after app.enableQE()");
+        var qeSequence = qe.project.getActiveSequence();
+        if (!qeSequence) return _err("QE: no active sequence");
         var tracks = [];
         for (var i = 0; i < seq.audioTracks.numTracks; i++) {
             var t = seq.audioTracks[i];
-            var info = { index: i, name: t.name || ("Audio " + (i + 1)), clipCount: t.clips ? t.clips.numItems : 0, muted: false, soloed: false, volume: 1.0, pan: 0 };
+            var info = { index: i, name: t.name || ("Audio " + (i + 1)), clipCount: t.clips ? t.clips.numItems : 0, muted: null, locked: null, soloed: null, volume: null, pan: null };
             try { info.muted = t.isMuted() ? true : false; } catch (me) {}
             try { info.locked = t.isLocked() ? true : false; } catch (le) {}
             if (t.components) {
@@ -9385,7 +11104,11 @@ function getAudioMixerState() {
                     if (c.displayName === "Panner" || c.matchName === "audioPanner") { var pp = c.properties.getParamForDisplayName("Balance") || c.properties.getParamForDisplayName("Pan"); if (!pp && c.properties.numItems > 0) pp = c.properties[0]; if (pp) info.pan = pp.getValue(); }
                 }
             }
-            try { if (typeof qe !== "undefined" && qe.project) { var qs = qe.project.getActiveSequence(); if (qs) { var qt = qs.getAudioTrackAt(i); if (qt && qt.isSolo) info.soloed = qt.isSolo() ? true : false; } } } catch (se) {}
+            var qeTrack = qeSequence.getAudioTrackAt(i);
+            if (!qeTrack) return _err("QE: audio track " + i + " not found while reading mixer state");
+            if (typeof qeTrack.isSolo === "function") info.soloed = qeTrack.isSolo() ? true : false;
+            else if (typeof qeTrack.isSolo === "boolean" || typeof qeTrack.isSolo === "number") info.soloed = qeTrack.isSolo ? true : false;
+            else return _err("QE: solo state is unavailable for audio track " + i);
             tracks.push(info);
         }
         return _ok({ sequenceName: seq.name || "", trackCount: seq.audioTracks.numTracks, tracks: tracks });
@@ -9431,7 +11154,7 @@ function addVolumeKeyframe(trackIndex, clipIndex, time, levelDb) {
         levelDb = _clampDb(levelDb); time = parseFloat(time) || 0;
         var p = _findVolumeParam(r.clip); if (!p) return _err("Volume/Level parameter not found");
         if (!p.isTimeVarying()) p.setTimeVarying(true);
-        p.addKey(_secondsToTime(time)); p.setValueAtKey(_secondsToTime(time), levelDb, true);
+        p.addKey(_secondsToTime(time)); p.setValueAtKey(_secondsToTime(time), _dbToAmplitude(levelDb), true);
         return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, time: time, levelDb: levelDb });
     } catch (e) { return _err("addVolumeKeyframe failed: " + e.message); }
 }
@@ -9451,7 +11174,7 @@ function getVolumeKeyframes(trackIndex, clipIndex) {
         var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r;
         var p = _findVolumeParam(r.clip); if (!p) return _err("Volume/Level parameter not found");
         var keyframes = [];
-        try { var ks = p.getKeys(); if (ks) { for (var ki = 0; ki < ks.length; ki++) { keyframes.push({ time: _timeToSeconds(ks[ki]), value: p.getValueAtKey(ks[ki]) }); } } } catch (kfe) {}
+        try { var ks = p.getKeys(); if (ks) { for (var ki = 0; ki < ks.length; ki++) { keyframes.push({ time: _timeToSeconds(ks[ki]), value: _amplitudeToDb(p.getValueAtKey(ks[ki])) }); } } } catch (kfe) {}
         return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, keyframeCount: keyframes.length, keyframes: keyframes, isTimeVarying: p.isTimeVarying() ? true : false });
     } catch (e) { return _err("getVolumeKeyframes failed: " + e.message); }
 }
@@ -9588,7 +11311,7 @@ function getAudioWaveformData(trackIndex, clipIndex, samples) {
         samples = parseInt(samples, 10) || 100; if (samples < 1) samples = 1; if (samples > 10000) samples = 10000;
         var cs = _timeToSeconds(r.clip.start); var ce = _timeToSeconds(r.clip.end); var mp = "";
         if (r.clip.projectItem && r.clip.projectItem.getMediaPath) mp = r.clip.projectItem.getMediaPath() || "";
-        var p = _findVolumeParam(r.clip); var currentLevel = p ? p.getValue() : 0;
+        var p = _findVolumeParam(r.clip); var currentLevel = p ? _amplitudeToDb(p.getValue()) : -96;
         return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, samples: samples, clipStart: cs, clipEnd: ce, duration: ce - cs, mediaPath: mp, currentLevelDb: currentLevel, note: "Detailed waveform data requires the media engine for analysis." });
     } catch (e) { return _err("getAudioWaveformData failed: " + e.message); }
 }
@@ -9598,7 +11321,7 @@ function getLoudnessInfo(trackIndex, clipIndex) {
         var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r;
         var cs = _timeToSeconds(r.clip.start); var ce = _timeToSeconds(r.clip.end); var mp = "";
         if (r.clip.projectItem && r.clip.projectItem.getMediaPath) mp = r.clip.projectItem.getMediaPath() || "";
-        var p = _findVolumeParam(r.clip); var currentLevel = p ? p.getValue() : 0;
+        var p = _findVolumeParam(r.clip); var currentLevel = p ? _amplitudeToDb(p.getValue()) : -96;
         var targetLufs = null;
         if (r.clip.components) { for (var ci = 0; ci < r.clip.components.numItems; ci++) { var c = r.clip.components[ci]; if (c.displayName === "Essential Sound" || c.matchName === "essentialSound") { var lp = c.properties.getParamForDisplayName("Loudness") || c.properties.getParamForDisplayName("Target Loudness"); if (lp) targetLufs = lp.getValue(); } } }
         return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, clipStart: cs, clipEnd: ce, duration: ce - cs, currentLevelDb: currentLevel, targetLufs: targetLufs, mediaPath: mp, note: "Precise LUFS measurement requires the media engine." });
@@ -9622,7 +11345,7 @@ function findAudioPeaks(trackIndex, clipIndex, thresholdDb) {
         thresholdDb = parseFloat(thresholdDb); if (isNaN(thresholdDb)) thresholdDb = -6;
         var cs = _timeToSeconds(r.clip.start); var ce = _timeToSeconds(r.clip.end); var mp = "";
         if (r.clip.projectItem && r.clip.projectItem.getMediaPath) mp = r.clip.projectItem.getMediaPath() || "";
-        var p = _findVolumeParam(r.clip); var currentLevel = p ? p.getValue() : 0;
+        var p = _findVolumeParam(r.clip); var currentLevel = p ? _amplitudeToDb(p.getValue()) : -96;
         return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, thresholdDb: thresholdDb, clipStart: cs, clipEnd: ce, duration: ce - cs, currentLevelDb: currentLevel, mediaPath: mp, note: "Detailed peak detection requires waveform analysis via the media engine.", peaks: [] });
     } catch (e) { return _err("findAudioPeaks failed: " + e.message); }
 }
@@ -9632,7 +11355,7 @@ function detectClipping(trackIndex, clipIndex) {
         var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r;
         var cs = _timeToSeconds(r.clip.start); var ce = _timeToSeconds(r.clip.end); var mp = "";
         if (r.clip.projectItem && r.clip.projectItem.getMediaPath) mp = r.clip.projectItem.getMediaPath() || "";
-        var p = _findVolumeParam(r.clip); var currentLevel = p ? p.getValue() : 0;
+        var p = _findVolumeParam(r.clip); var currentLevel = p ? _amplitudeToDb(p.getValue()) : -96;
         var potentialClipping = currentLevel > 0;
         return _ok({ trackIndex: parseInt(trackIndex, 10) || 0, clipIndex: parseInt(clipIndex, 10) || 0, clipStart: cs, clipEnd: ce, duration: ce - cs, currentLevelDb: currentLevel, potentialClipping: potentialClipping, mediaPath: mp, note: "Precise clipping detection requires sample-level analysis via the media engine.", clippingRegions: [] });
     } catch (e) { return _err("detectClipping failed: " + e.message); }
@@ -10792,6 +12515,7 @@ function createMOGRTFromClip(trackIndex, clipIndex, outputPath) {
 // 9. addScrollingTitle(text, trackIndex, startTime, duration, speed)
 // ---------------------------------------------------------------------------
 function addScrollingTitle(text, trackIndex, startTime, duration, speed) {
+    return _err("unsupported addScrollingTitle: CEP cannot create and verify a Roll/Crawl graphic; import a MOGRT with an exposed text property instead");
     try {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
@@ -10819,6 +12543,7 @@ function addScrollingTitle(text, trackIndex, startTime, duration, speed) {
 // 10. addTypewriterText(text, trackIndex, startTime, duration, typeSpeed)
 // ---------------------------------------------------------------------------
 function addTypewriterText(text, trackIndex, startTime, duration, typeSpeed) {
+    return _err("unsupported addTypewriterText: CEP cannot create and verify Source Text keyframes; use a purpose-built MOGRT instead");
     try {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
@@ -10847,6 +12572,7 @@ function addTypewriterText(text, trackIndex, startTime, duration, typeSpeed) {
 // 11. addTextWithBackground(text, trackIndex, startTime, duration, bgColor, padding)
 // ---------------------------------------------------------------------------
 function addTextWithBackground(text, trackIndex, startTime, duration, bgColor, padding) {
+    return _err("unsupported addTextWithBackground: CEP cannot create and verify an Essential Graphics background shape; use a MOGRT instead");
     try {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
@@ -10875,6 +12601,7 @@ function addTextWithBackground(text, trackIndex, startTime, duration, bgColor, p
 // 12. setTextAnimation(trackIndex, clipIndex, animationType, duration)
 // ---------------------------------------------------------------------------
 function setTextAnimation(trackIndex, clipIndex, animationType, duration) {
+    return _err("unsupported setTextAnimation: the legacy route did not read back every requested animation keyframe; use verified effect parameters or an animated MOGRT");
     try {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
@@ -10918,6 +12645,7 @@ function setTextAnimation(trackIndex, clipIndex, animationType, duration) {
 // 13. addRectangle(trackIndex, startTime, duration, x, y, width, height, color, borderWidth)
 // ---------------------------------------------------------------------------
 function addRectangle(trackIndex, startTime, duration, x, y, width, height, color, borderWidth) {
+    return _err("unsupported addRectangle: CEP cannot create and verify an Essential Graphics rectangle layer; use a MOGRT or imported graphic");
     try {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
@@ -10942,6 +12670,7 @@ function addRectangle(trackIndex, startTime, duration, x, y, width, height, colo
 // 14. addCircle(trackIndex, startTime, duration, x, y, radius, color)
 // ---------------------------------------------------------------------------
 function addCircle(trackIndex, startTime, duration, x, y, radius, color) {
+    return _err("unsupported addCircle: CEP cannot create and verify an Essential Graphics ellipse layer; use a MOGRT or imported graphic");
     try {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
@@ -10964,6 +12693,7 @@ function addCircle(trackIndex, startTime, duration, x, y, radius, color) {
 // 15. addLine(trackIndex, startTime, duration, x1, y1, x2, y2, color, thickness)
 // ---------------------------------------------------------------------------
 function addLine(trackIndex, startTime, duration, x1, y1, x2, y2, color, thickness) {
+    return _err("unsupported addLine: CEP cannot create and verify an Essential Graphics line layer; use a MOGRT or imported graphic");
     try {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
@@ -10987,6 +12717,7 @@ function addLine(trackIndex, startTime, duration, x1, y1, x2, y2, color, thickne
 // 16. addCountdown(trackIndex, startTime, fromSeconds, style)
 // ---------------------------------------------------------------------------
 function addCountdown(trackIndex, startTime, fromSeconds, style) {
+    return _err("unsupported addCountdown: the legacy handler returned a plan without creating timeline media; use a countdown MOGRT");
     try {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
@@ -11009,6 +12740,7 @@ function addCountdown(trackIndex, startTime, fromSeconds, style) {
 // 17. addTimecode(trackIndex, startTime, duration, format)
 // ---------------------------------------------------------------------------
 function addTimecode(trackIndex, startTime, duration, format) {
+    return _err("unsupported addTimecode: the legacy handler did not apply or verify a Timecode effect; use premiere_apply_video_effect with an installed effect");
     try {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
@@ -11031,6 +12763,7 @@ function addTimecode(trackIndex, startTime, duration, format) {
 // 18. addWatermark(imagePath, position, opacity, scale)
 // ---------------------------------------------------------------------------
 function addWatermark(imagePath, position, opacity, scale) {
+    return _err("unsupported addWatermark: the legacy handler imported media without placing and verifying it; import and place the image, then use verified motion/opacity tools");
     try {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
@@ -11061,6 +12794,7 @@ function addWatermark(imagePath, position, opacity, scale) {
 // 19. addTextWatermark(text, position, opacity, fontSize, color)
 // ---------------------------------------------------------------------------
 function addTextWatermark(text, position, opacity, fontSize, color) {
+    return _err("unsupported addTextWatermark: CEP cannot create and verify arbitrary Essential Graphics text; use a watermark MOGRT");
     try {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
@@ -11107,6 +12841,7 @@ function removeWatermark(trackIndex, clipIndex) {
 // 21. createSplitScreen(layout, clipRefsJson)
 // ---------------------------------------------------------------------------
 function createSplitScreen(layout, clipRefsJson) {
+    return _err("unsupported createSplitScreen: the legacy handler returned layout coordinates without mutating clips; use explicit verified position/scale operations");
     try {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
@@ -11135,6 +12870,7 @@ function createSplitScreen(layout, clipRefsJson) {
 // 22. createCollage(clipRefsJson, rows, cols, gap)
 // ---------------------------------------------------------------------------
 function createCollage(clipRefsJson, rows, cols, gap) {
+    return _err("unsupported createCollage: the legacy handler returned grid coordinates without mutating clips; use explicit verified position/scale operations");
     try {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
@@ -11160,82 +12896,28 @@ function createCollage(clipRefsJson, rows, cols, gap) {
 // 23. addWipeTransition(trackIndex, clipIndex, direction, color, duration)
 // ---------------------------------------------------------------------------
 function addWipeTransition(trackIndex, clipIndex, direction, color, duration) {
-    try {
-        if (!app.project) return _err("No project is open");
-        var seq = app.project.activeSequence;
-        if (!seq) return _err("No active sequence");
-        trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0;
-        direction = direction || "left"; color = color || "#000000"; duration = parseFloat(duration) || 1.0;
-        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
-        var track = seq.videoTracks[trackIndex];
-        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
-        try { track.insertTransition("Wipe", track.clips[clipIndex].end, duration); } catch (te) {}
-        return _ok({type:"wipe_transition",trackIndex:trackIndex,clipIndex:clipIndex,direction:direction,color:color,duration:duration,
-            message:"Wipe transition configured with direction '"+direction+"'."});
-    } catch (e) {
-        return _err("addWipeTransition failed: " + e.message);
-    }
+    return _err("unsupported addWipeTransition: direction and color cannot be applied and read back through CEP; use addVideoTransition with an installed wipe transition");
 }
 
 // ---------------------------------------------------------------------------
 // 24. addZoomTransition(trackIndex, clipIndex, zoomIn, duration)
 // ---------------------------------------------------------------------------
 function addZoomTransition(trackIndex, clipIndex, zoomIn, duration) {
-    try {
-        if (!app.project) return _err("No project is open");
-        var seq = app.project.activeSequence;
-        if (!seq) return _err("No active sequence");
-        trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0;
-        zoomIn = (zoomIn===true||zoomIn==="true"||zoomIn===1); duration = parseFloat(duration) || 0.5;
-        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
-        var track = seq.videoTracks[trackIndex];
-        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
-        var clip = track.clips[clipIndex];
-        if (clip.components) {
-            for (var i = 0; i < clip.components.numItems; i++) {
-                if (clip.components[i].displayName === "Motion") {
-                    var sp = clip.components[i].properties.getParamForDisplayName("Scale");
-                    if (sp) {
-                        sp.setTimeVarying(true);
-                        var ce = _timeToSeconds(clip.end), ts = ce - duration;
-                        sp.addKey(ts); sp.setValueAtKey(ts, zoomIn ? 100 : 200);
-                        sp.addKey(ce); sp.setValueAtKey(ce, zoomIn ? 200 : 100);
-                    }
-                    break;
-                }
-            }
-        }
-        return _ok({type:"zoom_transition",trackIndex:trackIndex,clipIndex:clipIndex,zoomIn:zoomIn,duration:duration,
-            message:"Zoom "+(zoomIn?"in":"out")+" transition applied via scale keyframes."});
-    } catch (e) {
-        return _err("addZoomTransition failed: " + e.message);
-    }
+    return _err("unsupported addZoomTransition: the legacy implementation could not verify the generated scale keyframes; use a confirmed installed transition or explicit motion-keyframe tools");
 }
 
 // ---------------------------------------------------------------------------
 // 25. addGlitchTransition(trackIndex, clipIndex, intensity, duration)
 // ---------------------------------------------------------------------------
 function addGlitchTransition(trackIndex, clipIndex, intensity, duration) {
-    try {
-        if (!app.project) return _err("No project is open");
-        var seq = app.project.activeSequence;
-        if (!seq) return _err("No active sequence");
-        trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0;
-        intensity = parseFloat(intensity) || 50; duration = parseFloat(duration) || 0.5;
-        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
-        var track = seq.videoTracks[trackIndex];
-        if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index out of range");
-        return _ok({type:"glitch_transition",trackIndex:trackIndex,clipIndex:clipIndex,intensity:intensity,duration:duration,
-            message:"Glitch transition configured. Apply displacement/channel offset effects with randomized keyframes."});
-    } catch (e) {
-        return _err("addGlitchTransition failed: " + e.message);
-    }
+    return _err("unsupported addGlitchTransition: CEP cannot synthesize and verify the required displacement and channel-offset effect stack");
 }
 
 // ---------------------------------------------------------------------------
 // 26. autoGenerateSubtitles(language, style)
 // ---------------------------------------------------------------------------
 function autoGenerateSubtitles(language, style) {
+    return _err("unsupported autoGenerateSubtitles: Premiere Speech to Text is not exposed as a verifiable CEP operation; supply a timed SRT from an external transcription backend");
     try {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
@@ -11252,6 +12934,7 @@ function autoGenerateSubtitles(language, style) {
 // 27. translateSubtitles(trackIndex, targetLanguage)
 // ---------------------------------------------------------------------------
 function translateSubtitles(trackIndex, targetLanguage) {
+    return _err("unsupported translateSubtitles: the legacy handler only extracted captions and performed no translation; translate externally and import a timed SRT");
     try {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
@@ -11278,6 +12961,7 @@ function translateSubtitles(trackIndex, targetLanguage) {
 // 28. formatSubtitles(trackIndex, maxCharsPerLine, maxLines)
 // ---------------------------------------------------------------------------
 function formatSubtitles(trackIndex, maxCharsPerLine, maxLines) {
+    return _err("unsupported formatSubtitles: the legacy handler could truncate caption text and did not verify edits; format the SRT before import");
     try {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
@@ -11316,6 +13000,7 @@ function formatSubtitles(trackIndex, maxCharsPerLine, maxLines) {
 // 29. burnInSubtitles(trackIndex)
 // ---------------------------------------------------------------------------
 function burnInSubtitles(trackIndex) {
+    return _err("unsupported burnInSubtitles: burn-in is an export-preset option that CEP cannot enable and read back reliably; use a verified preset configured for burned captions");
     try {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
@@ -12921,10 +14606,10 @@ function setCaptionPosition(trackIndex, captionIndex, x, y) { try { if (!app.pro
 function setCaptionBackground(trackIndex, captionIndex, color, opacity) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; captionIndex = parseInt(captionIndex, 10) || 0; color = color || "#000000"; opacity = parseFloat(opacity); if (isNaN(opacity)) opacity = 80; var captionTracks = seq.captionTracks || seq.videoTracks; if (!captionTracks) return _err("No caption tracks available"); if (trackIndex >= captionTracks.numTracks) return _err("Caption track index out of range"); var track = captionTracks[trackIndex]; var clip = track.clips[captionIndex]; if (!clip) return _err("Caption not found at index " + captionIndex); for (var i = 0; i < clip.components.numItems; i++) { var comp = clip.components[i]; var bgP = comp.properties.getParamForDisplayName("Background Color"); var bgOp = comp.properties.getParamForDisplayName("Background Opacity"); if (bgP) { var r = parseInt(color.substring(1, 3), 16) || 0; var g = parseInt(color.substring(3, 5), 16) || 0; var b = parseInt(color.substring(5, 7), 16) || 0; bgP.setValue([r / 255, g / 255, b / 255], true); } if (bgOp) bgOp.setValue(opacity, true); } return _ok({ trackIndex: trackIndex, captionIndex: captionIndex, color: color, opacity: opacity }); } catch (e) { return _err("setCaptionBackground failed: " + e.message); } }
 
 // 29. alignCaptionToSpeech
-function alignCaptionToSpeech(trackIndex) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; var captionTracks = seq.captionTracks || seq.videoTracks; if (!captionTracks) return _err("No caption tracks available"); if (trackIndex >= captionTracks.numTracks) return _err("Caption track index out of range"); var track = captionTracks[trackIndex]; var clipCount = track.clips.numItems; if (clipCount === 0) return _err("No captions on this track"); var aligned = 0; for (var i = 0; i < clipCount; i++) { var clip = track.clips[i]; if (clip) aligned++; } return _ok({ trackIndex: trackIndex, captionCount: clipCount, aligned: aligned, note: "Speech alignment uses Premiere internal speech analysis. Ensure speech analysis has been run on audio tracks." }); } catch (e) { return _err("alignCaptionToSpeech failed: " + e.message); } }
+function alignCaptionToSpeech(trackIndex) { return _err("unsupported alignCaptionToSpeech: CEP cannot invoke Premiere speech alignment with a verifiable timing readback"); }
 
 // 30. splitLongCaptions
-function splitLongCaptions(trackIndex, maxChars) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; maxChars = parseInt(maxChars, 10) || 42; var captionTracks = seq.captionTracks || seq.videoTracks; if (!captionTracks) return _err("No caption tracks available"); if (trackIndex >= captionTracks.numTracks) return _err("Caption track index out of range"); var track = captionTracks[trackIndex]; var clipCount = track.clips.numItems; var splitCount = 0; var processed = 0; for (var i = 0; i < clipCount; i++) { var clip = track.clips[i]; if (!clip) continue; processed++; for (var c = 0; c < clip.components.numItems; c++) { var comp = clip.components[c]; var textP = comp.properties.getParamForDisplayName("Text"); if (textP) { var text = textP.getValue(); if (text && text.length > maxChars) { var mid = text.lastIndexOf(" ", maxChars); if (mid <= 0) mid = maxChars; textP.setValue(text.substring(0, mid), true); splitCount++; } break; } } } return _ok({ trackIndex: trackIndex, maxChars: maxChars, processedCaptions: processed, splitCaptions: splitCount }); } catch (e) { return _err("splitLongCaptions failed: " + e.message); } }
+function splitLongCaptions(trackIndex, maxChars) { return _err("unsupported splitLongCaptions: CEP cannot create and verify replacement caption segments without risking text loss; split the SRT before import"); }
 
 // ===========================================================================
 // Collaboration, Review & Project Sharing
@@ -14186,26 +15871,47 @@ function getInstalledPlugins() {
 /**
  * 13. getInstalledEffects - List all available effects.
  */
+function _qeCatalogEntries(rawList, type, fallbackPrefix) {
+    if (rawList === undefined || rawList === null) return { error: "QE returned no " + type + " catalog" };
+    var entries = [];
+    if (typeof rawList === "string") {
+        var names = rawList.split("|");
+        if (names.length === 1 && /[\r\n]/.test(rawList)) names = rawList.split(/\r?\n/);
+        for (var nameIndex = 0; nameIndex < names.length; nameIndex++) {
+            var name = String(names[nameIndex] || "").replace(/^\s+|\s+$/g, "");
+            if (name) entries.push({ name: name, type: type, index: entries.length });
+        }
+        return { entries: entries };
+    }
+
+    var count = -1;
+    if (typeof rawList.numItems === "number") count = rawList.numItems;
+    else if (typeof rawList.length === "number") count = rawList.length;
+    if (count < 0) return { error: "QE returned an unsupported " + type + " catalog format" };
+    for (var i = 0; i < count; i++) {
+        var entry = rawList[i];
+        if (entry === undefined || entry === null) continue;
+        var entryName = (typeof entry === "string") ? entry : (entry.name || "");
+        entryName = String(entryName || (fallbackPrefix + "_" + i)).replace(/^\s+|\s+$/g, "");
+        entries.push({ name: entryName, type: type, index: i });
+    }
+    return { entries: entries };
+}
+
 function getInstalledEffects() {
     try {
+        app.enableQE();
+        if (typeof qe === "undefined" || !qe.project) return _err("QE DOM is unavailable after app.enableQE()");
+        if (typeof qe.project.getVideoEffectList !== "function" || typeof qe.project.getAudioEffectList !== "function") {
+            return _err("QE effect catalog APIs are unavailable in this Premiere version");
+        }
         var effects = [];
-        try {
-            if (typeof qe !== "undefined" && qe.project) {
-                var videoEffects = qe.project.getVideoEffectList();
-                if (videoEffects) {
-                    for (var i = 0; i < videoEffects.numItems; i++) {
-                        effects.push({ name: videoEffects[i].name || ("effect_" + i), type: "video", index: i });
-                    }
-                }
-                var audioEffects = qe.project.getAudioEffectList();
-                if (audioEffects) {
-                    for (var j = 0; j < audioEffects.numItems; j++) {
-                        effects.push({ name: audioEffects[j].name || ("audio_effect_" + j), type: "audio", index: j });
-                    }
-                }
-            }
-        } catch (ignore) {}
-        return _ok({ effects: effects, totalCount: effects.length });
+        var videoCatalog = _qeCatalogEntries(qe.project.getVideoEffectList(), "video", "effect");
+        if (videoCatalog.error) return _err(videoCatalog.error);
+        var audioCatalog = _qeCatalogEntries(qe.project.getAudioEffectList(), "audio", "audio_effect");
+        if (audioCatalog.error) return _err(audioCatalog.error);
+        effects = videoCatalog.entries.concat(audioCatalog.entries);
+        return _ok({ effects: effects, totalCount: effects.length, videoCount: videoCatalog.entries.length, audioCount: audioCatalog.entries.length, source: "qe" });
     } catch (e) { return _err("getInstalledEffects failed: " + e.message); }
 }
 
@@ -14214,24 +15920,18 @@ function getInstalledEffects() {
  */
 function getInstalledTransitions() {
     try {
+        app.enableQE();
+        if (typeof qe === "undefined" || !qe.project) return _err("QE DOM is unavailable after app.enableQE()");
+        if (typeof qe.project.getVideoTransitionList !== "function" || typeof qe.project.getAudioTransitionList !== "function") {
+            return _err("QE transition catalog APIs are unavailable in this Premiere version");
+        }
         var transitions = [];
-        try {
-            if (typeof qe !== "undefined" && qe.project) {
-                var videoTransitions = qe.project.getVideoTransitionList();
-                if (videoTransitions) {
-                    for (var i = 0; i < videoTransitions.numItems; i++) {
-                        transitions.push({ name: videoTransitions[i].name || ("transition_" + i), type: "video", index: i });
-                    }
-                }
-                var audioTransitions = qe.project.getAudioTransitionList();
-                if (audioTransitions) {
-                    for (var j = 0; j < audioTransitions.numItems; j++) {
-                        transitions.push({ name: audioTransitions[j].name || ("audio_transition_" + j), type: "audio", index: j });
-                    }
-                }
-            }
-        } catch (ignore) {}
-        return _ok({ transitions: transitions, totalCount: transitions.length });
+        var videoCatalog = _qeCatalogEntries(qe.project.getVideoTransitionList(), "video", "transition");
+        if (videoCatalog.error) return _err(videoCatalog.error);
+        var audioCatalog = _qeCatalogEntries(qe.project.getAudioTransitionList(), "audio", "audio_transition");
+        if (audioCatalog.error) return _err(audioCatalog.error);
+        transitions = videoCatalog.entries.concat(audioCatalog.entries);
+        return _ok({ transitions: transitions, totalCount: transitions.length, videoCount: videoCatalog.entries.length, audioCount: audioCatalog.entries.length, source: "qe" });
     } catch (e) { return _err("getInstalledTransitions failed: " + e.message); }
 }
 
@@ -15383,7 +17083,7 @@ function autoCorrectAllClips(trackIndex) {
 // ---------------------------------------------------------------------------
 
 /**
- * addSubtitlesFromSRT — Parse an SRT file and place subtitles on the timeline.
+ * addSubtitlesFromSRT — Import an SRT file and create a caption track.
  * @param {string} srtPath - Path to the SRT file
  * @param {number} trackIndex - Video track index for captions
  */
@@ -15415,9 +17115,72 @@ function addSubtitlesFromSRT(srtPath, trackIndex) {
             }
             subtitles.push({index: parseInt(lines[0]), start: startSec, end: endSec, text: text});
         }
+
+        if (subtitles.length === 0) return _err("SRT contains no valid caption entries: " + srtPath);
+        for (var si = 0; si < subtitles.length; si++) {
+            if (!subtitles[si].text || subtitles[si].end <= subtitles[si].start) {
+                return _err("SRT entry " + (si + 1) + " has empty text or a non-positive duration");
+            }
+            if (si > 0 && subtitles[si].start < subtitles[si - 1].end) {
+                return _err("SRT entries " + si + " and " + (si + 1) + " overlap");
+            }
+        }
+
+        if (typeof seq.createCaptionTrack !== "function") {
+            return _err("This Premiere Pro version does not expose Sequence.createCaptionTrack; import the SRT manually");
+        }
+
+        var expectedPath = srtFile.fsName;
+        var findCaptionItem = function(parent) {
+            if (!parent || !parent.children) return null;
+            for (var ci = 0; ci < parent.children.numItems; ci++) {
+                var child = parent.children[ci];
+                try {
+                    if (child.getMediaPath) {
+                        var mediaPath = child.getMediaPath();
+                        if (mediaPath && new File(mediaPath).fsName === expectedPath) return child;
+                    }
+                } catch (ignoreMediaPath) {}
+                var nested = findCaptionItem(child);
+                if (nested) return nested;
+            }
+            return null;
+        };
+
+        var projectItem = findCaptionItem(app.project.rootItem);
+        if (!projectItem) {
+            var imported = app.project.importFiles([expectedPath], true, app.project.rootItem, false);
+            if (!imported) return _err("Premiere failed to import SRT: " + expectedPath);
+            projectItem = findCaptionItem(app.project.rootItem);
+        }
+        if (!projectItem) return _err("SRT was imported but its project item could not be read back");
+
+        var beforeTracks = seq.captionTracks ? seq.captionTracks.numTracks : 0;
+        var subtitleFormat = (typeof Sequence !== "undefined" && Sequence.CAPTION_FORMAT_SUBTITLE !== undefined) ?
+            Sequence.CAPTION_FORMAT_SUBTITLE : undefined;
+        var created = subtitleFormat !== undefined ?
+            seq.createCaptionTrack(projectItem, 0, subtitleFormat) :
+            seq.createCaptionTrack(projectItem, 0);
+        if (!created) return _err("Sequence.createCaptionTrack returned false for: " + expectedPath);
+
+        var afterTracks = seq.captionTracks ? seq.captionTracks.numTracks : 0;
+        if (afterTracks <= beforeTracks) {
+            return _err("Premiere reported caption-track creation but no new caption track was visible");
+        }
+        var actualTrackIndex = afterTracks - 1;
+        var newTrack = seq.captionTracks[actualTrackIndex];
+        var actualCount = newTrack && newTrack.clips ? newTrack.clips.numItems : 0;
+        if (actualCount !== subtitles.length) {
+            return _err("Caption track was created, but readback found " + actualCount +
+                " captions instead of " + subtitles.length + "; inspect track " + actualTrackIndex);
+        }
         return _ok({
-            srtPath: srtPath, trackIndex: ti,
+            srtPath: expectedPath,
+            requestedTrackIndex: ti,
+            trackIndex: actualTrackIndex,
             subtitlesFound: subtitles.length,
+            captionsCreated: actualCount,
+            verified: true,
             subtitles: subtitles
         });
     } catch (e) { return _err("addSubtitlesFromSRT failed: " + e.message); }
@@ -16445,23 +18208,96 @@ function getSequenceHash() {
     try {
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
-        var parts = [seq.name || "", seq.sequenceID || ""];
-        for (var vt = 0; vt < seq.videoTracks.numTracks; vt++) {
-            var vTrack = seq.videoTracks[vt];
-            parts.push("V" + vt + ":" + vTrack.clips.numItems);
-            for (var vc = 0; vc < vTrack.clips.numItems; vc++) {
-                var vClip = vTrack.clips[vc];
-                if (vClip) parts.push(vClip.name + "@" + _timeToSeconds(vClip.start));
+        var parts = [
+            "name=" + (seq.name || ""),
+            "id=" + (seq.sequenceID || ""),
+            "end=" + _timeToSeconds(seq.end)
+        ];
+        try { parts.push("in=" + _timeToSeconds(seq.getInPointAsTime())); } catch (ignoreSeqIn) {}
+        try { parts.push("out=" + _timeToSeconds(seq.getOutPointAsTime())); } catch (ignoreSeqOut) {}
+        try {
+            var sequenceSettings = seq.getSettings();
+            parts.push("settings=" + JSON.stringify(sequenceSettings));
+        } catch (ignoreSettings) {}
+
+        function appendComponentState(clip, prefix) {
+            if (!clip || !clip.components) return;
+            parts.push(prefix + ".components=" + clip.components.numItems);
+            for (var componentIndex = 0; componentIndex < clip.components.numItems; componentIndex++) {
+                var component = clip.components[componentIndex];
+                if (!component) continue;
+                var componentPrefix = prefix + ".component" + componentIndex;
+                parts.push(componentPrefix + ".name=" + (component.displayName || ""));
+                parts.push(componentPrefix + ".match=" + (component.matchName || ""));
+                try { if (component.getEnabled) parts.push(componentPrefix + ".enabled=" + component.getEnabled()); } catch (ignoreComponentEnabled) {}
+                if (!component.properties) continue;
+                parts.push(componentPrefix + ".properties=" + component.properties.numItems);
+                for (var propertyIndex = 0; propertyIndex < component.properties.numItems; propertyIndex++) {
+                    var property = component.properties[propertyIndex];
+                    if (!property) continue;
+                    var propertyPrefix = componentPrefix + ".property" + propertyIndex;
+                    parts.push(propertyPrefix + ".name=" + (property.displayName || ""));
+                    parts.push(propertyPrefix + ".match=" + (property.matchName || ""));
+                    try { if (property.getValue) parts.push(propertyPrefix + ".value=" + JSON.stringify(property.getValue())); } catch (ignorePropertyValue) {}
+                    try { if (property.getKeys) parts.push(propertyPrefix + ".keys=" + JSON.stringify(property.getKeys())); } catch (ignorePropertyKeys) {}
+                }
             }
         }
-        for (var at6 = 0; at6 < seq.audioTracks.numTracks; at6++) {
-            var aTrack6 = seq.audioTracks[at6];
-            parts.push("A" + at6 + ":" + aTrack6.clips.numItems);
-            for (var ac2 = 0; ac2 < aTrack6.clips.numItems; ac2++) {
-                var aClip2 = aTrack6.clips[ac2];
-                if (aClip2) parts.push(aClip2.name + "@" + _timeToSeconds(aClip2.start));
+
+        function appendTrackState(tracks, trackType) {
+            parts.push(trackType + ".tracks=" + (tracks ? tracks.numTracks : 0));
+            if (!tracks) return;
+            for (var trackIndex = 0; trackIndex < tracks.numTracks; trackIndex++) {
+                var track = tracks[trackIndex];
+                var trackPrefix = trackType + trackIndex;
+                parts.push(trackPrefix + ".name=" + (track.name || ""));
+                try { if (track.isMuted) parts.push(trackPrefix + ".muted=" + track.isMuted()); } catch (ignoreMuted) {}
+                try { if (track.isLocked) parts.push(trackPrefix + ".locked=" + track.isLocked()); } catch (ignoreLocked) {}
+                parts.push(trackPrefix + ".clips=" + (track.clips ? track.clips.numItems : 0));
+                if (!track.clips) continue;
+                for (var clipIndex = 0; clipIndex < track.clips.numItems; clipIndex++) {
+                    var clip = track.clips[clipIndex];
+                    if (!clip) continue;
+                    var clipPrefix = trackPrefix + ".clip" + clipIndex;
+                    parts.push(clipPrefix + ".identity=" + _mcpClipIdentity(clip));
+                    parts.push(clipPrefix + ".source=" + _mcpProjectItemIdentity(clip.projectItem));
+                    parts.push(clipPrefix + ".name=" + (clip.name || ""));
+                    parts.push(clipPrefix + ".start=" + _timeToSeconds(clip.start));
+                    parts.push(clipPrefix + ".end=" + _timeToSeconds(clip.end));
+                    parts.push(clipPrefix + ".in=" + _timeToSeconds(clip.inPoint));
+                    parts.push(clipPrefix + ".out=" + _timeToSeconds(clip.outPoint));
+                    try { if (clip.getSpeed) parts.push(clipPrefix + ".speed=" + clip.getSpeed()); } catch (ignoreSpeed) {}
+                    try {
+                        if (clip.isDisabled) parts.push(clipPrefix + ".disabled=" + clip.isDisabled());
+                        else if (clip.disabled !== undefined) parts.push(clipPrefix + ".disabled=" + clip.disabled);
+                    } catch (ignoreDisabled) {}
+                    appendComponentState(clip, clipPrefix);
+                }
             }
         }
+
+        appendTrackState(seq.videoTracks, "V");
+        appendTrackState(seq.audioTracks, "A");
+
+        try {
+            if (seq.markers) {
+                var marker = seq.markers.getFirstMarker();
+                var markerIndex = 0;
+                while (marker) {
+                    var markerPrefix = "marker" + markerIndex;
+                    parts.push(markerPrefix + ".start=" + _timeToSeconds(marker.start));
+                    parts.push(markerPrefix + ".end=" + _timeToSeconds(marker.end));
+                    parts.push(markerPrefix + ".name=" + (marker.name || ""));
+                    parts.push(markerPrefix + ".comments=" + (marker.comments || ""));
+                    parts.push(markerPrefix + ".type=" + (marker.type || ""));
+                    try { if (marker.getColorByIndex) parts.push(markerPrefix + ".color=" + marker.getColorByIndex()); } catch (ignoreMarkerColor) {}
+                    marker = seq.markers.getNextMarker(marker);
+                    markerIndex++;
+                }
+                parts.push("markers=" + markerIndex);
+            }
+        } catch (ignoreMarkers) {}
+
         var str = parts.join("|");
         var hash = 0;
         for (var ci = 0; ci < str.length; ci++) {
@@ -16469,7 +18305,7 @@ function getSequenceHash() {
             hash = ((hash << 5) - hash) + ch;
             hash = hash & hash;
         }
-        return _ok({ hash: Math.abs(hash).toString(16), sequenceName: seq.name || "" });
+        return _ok({ hash: (hash >>> 0).toString(16), sequenceName: seq.name || "", fields: parts.length, algorithm: "sequence-state-v2" });
     } catch (e) { return _err("getSequenceHash failed: " + e.message); }
 }
 
@@ -17353,49 +19189,296 @@ function setHighContrastMode(enabled) {
  * assembleFromEDL — Assemble timeline from EDL JSON.
  * edlJson: JSON string with {clips:[{file,inPoint,outPoint,trackIndex,position,transitionName,transitionDuration},...]}
  */
+function _mcpReadProjectItemRange(projectItem) {
+    if (!projectItem || !projectItem.getInPoint || !projectItem.getOutPoint) {
+        return { error: "Premiere does not expose source marks for this project item" };
+    }
+    try {
+        var inPoint;
+        var outPoint;
+        try { inPoint = projectItem.getInPoint(4); } catch (ignoreTypedIn) { inPoint = projectItem.getInPoint(); }
+        try { outPoint = projectItem.getOutPoint(4); } catch (ignoreTypedOut) { outPoint = projectItem.getOutPoint(); }
+        var inSeconds = _timeToSeconds(inPoint);
+        var outSeconds = _timeToSeconds(outPoint);
+        if (isNaN(inSeconds) || isNaN(outSeconds) || outSeconds <= inSeconds) {
+            return { error: "Project item has an invalid source range" };
+        }
+        return { inPoint: inSeconds, outPoint: outSeconds };
+    } catch (rangeErr) {
+        return { error: "Could not read project item source marks: " + rangeErr.message };
+    }
+}
+
+function _mcpSetProjectItemRange(projectItem, inSeconds, outSeconds) {
+    if (!projectItem || !projectItem.setInPoint || !projectItem.setOutPoint) {
+        return { error: "Premiere cannot set source marks for this project item" };
+    }
+    if (isNaN(inSeconds) || inSeconds < 0 || isNaN(outSeconds) || outSeconds <= inSeconds) {
+        return { error: "Invalid project item source range" };
+    }
+    try {
+        var current = _mcpReadProjectItemRange(projectItem);
+        if (current.error) return current;
+        function setIn(value) {
+            try { return projectItem.setInPoint(value, 4); } catch (ignoreTypedIn) { return projectItem.setInPoint(value); }
+        }
+        function setOut(value) {
+            try { return projectItem.setOutPoint(value, 4); } catch (ignoreTypedOut) { return projectItem.setOutPoint(value); }
+        }
+        function restoreCurrent() {
+            try {
+                if (current.inPoint >= outSeconds) {
+                    setOut(current.outPoint);
+                    setIn(current.inPoint);
+                } else {
+                    setIn(current.inPoint);
+                    setOut(current.outPoint);
+                }
+            } catch (ignoreRestore) {}
+        }
+        // Avoid a transient inverted range when moving both marks past the
+        // existing range in either direction.
+        if (inSeconds >= current.outPoint) {
+            if (setOut(outSeconds) === false) return { error: "Premiere rejected the source out point" };
+            if (setIn(inSeconds) === false) { restoreCurrent(); return { error: "Premiere rejected the source in point; original marks were restored" }; }
+        } else {
+            if (setIn(inSeconds) === false) return { error: "Premiere rejected the source in point" };
+            if (setOut(outSeconds) === false) { restoreCurrent(); return { error: "Premiere rejected the source out point; original marks were restored" }; }
+        }
+        var actual = _mcpReadProjectItemRange(projectItem);
+        if (actual.error) { restoreCurrent(); return { error: actual.error + "; original marks were restored" }; }
+        if (Math.abs(actual.inPoint - inSeconds) > 0.02 || Math.abs(actual.outPoint - outSeconds) > 0.02) {
+            restoreCurrent();
+            return { error: "Premiere did not retain the requested project item source marks; original marks were restored" };
+        }
+        return { data: actual };
+    } catch (setRangeErr) {
+        try { if (typeof restoreCurrent === "function") restoreCurrent(); } catch (ignoreFailedSetRestore) {}
+        return { error: "Could not set project item source marks: " + setRangeErr.message + "; restoration was attempted" };
+    }
+}
+
 function assembleFromEDL(edlJson) {
     try {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
         var edl = (typeof edlJson === "string") ? JSON.parse(edlJson) : edlJson;
-        if (!edl.clips || !edl.clips.length) return _err("EDL has no clips");
+        if (!edl || !edl.clips || !(edl.clips instanceof Array) || !edl.clips.length) return _err("EDL has no clips");
         var placed = 0;
+        var transitionsAdded = 0;
+        var errors = [];
+        var warnings = [];
+        var plans = [];
+        var timelineMutated = false;
+
+        // Phase one performs every range/track/file check that does not mutate
+        // the timeline. An invalid range therefore cannot leave a full-length
+        // source clip behind.
         for (var i = 0; i < edl.clips.length; i++) {
-            var entry = edl.clips[i];
+            var entry = edl.clips[i] || {};
             var filePath = entry.file || "";
-            if (!filePath) continue;
-            app.project.importFiles([filePath], true, app.project.rootItem, false);
-            var item = null;
-            for (var j = 0; j < app.project.rootItem.children.numItems; j++) {
-                var child = app.project.rootItem.children[j];
-                if (child.getMediaPath && child.getMediaPath() === filePath) { item = child; break; }
+            if (!filePath) { errors.push("Entry " + i + ": file is required"); continue; }
+            var item = _mcpFindProjectItem(filePath);
+            if (!item && entry.autoImport !== false) {
+                var sourceFile = new File(filePath);
+                if (!sourceFile.exists) { errors.push("Entry " + i + ": source file not found: " + filePath); continue; }
+                filePath = sourceFile.fsName;
             }
-            if (!item) continue;
-            var ti = parseInt(entry.trackIndex, 10) || 0;
-            if (ti >= seq.videoTracks.numTracks) continue;
-            var pos = parseFloat(entry.position) || 0;
-            var track = seq.videoTracks[ti];
-            track.insertClip(item, pos);
-            placed++;
-            if (entry.inPoint !== undefined && entry.inPoint !== null) {
-                var clips = track.clips;
-                if (clips.numItems > 0) {
-                    var c = clips[clips.numItems - 1];
-                    c.inPoint = new Time();
-                    c.inPoint.seconds = parseFloat(entry.inPoint) || 0;
+            if (!item && entry.autoImport === false) { errors.push("Entry " + i + ": source is not available in the project: " + filePath); continue; }
+
+            var trackType = String(entry.trackType || "video").toLowerCase();
+            if (trackType !== "video" && trackType !== "audio") { errors.push("Entry " + i + ": unsupported track type " + trackType); continue; }
+            var trackIndexRaw = entry.trackIndex === undefined ? 0 : parseFloat(entry.trackIndex);
+            var ti = parseInt(trackIndexRaw, 10);
+            var tracks = trackType === "audio" ? seq.audioTracks : seq.videoTracks;
+            if (isNaN(ti) || ti !== trackIndexRaw || !tracks || ti < 0 || ti >= tracks.numTracks) { errors.push("Entry " + i + ": " + trackType + " track " + trackIndexRaw + " does not exist"); continue; }
+            var track = tracks[ti];
+            if (!track || !track.overwriteClip) { errors.push("Entry " + i + ": deterministic overwrite is unavailable on " + trackType + " track " + ti); continue; }
+            try { if (track.isLocked && track.isLocked()) { errors.push("Entry " + i + ": target track is locked"); continue; } } catch (ignoreTrackLock) {}
+
+            var pos = entry.position === undefined ? 0 : parseFloat(entry.position);
+            if (isNaN(pos) || pos < 0) { errors.push("Entry " + i + ": timeline position must be a non-negative number"); continue; }
+
+            var hasIn = entry.inPoint !== undefined && entry.inPoint !== null && entry.inPoint !== "";
+            var hasOut = entry.outPoint !== undefined && entry.outPoint !== null && entry.outPoint !== "";
+            var inPoint = hasIn ? parseFloat(entry.inPoint) : null;
+            var outPoint = hasOut ? parseFloat(entry.outPoint) : null;
+            if (hasIn && (isNaN(inPoint) || inPoint < 0)) { errors.push("Entry " + i + ": inPoint must be a non-negative number"); continue; }
+            if (hasOut && (isNaN(outPoint) || outPoint <= 0)) { errors.push("Entry " + i + ": outPoint must be a positive number"); continue; }
+            if (hasIn && hasOut && outPoint <= inPoint) { errors.push("Entry " + i + ": outPoint must be after inPoint"); continue; }
+
+            var speed = parseFloat(entry.speed);
+            if (isNaN(speed)) speed = 1;
+            if (speed <= 0) { errors.push("Entry " + i + ": speed must be positive"); continue; }
+
+            var alignment = String(entry.transitionAlignment || "").toLowerCase().replace(/[_-]/g, " ").replace(/^\s+|\s+$/g, "");
+            if (entry.transitionName && alignment) {
+                errors.push("Entry " + i + ": transition alignment '" + alignment + "' is unsupported because Premiere QE does not expose reliable alignment verification");
+                continue;
+            }
+
+            plans.push({
+                entryIndex: i,
+                entry: entry,
+                filePath: filePath,
+                item: item,
+                trackType: trackType,
+                trackIndex: ti,
+                track: track,
+                position: pos,
+                hasIn: hasIn,
+                hasOut: hasOut,
+                inPoint: inPoint,
+                outPoint: outPoint,
+                speed: speed
+            });
+        }
+
+        if (errors.length) {
+            return _ok({ placed: 0, total: edl.clips.length, transitionsAdded: 0, errors: errors, warnings: warnings });
+        }
+
+        // Resolve/import all source media and determine effective ranges before
+        // the first overwrite. Imports may change the project bin, but never the
+        // timeline.
+        for (var pi = 0; pi < plans.length; pi++) {
+            var plan = plans[pi];
+            if (!plan.item) {
+                plan.item = _mcpFindProjectItem(plan.filePath);
+                if (!plan.item) {
+                    var imported = app.project.importFiles([plan.filePath], true, app.project.rootItem, false);
+                    if (imported === false) { errors.push("Entry " + plan.entryIndex + ": Premiere could not import " + plan.filePath); continue; }
+                    plan.item = _mcpFindProjectItem(plan.filePath);
                 }
             }
-            if (entry.outPoint !== undefined && entry.outPoint !== null) {
-                var clips2 = track.clips;
-                if (clips2.numItems > 0) {
-                    var c2 = clips2[clips2.numItems - 1];
-                    c2.outPoint = new Time();
-                    c2.outPoint.seconds = parseFloat(entry.outPoint) || 0;
+            if (!plan.item) { errors.push("Entry " + plan.entryIndex + ": imported source could not be resolved: " + plan.filePath); continue; }
+            var originalRange = _mcpReadProjectItemRange(plan.item);
+            if (originalRange.error) {
+                errors.push("Entry " + plan.entryIndex + ": " + originalRange.error);
+                continue;
+            }
+            plan.originalRange = originalRange;
+            plan.effectiveIn = plan.hasIn ? plan.inPoint : originalRange.inPoint;
+            plan.effectiveOut = plan.hasOut ? plan.outPoint : originalRange.outPoint;
+            if (plan.effectiveOut <= plan.effectiveIn) {
+                errors.push("Entry " + plan.entryIndex + ": effective source outPoint must be after inPoint");
+                continue;
+            }
+            var expectedOut = plan.entry.expectedTimelineOut;
+            if (expectedOut !== undefined && expectedOut !== null && expectedOut !== "") {
+                expectedOut = parseFloat(expectedOut);
+                if (isNaN(expectedOut) || expectedOut <= plan.position) errors.push("Entry " + plan.entryIndex + ": expected timeline out point must follow its position");
+                else plan.expectedTimelineOut = expectedOut;
+            }
+        }
+
+        if (errors.length) {
+            return _ok({ placed: 0, total: edl.clips.length, transitionsAdded: 0, errors: errors, warnings: warnings });
+        }
+
+        for (var p = 0; p < plans.length; p++) {
+            var current = plans[p];
+            var inserted = null;
+            var sourceMarksChanged = current.hasIn || current.hasOut;
+            if (sourceMarksChanged) {
+                var marked = _mcpSetProjectItemRange(current.item, current.effectiveIn, current.effectiveOut);
+                if (marked.error) { errors.push("Entry " + current.entryIndex + ": " + marked.error); continue; }
+            }
+
+            try {
+                current.track.overwriteClip(current.item, _secondsToTime(current.position));
+                timelineMutated = true;
+                inserted = _mcpFindClipAtPosition(current.track, current.item, current.position);
+            } catch (overwriteErr) {
+                errors.push("Entry " + current.entryIndex + ": overwrite failed: " + overwriteErr.message);
+            } finally {
+                if (sourceMarksChanged) {
+                    var restored = _mcpSetProjectItemRange(current.item, current.originalRange.inPoint, current.originalRange.outPoint);
+                    if (restored.error) errors.push("Entry " + current.entryIndex + ": source marks were not restored: " + restored.error);
+                }
+            }
+            if (!inserted) { errors.push("Entry " + current.entryIndex + ": overwritten clip could not be located on the timeline"); continue; }
+
+            var frameTolerance = Math.max(0.02, 1.1 / _mcpSequenceFPS(seq));
+            var actualStart = _timeToSeconds(inserted.clip.start);
+            if (isNaN(actualStart) || Math.abs(actualStart - current.position) > frameTolerance) {
+                try { inserted.clip.remove(false, true); } catch (ignoreBadStartCleanup) {}
+                errors.push("Entry " + current.entryIndex + ": Premiere placed the clip at " + actualStart + " instead of " + current.position);
+                continue;
+            }
+            var actualIn = _timeToSeconds(inserted.clip.inPoint);
+            var actualOut = _timeToSeconds(inserted.clip.outPoint);
+            if (Math.abs(actualIn - current.effectiveIn) > frameTolerance || Math.abs(actualOut - current.effectiveOut) > frameTolerance) {
+                try { inserted.clip.remove(false, true); } catch (ignoreBadRangeCleanup) {}
+                errors.push("Entry " + current.entryIndex + ": Premiere did not apply the requested source range");
+                continue;
+            }
+
+            if (Math.abs(current.speed - 1) > 0.0001) {
+                try {
+                    app.enableQE();
+                    var qeSeq = qe.project.getActiveSequence();
+                    var qeTrack = current.trackType === "audio" ? qeSeq.getAudioTrackAt(current.trackIndex) : qeSeq.getVideoTrackAt(current.trackIndex);
+                    var qeClip = qeTrack ? qeTrack.getItemAt(inserted.clipIndex) : null;
+                    if (!qeClip || !qeClip.setSpeed) throw new Error("speed changes are unavailable for this clip");
+                    qeClip.setSpeed(current.speed * 100, false, false);
+                    if (inserted.clip.getSpeed) {
+                        var actualSpeed = parseFloat(inserted.clip.getSpeed());
+                        if (actualSpeed > 10) actualSpeed = actualSpeed / 100;
+                        if (!actualSpeed || Math.abs(actualSpeed - current.speed) > 0.01) throw new Error("Premiere did not retain the requested speed");
+                    }
+                } catch (speedErr) {
+                    try { inserted.clip.remove(false, true); } catch (ignoreSpeedCleanup) {}
+                    errors.push("Entry " + current.entryIndex + ": speed change failed: " + speedErr.message);
+                    continue;
+                }
+            }
+
+            var actualEnd = _timeToSeconds(inserted.clip.end);
+            var expectedDuration = (current.effectiveOut - current.effectiveIn) / current.speed;
+            if (Math.abs((actualEnd - actualStart) - expectedDuration) > frameTolerance) {
+                try { inserted.clip.remove(false, true); } catch (ignoreDurationCleanup) {}
+                errors.push("Entry " + current.entryIndex + ": placed duration " + (actualEnd - actualStart) + " does not match requested duration " + expectedDuration);
+                continue;
+            }
+            if (current.expectedTimelineOut !== undefined && Math.abs(actualEnd - current.expectedTimelineOut) > frameTolerance) {
+                try { inserted.clip.remove(false, true); } catch (ignoreTimelineOutCleanup) {}
+                errors.push("Entry " + current.entryIndex + ": timeline out point " + actualEnd + " does not match requested " + current.expectedTimelineOut);
+                continue;
+            }
+
+            placed++;
+            if (current.entry.transitionName) {
+                var transitionRaw = current.trackType === "audio" ?
+                    addAudioTransition(current.trackIndex, inserted.clipIndex, current.entry.transitionName, current.entry.transitionDuration || 1) :
+                    addVideoTransition(current.trackIndex, inserted.clipIndex, current.entry.transitionName, current.entry.transitionDuration || 1, true);
+                var transitionResult = _mcpEnvelope(transitionRaw, "assembleFromEDL transition");
+                if (transitionResult.error) errors.push("Entry " + current.entryIndex + ": " + transitionResult.error);
+                else transitionsAdded++;
+            }
+
+            if (current.entry.effects && current.entry.effects.length) {
+                for (var ei = 0; ei < current.entry.effects.length; ei++) {
+                    var effectResult = _mcpEnvelope(mcpApplyEffect(JSON.stringify({
+                        sequenceId: String(seq.sequenceID || ""),
+                        clipId: _mcpCanonicalClipId(current.trackType, current.trackIndex, inserted.clipIndex, inserted.clip),
+                        effect: current.entry.effects[ei]
+                    })), "assembleFromEDL effect");
+                    if (effectResult.error) errors.push("Entry " + current.entryIndex + " effect " + ei + ": " + effectResult.error);
                 }
             }
         }
-        return _ok({ placed: placed, total: edl.clips.length });
+        if (placed < edl.clips.length && errors.length === 0) warnings.push("Some EDL entries were not placed");
+        if (errors.length && placed > 0) warnings.push("The EDL failed after partial timeline mutation; verified clips remain on the sequence");
+        if (errors.length && timelineMutated) warnings.push("An overwrite was attempted; any material previously covered by that overwrite cannot be restored automatically");
+        return _ok({
+            placed: placed,
+            total: edl.clips.length,
+            transitionsAdded: transitionsAdded,
+            errors: errors,
+            warnings: warnings
+        });
     } catch (e) { return _err("assembleFromEDL failed: " + e.message); }
 }
 
@@ -19521,6 +21604,7 @@ function executeBatch(scriptsJson) {
         }
         if (!(scripts instanceof Array)) return _err("Scripts must be an array");
         var results = [];
+        var succeeded = 0;
         for (var i = 0; i < scripts.length; i++) {
             var entry = scripts[i];
             var name = entry.name || ("script_" + i);
@@ -19534,11 +21618,12 @@ function executeBatch(scriptsJson) {
                 var rStr;
                 try { rStr = JSON.stringify(r); } catch (jsonErr) { rStr = String(r); }
                 results.push({ name: name, status: "ok", result: rStr });
+                succeeded++;
             } catch (execErr) {
                 results.push({ name: name, status: "error", error: execErr.message });
             }
         }
-        return _ok({ results: results, totalScripts: scripts.length, succeeded: results.filter(function(r) { return r.status === "ok"; }).length });
+        return _ok({ results: results, totalScripts: scripts.length, succeeded: succeeded });
     } catch (e) { return _err("executeBatch failed: " + e.message); }
 }
 
@@ -20311,7 +22396,7 @@ function applyBlackAndWhite(trackIndex, clipIndex) {
                 }
             }
         }
-        return _ok({ trackIndex: parseInt(trackIndex, 10), clipIndex: parseInt(clipIndex, 10), effect: "Black & White", status: "applied_via_qe", note: "Apply Lumetri Color and set Saturation to 0" });
+        return _err("Black & White requires an attached effect with a readable Saturation property; none was found");
     } catch (e) { return _err("applyBlackAndWhite failed: " + e.message); }
 }
 
@@ -20327,6 +22412,7 @@ function applySepia(trackIndex, clipIndex, intensity) {
         if (intensity > 100) intensity = 100;
         var clip = r.clip;
         var lumetri = _ensureLumetri(clip);
+        if (!lumetri) return _err("Sepia requires an existing Lumetri Color component; none was found");
         if (lumetri) {
             var comp = lumetri.component;
             for (var p = 0; p < comp.properties.numItems; p++) {
@@ -20355,6 +22441,7 @@ function applyVintageFilm(trackIndex, clipIndex) {
         if (r.error) return _err(r.error);
         var clip = r.clip;
         var lumetri = _ensureLumetri(clip);
+        if (!lumetri) return _err("Vintage Film requires an existing Lumetri Color component; none was found");
         if (lumetri) {
             var comp = lumetri.component;
             for (var p = 0; p < comp.properties.numItems; p++) {
@@ -20379,16 +22466,7 @@ function applyVintageFilm(trackIndex, clipIndex) {
  * 14. applyFilmGrain - Add film grain effect with amount (0-100).
  */
 function applyFilmGrain(trackIndex, clipIndex, amount) {
-    try {
-        var r = _resolveClipForEffect("video", trackIndex, clipIndex);
-        if (r.error) return _err(r.error);
-        amount = parseFloat(amount) || 30;
-        if (amount < 0) amount = 0;
-        if (amount > 100) amount = 100;
-        // Film grain is typically achieved via Noise effect
-        // We'll record for QE application
-        return _ok({ trackIndex: parseInt(trackIndex, 10), clipIndex: parseInt(clipIndex, 10), effect: "Film Grain", amount: amount, status: "apply_noise_effect", note: "Apply Noise effect via QE with amount " + amount });
-    } catch (e) { return _err("applyFilmGrain failed: " + e.message); }
+    return _err("unsupported applyFilmGrain: use applyVideoEffect with a confirmed installed Noise/Grain effect and set its exposed parameters explicitly");
 }
 
 /**
@@ -20402,17 +22480,17 @@ function applyVignette(trackIndex, clipIndex, amount, feather) {
         if (isNaN(amount)) amount = -2.0;
         feather = parseFloat(feather);
         if (isNaN(feather)) feather = 50;
-        var clip = r.clip;
-        var lumetri = _ensureLumetri(clip);
-        if (lumetri) {
-            var comp = lumetri.component;
-            for (var p = 0; p < comp.properties.numItems; p++) {
-                var pr = comp.properties[p];
-                try {
-                    if (pr.displayName === "Vignette Amount") pr.setValue(amount);
-                    if (pr.displayName === "Vignette Feather") pr.setValue(feather);
-                } catch (e) {}
-            }
+        var comp = _getLumetriComponent(trackIndex, clipIndex);
+        if (!comp) return _err("Could not find or apply Lumetri Color effect");
+        var amountSet = false;
+        var featherSet = false;
+        for (var p = 0; p < comp.properties.numItems; p++) {
+            var pr = comp.properties[p];
+            if (pr.displayName === "Vignette Amount") { pr.setValue(amount, true); amountSet = true; }
+            if (pr.displayName === "Vignette Feather") { pr.setValue(feather, true); featherSet = true; }
+        }
+        if (!amountSet || !featherSet) {
+            return _err("Lumetri Color does not expose the required Vignette Amount and Feather parameters");
         }
         return _ok({ trackIndex: parseInt(trackIndex, 10), clipIndex: parseInt(clipIndex, 10), effect: "Vignette", amount: amount, feather: feather });
     } catch (e) { return _err("applyVignette failed: " + e.message); }
@@ -20422,41 +22500,21 @@ function applyVignette(trackIndex, clipIndex, amount, feather) {
  * 16. applyGlow - Add glow/bloom effect.
  */
 function applyGlow(trackIndex, clipIndex, intensity, radius) {
-    try {
-        var r = _resolveClipForEffect("video", trackIndex, clipIndex);
-        if (r.error) return _err(r.error);
-        intensity = parseFloat(intensity) || 50;
-        radius = parseFloat(radius) || 20;
-        return _ok({ trackIndex: parseInt(trackIndex, 10), clipIndex: parseInt(clipIndex, 10), effect: "Glow", intensity: intensity, radius: radius, status: "apply_via_qe", note: "Apply VR Glow or Gaussian Blur blended for glow effect" });
-    } catch (e) { return _err("applyGlow failed: " + e.message); }
+    return _err("unsupported applyGlow: use applyVideoEffect with a confirmed installed glow effect and set its exposed parameters explicitly");
 }
 
 /**
  * 17. applyDropShadow - Add drop shadow effect.
  */
 function applyDropShadow(trackIndex, clipIndex, opacity, distance, softness, direction) {
-    try {
-        var r = _resolveClipForEffect("video", trackIndex, clipIndex);
-        if (r.error) return _err(r.error);
-        opacity = parseFloat(opacity) || 75;
-        distance = parseFloat(distance) || 10;
-        softness = parseFloat(softness) || 5;
-        direction = parseFloat(direction) || 315;
-        return _ok({ trackIndex: parseInt(trackIndex, 10), clipIndex: parseInt(clipIndex, 10), effect: "Drop Shadow", opacity: opacity, distance: distance, softness: softness, direction: direction, status: "apply_via_qe", note: "Apply Drop Shadow effect via QE DOM" });
-    } catch (e) { return _err("applyDropShadow failed: " + e.message); }
+    return _err("unsupported applyDropShadow: use applyVideoEffect with the confirmed installed Drop Shadow effect and explicit parameter readback");
 }
 
 /**
  * 18. applyStroke - Add stroke/border effect.
  */
 function applyStroke(trackIndex, clipIndex, color, width) {
-    try {
-        var r = _resolveClipForEffect("video", trackIndex, clipIndex);
-        if (r.error) return _err(r.error);
-        color = color || "#FFFFFF";
-        width = parseFloat(width) || 3;
-        return _ok({ trackIndex: parseInt(trackIndex, 10), clipIndex: parseInt(clipIndex, 10), effect: "Stroke", color: color, width: width, status: "apply_via_qe", note: "Apply Stroke effect via QE DOM" });
-    } catch (e) { return _err("applyStroke failed: " + e.message); }
+    return _err("unsupported applyStroke: use applyVideoEffect with a confirmed installed border/stroke effect and explicit parameter readback");
 }
 
 /**
@@ -20484,7 +22542,7 @@ function applyCinematicBars(trackIndex, clipIndex, barHeight) {
                 }
             }
         }
-        return _ok({ trackIndex: parseInt(trackIndex, 10), clipIndex: parseInt(clipIndex, 10), effect: "Cinematic Bars", barHeight: barHeight, status: "apply_crop_via_qe", note: "Apply Crop effect and set top/bottom to " + barHeight + "%" });
+        return _err("Cinematic Bars requires an existing Crop component; none was found. Attach Crop with applyVideoEffect first");
     } catch (e) { return _err("applyCinematicBars failed: " + e.message); }
 }
 
@@ -20511,7 +22569,7 @@ function applyFlipHorizontal(trackIndex, clipIndex) {
                 }
             }
         }
-        return _ok({ trackIndex: parseInt(trackIndex, 10), clipIndex: parseInt(clipIndex, 10), effect: "Flip Horizontal", status: "apply_via_qe", note: "Apply Horizontal Flip effect via QE DOM" });
+        return _err("Flip Horizontal requires a readable Motion Scale Width property; none was found");
     } catch (e) { return _err("applyFlipHorizontal failed: " + e.message); }
 }
 
@@ -20548,14 +22606,18 @@ function setTransitionDuration(trackType, trackIndex, transitionIndex, duration)
         var track = _getTrack(seq, trackType, trackIndex);
         if (!track) return _err("Track index out of range");
         transitionIndex = parseInt(transitionIndex, 10) || 0;
-        duration = parseFloat(duration) || 1.0;
+        duration = parseFloat(duration);
+        if (!isFinite(duration) || duration <= 0) return _err("duration must be a positive number of seconds");
         if (!track.transitions || transitionIndex >= track.transitions.numItems) return _err("Transition index out of range");
         var tr = track.transitions[transitionIndex];
         var startSec = _timeToSeconds(tr.start);
-        try {
-            tr.end = _secondsToTime(startSec + duration);
-        } catch (e) {}
-        return _ok({ trackType: trackType, trackIndex: parseInt(trackIndex, 10), transitionIndex: transitionIndex, newDuration: duration });
+        try { tr.end = _secondsToTime(startSec + duration); }
+        catch (setError) { return _err("Transition duration is not writable in this Premiere version: " + setError.message); }
+        var actualDuration = _timeToSeconds(tr.end) - _timeToSeconds(tr.start);
+        if (!isFinite(actualDuration) || Math.abs(actualDuration - duration) > 0.01) {
+            return _err("Premiere did not accept transition duration " + duration + "; readback was " + actualDuration);
+        }
+        return _ok({ trackType: trackType, trackIndex: parseInt(trackIndex, 10), transitionIndex: transitionIndex, newDuration: actualDuration, verified: true });
     } catch (e) { return _err("setTransitionDuration failed: " + e.message); }
 }
 
@@ -20563,18 +22625,7 @@ function setTransitionDuration(trackType, trackIndex, transitionIndex, duration)
  * 23. setTransitionAlignment - Set alignment (center, start, end).
  */
 function setTransitionAlignment(trackType, trackIndex, transitionIndex, alignment) {
-    try {
-        if (!app.project) return _err("No project is open");
-        var seq = app.project.activeSequence;
-        if (!seq) return _err("No active sequence");
-        var track = _getTrack(seq, trackType, trackIndex);
-        if (!track) return _err("Track index out of range");
-        transitionIndex = parseInt(transitionIndex, 10) || 0;
-        alignment = alignment || "center";
-        if (!track.transitions || transitionIndex >= track.transitions.numItems) return _err("Transition index out of range");
-        // Transition alignment is managed by start/end positioning relative to the cut point
-        return _ok({ trackType: trackType, trackIndex: parseInt(trackIndex, 10), transitionIndex: transitionIndex, alignment: alignment, status: "alignment_set" });
-    } catch (e) { return _err("setTransitionAlignment failed: " + e.message); }
+    return _err("unsupported setTransitionAlignment: CEP exposes no portable writable alignment property with readback; choose alignment while adding a verified transition");
 }
 
 /**
@@ -21489,39 +23540,104 @@ function getAnalyticsPerformanceReport() {
 // Social Media Optimization (1-5)
 // ---------------------------------------------------------------------------
 
+function _mcpSequenceClipCount(sequence) {
+    var count = 0;
+    var trackTypes = [sequence.videoTracks, sequence.audioTracks];
+    for (var tt = 0; tt < trackTypes.length; tt++) {
+        var tracks = trackTypes[tt];
+        if (!tracks) continue;
+        for (var ti = 0; ti < tracks.numTracks; ti++) {
+            if (tracks[ti] && tracks[ti].clips) count += tracks[ti].clips.numItems;
+        }
+    }
+    return count;
+}
+
+function _mcpCreateAspectSequenceVersion(sequenceIndex, outputName, width, height, suffix, aspectRatio) {
+    if (!app.project) return { error: "No project open" };
+    var seqs = app.project.sequences;
+    if (!seqs || seqs.numSequences === 0) return { error: "No sequences in project" };
+    var idx = sequenceIndex === undefined || sequenceIndex === null || sequenceIndex === "" ? 0 : parseInt(sequenceIndex, 10);
+    if (isNaN(idx) || idx < 0 || idx >= seqs.numSequences) return { error: "Sequence index out of range" };
+    var source = seqs[idx];
+    var sourceID = String(source.sequenceID || "");
+    if (!sourceID) return { error: "The source sequence has no readable sequence ID" };
+    var requestedName = outputName ? String(outputName) : String(source.name || "Sequence") + suffix;
+    if (!requestedName) return { error: "Output sequence name is required" };
+
+    var previousActive = app.project.activeSequence;
+    var previousIds = _mcpCaptureSequenceIds();
+    var sourceClipCount = _mcpSequenceClipCount(source);
+    var sourceSpec = _mcpActualSequenceSpec(source);
+    function cleanupClone(clone, message) {
+        var deleted = clone ? _mcpDeleteSequenceQuietly(clone) : false;
+        if (previousActive) _mcpActivateSequenceAndVerify(previousActive);
+        return { error: message + (clone ? (deleted ? "; clone deleted" : "; clone cleanup failed") : "") };
+    }
+    try { source.clone(); } catch (cloneErr) {
+        var failedClone = _mcpFindNewSequence(previousIds);
+        return cleanupClone(failedClone, "Premiere could not clone the source sequence: " + cloneErr.message);
+    }
+    var clone = _mcpFindNewSequence(previousIds);
+    if (!clone) return { error: "Premiere did not create a distinct sequence clone" };
+    var cloneID = String(clone.sequenceID || "");
+    if (!cloneID || clone === source || cloneID === sourceID) {
+        return cleanupClone(clone === source ? null : clone, "Premiere did not create a distinct sequence clone");
+    }
+
+    try { clone.name = requestedName; } catch (renameErr) {
+        return cleanupClone(clone, "Could not name the cloned sequence: " + renameErr.message);
+    }
+    if (String(clone.name || "") !== requestedName) {
+        return cleanupClone(clone, "Premiere did not accept the cloned sequence name");
+    }
+
+    var cloneClipCount = _mcpSequenceClipCount(clone);
+    var cloneBefore = _mcpActualSequenceSpec(clone);
+    if (cloneClipCount !== sourceClipCount || cloneBefore.videoTracks !== sourceSpec.videoTracks || cloneBefore.audioTracks !== sourceSpec.audioTracks) {
+        return cleanupClone(clone, "Premiere created an incomplete sequence clone");
+    }
+
+    var configured = _mcpConfigureAndVerifySequence(clone, { width: width, height: height });
+    if (configured.error) {
+        return cleanupClone(clone, configured.error);
+    }
+    var activated = _mcpActivateSequenceAndVerify(clone);
+    if (activated.error) return cleanupClone(clone, "Could not verify cloned sequence activation: " + activated.error);
+    return {
+        data: {
+            sourceSequence: String(source.name || ""),
+            sourceSequenceId: sourceID,
+            sourceSequenceID: sourceID,
+            newSequence: String(clone.name || ""),
+            newSequenceId: cloneID,
+            newSequenceID: cloneID,
+            activeSequenceID: activated.data.sequenceID,
+            width: configured.data.width,
+            height: configured.data.height,
+            fps: configured.data.fps,
+            aspectRatio: aspectRatio,
+            clipCount: cloneClipCount,
+            videoTrackCount: configured.data.videoTracks,
+            audioTrackCount: configured.data.audioTracks,
+            cloned: true
+        }
+    };
+}
+
 function createVerticalVersion(sequenceIndex, outputName) {
     try {
-        if (!app.project) return _err("No project open");
-        var seqs = app.project.sequences;
-        if (!seqs || seqs.numSequences === 0) return _err("No sequences in project");
-        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
-        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
-        var srcSeq = seqs[idx];
-        var name = (outputName && outputName !== "") ? outputName : (srcSeq.name + "_Vertical_9x16");
-        app.project.createNewSequence(name, "createVerticalVersion_placeholder");
-        var newSeq = null;
-        for (var i = 0; i < seqs.numSequences; i++) { if (seqs[i].name === name) { newSeq = seqs[i]; break; } }
-        if (!newSeq) return _err("Failed to create vertical sequence");
-        if (typeof qe !== "undefined" && qe.project) { try { var qeSeq = qe.project.getSequenceAt(seqs.numSequences - 1); if (qeSeq) qeSeq.setFrameSize(1080, 1920); } catch (qeErr) {} }
-        return _ok({ sourceSequence: srcSeq.name, newSequence: name, width: 1080, height: 1920, aspectRatio: "9:16", message: "Vertical sequence created." });
+        var result = _mcpCreateAspectSequenceVersion(sequenceIndex, outputName, 1080, 1920, "_Vertical_9x16", "9:16");
+        if (result.error) return _err(result.error);
+        return _ok(result.data);
     } catch (e) { return _err("createVerticalVersion failed: " + e.message); }
 }
 
 function createSquareVersion(sequenceIndex, outputName) {
     try {
-        if (!app.project) return _err("No project open");
-        var seqs = app.project.sequences;
-        if (!seqs || seqs.numSequences === 0) return _err("No sequences in project");
-        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
-        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
-        var srcSeq = seqs[idx];
-        var name = (outputName && outputName !== "") ? outputName : (srcSeq.name + "_Square_1x1");
-        app.project.createNewSequence(name, "createSquareVersion_placeholder");
-        var newSeq = null;
-        for (var i = 0; i < seqs.numSequences; i++) { if (seqs[i].name === name) { newSeq = seqs[i]; break; } }
-        if (!newSeq) return _err("Failed to create square sequence");
-        if (typeof qe !== "undefined" && qe.project) { try { var qeSeq = qe.project.getSequenceAt(seqs.numSequences - 1); if (qeSeq) qeSeq.setFrameSize(1080, 1080); } catch (qeErr) {} }
-        return _ok({ sourceSequence: srcSeq.name, newSequence: name, width: 1080, height: 1080, aspectRatio: "1:1", message: "Square sequence created." });
+        var result = _mcpCreateAspectSequenceVersion(sequenceIndex, outputName, 1080, 1080, "_Square_1x1", "1:1");
+        if (result.error) return _err(result.error);
+        return _ok(result.data);
     } catch (e) { return _err("createSquareVersion failed: " + e.message); }
 }
 
@@ -21643,34 +23759,11 @@ function extractSegmentByMarkers(sequenceIndex, startMarkerIndex, endMarkerIndex
 }
 
 function createTeaser(sequenceIndex, durationSeconds, outputName) {
-    try {
-        if (!app.project) return _err("No project open");
-        var seqs = app.project.sequences;
-        if (!seqs || seqs.numSequences === 0) return _err("No sequences in project");
-        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
-        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
-        var seq = seqs[idx]; var teaserDur = (durationSeconds && durationSeconds > 0) ? durationSeconds : 30;
-        var name = (outputName && outputName !== "") ? outputName : (seq.name + "_Teaser_" + teaserDur + "s");
-        var totalDuration = _timeToSeconds(seq.end) - _timeToSeconds(seq.zeroPoint);
-        if (totalDuration <= 0) return _err("Sequence has no duration");
-        var nh = Math.min(Math.floor(teaserDur / 3), 10); var cd = teaserDur / nh; var iv = totalDuration / (nh + 1);
-        var highlights = [];
-        for (var i = 0; i < nh; i++) { var st = iv * (i + 1) - (cd / 2); if (st < 0) st = 0; highlights.push({ index: i, sourceStart: st, sourceEnd: st + cd, clipDuration: cd }); }
-        app.project.createNewSequence(name, "createTeaser_placeholder");
-        return _ok({ sourceSequence: seq.name, teaserSequence: name, teaserDuration: teaserDur, numHighlights: nh, highlights: highlights });
-    } catch (e) { return _err("createTeaser failed: " + e.message); }
+    return _err("unsupported createTeaser: automatic highlight selection and verified assembly are not implemented; create an explicit EDL and assemble it instead");
 }
 
 function createBumper(text, duration, style, outputName) {
-    try {
-        if (!app.project) return _err("No project open");
-        if (!text || text === "") return _err("Text is required");
-        var dur = (duration && duration > 0) ? duration : 5;
-        var stl = (style && style !== "") ? style.toLowerCase() : "simple";
-        var name = (outputName && outputName !== "") ? outputName : ("Bumper_" + new Date().getTime());
-        app.project.createNewSequence(name, "createBumper_placeholder");
-        return _ok({ bumperSequence: name, text: text, duration: dur, style: stl, message: "Bumper sequence created." });
-    } catch (e) { return _err("createBumper failed: " + e.message); }
+    return _err("unsupported createBumper: CEP cannot create and verify styled text graphics without a supplied MOGRT; use the add-titles MOGRT workflow");
 }
 
 // ---------------------------------------------------------------------------
@@ -21909,10 +24002,46 @@ function validateClosedCaptions(sequenceIndex) {
         var seqs = app.project.sequences; if (!seqs || seqs.numSequences === 0) return _err("No sequences");
         var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
         if (idx >= seqs.numSequences) return _err("Sequence index out of range");
-        var seq = seqs[idx]; var ct = 0; var cc = 0; var issues = [];
-        if (seq.captionTracks) { ct = seq.captionTracks.numTracks; for (var t=0;t<ct;t++) { if (seq.captionTracks[t].clips) cc += seq.captionTracks[t].clips.numItems; } }
-        if (ct === 0) issues.push({ type: "NO_CAPTIONS", severity: "ERROR", message: "No caption tracks found" });
-        return _ok({ sequence: seq.name, captionTracks: ct, captionCount: cc, issuesFound: issues.length, issues: issues, fccCompliant: issues.length === 0 });
+        var seq = seqs[idx]; var ct = 0; var cc = 0; var issues = []; var errors = 0; var warnings = 0;
+        if (seq.captionTracks) {
+            ct = seq.captionTracks.numTracks;
+            for (var t = 0; t < ct; t++) {
+                var track = seq.captionTracks[t];
+                if (!track.clips) continue;
+                cc += track.clips.numItems;
+                var previousEnd = -1;
+                for (var c = 0; c < track.clips.numItems; c++) {
+                    var caption = track.clips[c];
+                    var start = _timeToSeconds(caption.start);
+                    var end = _timeToSeconds(caption.end);
+                    var text = String(caption.name || "").replace(/^\s+|\s+$/g, "");
+                    if (!text) { issues.push({ type: "EMPTY_TEXT", severity: "ERROR", trackIndex: t, captionIndex: c }); errors++; }
+                    if (end <= start) { issues.push({ type: "NON_POSITIVE_DURATION", severity: "ERROR", trackIndex: t, captionIndex: c, start: start, end: end }); errors++; }
+                    if (previousEnd >= 0 && start < previousEnd) { issues.push({ type: "OVERLAP", severity: "ERROR", trackIndex: t, captionIndex: c, overlapSeconds: previousEnd - start }); errors++; }
+                    if (end - start > 7) { issues.push({ type: "LONG_DURATION", severity: "WARNING", trackIndex: t, captionIndex: c, durationSeconds: end - start }); warnings++; }
+                    var lines = text.split(/\r?\n/);
+                    if (lines.length > 2) { issues.push({ type: "TOO_MANY_LINES", severity: "WARNING", trackIndex: t, captionIndex: c, lineCount: lines.length }); warnings++; }
+                    for (var li = 0; li < lines.length; li++) {
+                        if (lines[li].length > 42) { issues.push({ type: "LONG_LINE", severity: "WARNING", trackIndex: t, captionIndex: c, line: li + 1, characters: lines[li].length }); warnings++; }
+                    }
+                    previousEnd = end;
+                }
+            }
+        }
+        if (ct === 0) { issues.push({ type: "NO_CAPTIONS", severity: "ERROR", message: "No caption tracks found" }); errors++; }
+        if (ct > 0 && cc === 0) { issues.push({ type: "EMPTY_TRACKS", severity: "ERROR", message: "Caption tracks contain no captions" }); errors++; }
+        return _ok({
+            sequence: seq.name,
+            captionTracks: ct,
+            captionCount: cc,
+            issuesFound: issues.length,
+            errors: errors,
+            warnings: warnings,
+            issues: issues,
+            structurallyValid: errors === 0,
+            fccCompliance: "not_assessed",
+            note: "This checks timeline structure only; it does not certify FCC wording, accuracy, placement, reading speed, or delivery encoding."
+        });
     } catch (e) { return _err("validateClosedCaptions failed: " + e.message); }
 }
 
@@ -24216,14 +26345,31 @@ function saveSequenceVersion(sequenceIndex, versionName, notes) {
         snapshot.notes = notes || "";
         var projFile = new File(projPath);
         var versionsDir = new Folder(projFile.parent.fsName + "/sequence_versions");
-        if (!versionsDir.exists) versionsDir.create();
+        if (!versionsDir.exists && versionsDir.create() !== true) {
+            return _err("Could not create sequence version directory: " + versionsDir.fsName);
+        }
+        if (!versionsDir.exists) return _err("Sequence version directory is not available: " + versionsDir.fsName);
         var safeName = versionName.replace(/[^a-zA-Z0-9_-]/g, "_");
         var filePath = versionsDir.fsName + "/" + safeName + ".json";
         var f = new File(filePath);
-        f.open("w");
-        f.write(JSON.stringify(snapshot));
-        f.close();
-        return _ok({ versionName: versionName, filePath: filePath, timestamp: snapshot.timestamp, sequenceName: snapshot.sequenceName });
+        var serialized = JSON.stringify(snapshot);
+        if (!f.open("w")) return _err("Could not open sequence version for writing: " + f.fsName);
+        var writeResult = f.write(serialized);
+        var closeResult = f.close();
+        if (writeResult === false || closeResult === false) return _err("Could not persist sequence version: " + f.fsName);
+
+        var savedFile = new File(f.fsName);
+        if (!savedFile.exists || savedFile.length <= 0) return _err("Sequence version file was not created: " + f.fsName);
+        if (!savedFile.open("r")) return _err("Could not reopen sequence version for verification: " + f.fsName);
+        var savedContent = savedFile.read();
+        savedFile.close();
+        var savedSnapshot = JSON.parse(savedContent);
+        if (savedSnapshot.versionName !== snapshot.versionName ||
+            savedSnapshot.timestamp !== snapshot.timestamp ||
+            savedSnapshot.sequenceName !== snapshot.sequenceName) {
+            return _err("Sequence version readback did not match the requested audit record");
+        }
+        return _ok({ versionName: savedSnapshot.versionName, filePath: savedFile.fsName, timestamp: savedSnapshot.timestamp, sequenceName: savedSnapshot.sequenceName, bytes: savedFile.length, verified: true });
     } catch (e) { return _err("saveSequenceVersion failed: " + e.message); }
 }
 
@@ -24884,4 +27030,1749 @@ function importProjectFromOtherNLE(sourcePath, sourceFormat) {
         }
         return _err("Unsupported source format: " + sourceFormat + ". Supported: fcpx, avid, davinci");
     } catch (e) { return _err("importProjectFromOtherNLE failed: " + e.message); }
+}
+
+// ===========================================================================
+// MCP transport compatibility
+// ===========================================================================
+//
+// The typed gRPC bridge sends structured JSON, while the historical JSX API
+// above uses positional arguments and timeline indexes.  Keep the conversion
+// in one place and use explicit clip IDs with an identity fingerprint. The
+// fingerprint prevents a stale index from silently targeting another clip.
+
+function _mcpParseObject(argsJson, commandName) {
+    try {
+        var value = argsJson;
+        if (value === undefined || value === null || value === "") value = {};
+        if (typeof value === "string") value = JSON.parse(value);
+        if (value === null || typeof value !== "object" || value instanceof Array) {
+            return { error: commandName + " requires a JSON object" };
+        }
+        return { value: value };
+    } catch (e) {
+        return { error: commandName + " received invalid JSON: " + e.message };
+    }
+}
+
+function _mcpResolveSequence(sequenceId) {
+    if (!app.project) return { error: "No project is open" };
+    var wanted = (sequenceId === undefined || sequenceId === null) ? "" : String(sequenceId);
+    if (wanted === "") {
+        if (!app.project.activeSequence) return { error: "No active sequence" };
+        return { sequence: app.project.activeSequence };
+    }
+    if (app.project.sequences) {
+        for (var i = 0; i < app.project.sequences.numSequences; i++) {
+            var candidate = app.project.sequences[i];
+            if (candidate && String(candidate.sequenceID) === wanted) return { sequence: candidate };
+        }
+    }
+    return { error: "Sequence not found: " + wanted };
+}
+
+function _mcpSequenceIsActive(sequence) {
+    return !!(app.project && app.project.activeSequence && sequence &&
+        String(app.project.activeSequence.sequenceID) === String(sequence.sequenceID));
+}
+
+function _mcpSequenceFPS(sequence) {
+    var fps = 24;
+    try {
+        var settings = sequence.getSettings();
+        var rate = settings ? settings.videoFrameRate : null;
+        if (rate && rate.ticks) {
+            var ticks = parseFloat(rate.ticks);
+            if (ticks > 0) fps = 254016000000 / ticks;
+        } else if (rate && rate.seconds) {
+            var seconds = parseFloat(rate.seconds);
+            if (seconds > 0) fps = 1 / seconds;
+        }
+    } catch (ignore) {}
+    return fps;
+}
+
+function _mcpTimecodeToSeconds(timecode) {
+    if (timecode === undefined || timecode === null) return 0;
+    if (typeof timecode === "number") return timecode;
+    if (typeof timecode === "string") {
+        var parsed = parseFloat(timecode);
+        return isNaN(parsed) ? 0 : parsed;
+    }
+    var fps = parseFloat(timecode.frameRate || timecode.frame_rate) || 24;
+    return (parseFloat(timecode.hours) || 0) * 3600 +
+        (parseFloat(timecode.minutes) || 0) * 60 +
+        (parseFloat(timecode.seconds) || 0) +
+        (parseFloat(timecode.frames) || 0) / fps;
+}
+
+// Generated protobuf requests materialize an omitted Timecode as an all-zero
+// object. An explicitly supplied zero-second boundary retains its frame rate,
+// which lets the host distinguish "reset to media start" from "preserve the
+// current project-item mark" without changing the public RPC.
+function _mcpTimecodeWasProvided(timecode) {
+    if (timecode === undefined || timecode === null) return false;
+    if (typeof timecode === "number" || typeof timecode === "string") return true;
+    return (parseFloat(timecode.frameRate || timecode.frame_rate) || 0) > 0 ||
+        (parseFloat(timecode.hours) || 0) !== 0 ||
+        (parseFloat(timecode.minutes) || 0) !== 0 ||
+        (parseFloat(timecode.seconds) || 0) !== 0 ||
+        (parseFloat(timecode.frames) || 0) !== 0;
+}
+
+function _mcpSecondsToTimecode(seconds, fps) {
+    seconds = Math.max(0, parseFloat(seconds) || 0);
+    fps = parseFloat(fps) || 24;
+    var whole = Math.floor(seconds);
+    var frames = Math.round((seconds - whole) * fps);
+    if (frames >= Math.round(fps)) { whole++; frames = 0; }
+    return {
+        hours: Math.floor(whole / 3600),
+        minutes: Math.floor((whole % 3600) / 60),
+        seconds: whole % 60,
+        frames: frames,
+        frameRate: fps
+    };
+}
+
+function _mcpClipIdentity(clip) {
+    var nodeId = "";
+    try { nodeId = String(clip.nodeId || ""); } catch (ignoreNode) {}
+    if (nodeId) return "n" + nodeId;
+
+    var parts = [];
+    try { parts.push(String(clip.projectItem ? clip.projectItem.nodeId || "" : "")); } catch (ignoreProjectNode) {}
+    try { parts.push(String(clip.inPoint ? clip.inPoint.ticks || clip.inPoint.seconds || "" : "")); } catch (ignoreIn) {}
+    try { parts.push(String(clip.outPoint ? clip.outPoint.ticks || clip.outPoint.seconds || "" : "")); } catch (ignoreOut) {}
+    try { parts.push(String(clip.start ? clip.start.ticks || clip.start.seconds || "" : "")); } catch (ignoreStart) {}
+    try { parts.push(String(clip.name || "")); } catch (ignoreName) {}
+    var value = parts.join("|");
+    var hash = 0;
+    for (var i = 0; i < value.length; i++) hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0;
+    return "h" + (hash >>> 0).toString(16);
+}
+
+function _mcpProjectItemIdentity(item) {
+    if (!item) return "";
+    try { if (item.nodeId !== undefined && item.nodeId !== null && String(item.nodeId) !== "") return "n" + String(item.nodeId); } catch (ignoreNode) {}
+    var mediaPath = _mcpMediaPath(item);
+    if (mediaPath) return "p" + String(mediaPath).toLowerCase();
+    try { return "m" + String(item.name || ""); } catch (ignoreName) {}
+    return "";
+}
+
+function _mcpCanonicalClipId(trackType, trackIndex, clipIndex, clip) {
+    var base = String(trackType) + ":" + String(trackIndex) + ":" + String(clipIndex);
+    return clip ? base + ":" + _mcpClipIdentity(clip) : base;
+}
+
+function _mcpVerifyClipRemoved(track, removedIdentity, beforeCount) {
+    if (!track || !track.clips) return { error: "target track clips are unavailable" };
+    var afterCount = track.clips.numItems;
+    if (afterCount !== beforeCount - 1) {
+        return { error: "track clip count changed from " + beforeCount + " to " + afterCount + ", expected " + (beforeCount - 1) };
+    }
+    for (var clipIndex = 0; clipIndex < track.clips.numItems; clipIndex++) {
+        var candidate = track.clips[clipIndex];
+        if (_mcpClipIdentity(candidate) === removedIdentity) {
+            return { error: "removed clip identity is still present on the target track" };
+        }
+    }
+    return { removed: true, remaining: afterCount };
+}
+
+function _mcpResolveClipId(sequence, clipId) {
+    var match = /^(video|audio):(\d+):(\d+)(?::([A-Za-z0-9_-]+))?$/.exec(String(clipId || ""));
+    if (!match) return { error: "Invalid clipId; expected video:<track>:<clip> or audio:<track>:<clip>" };
+    var trackType = match[1];
+    var trackIndex = parseInt(match[2], 10);
+    var clipIndex = parseInt(match[3], 10);
+    var tracks = trackType === "audio" ? sequence.audioTracks : sequence.videoTracks;
+    if (!tracks || trackIndex >= tracks.numTracks) {
+        return { error: trackType + " track index out of range: " + trackIndex };
+    }
+    var track = tracks[trackIndex];
+    if (!track.clips || clipIndex >= track.clips.numItems) {
+        return { error: "Clip index out of range on " + trackType + " track " + trackIndex + ": " + clipIndex };
+    }
+    var expectedIdentity = match[4] || "";
+    var clip = track.clips[clipIndex];
+    if (expectedIdentity && _mcpClipIdentity(clip) !== expectedIdentity) {
+        // An insertion/removal can change indexes. Search for the same clip
+        // identity, but fail closed if it can no longer be resolved uniquely.
+        var found = null;
+        for (var ti = 0; ti < tracks.numTracks; ti++) {
+            var candidateTrack = tracks[ti];
+            for (var ci = 0; candidateTrack.clips && ci < candidateTrack.clips.numItems; ci++) {
+                var candidateClip = candidateTrack.clips[ci];
+                if (_mcpClipIdentity(candidateClip) !== expectedIdentity) continue;
+                if (found) return { error: "Clip identity is ambiguous after timeline changes: " + clipId };
+                found = { trackIndex: ti, clipIndex: ci, track: candidateTrack, clip: candidateClip };
+            }
+        }
+        if (!found) return { error: "Stale clipId after timeline changes: " + clipId };
+        trackIndex = found.trackIndex;
+        clipIndex = found.clipIndex;
+        track = found.track;
+        clip = found.clip;
+    }
+    return {
+        trackType: trackType,
+        trackIndex: trackIndex,
+        clipIndex: clipIndex,
+        track: track,
+        clip: clip
+    };
+}
+
+function _mcpMediaPath(projectItem) {
+    try {
+        return projectItem && projectItem.getMediaPath ? String(projectItem.getMediaPath() || "") : "";
+    } catch (ignore) { return ""; }
+}
+
+function _mcpNormalizePath(pathValue) {
+    if (!pathValue) return "";
+    try { return String(new File(String(pathValue)).fsName); }
+    catch (ignore) { return String(pathValue); }
+}
+
+function _mcpFindProjectItem(identifier) {
+    if (!app.project || !app.project.rootItem) return null;
+    var wanted = String(identifier || "");
+    var normalized = _mcpNormalizePath(wanted);
+    function visit(parent) {
+        if (!parent || !parent.children) return null;
+        for (var i = 0; i < parent.children.numItems; i++) {
+            var child = parent.children[i];
+            if (!child) continue;
+            if (child.type === ProjectItemType.BIN) {
+                var nested = visit(child);
+                if (nested) return nested;
+                continue;
+            }
+            try { if (String(child.nodeId || "") === wanted) return child; } catch (ignoreNode) {}
+            var path = _mcpMediaPath(child);
+            if (path && (_mcpNormalizePath(path) === normalized || path === wanted)) return child;
+        }
+        return null;
+    }
+    return visit(app.project.rootItem);
+}
+
+function _mcpCollectProjectItems() {
+    var items = [];
+    if (!app.project || !app.project.rootItem) return items;
+    function visit(parent) {
+        if (!parent || !parent.children) return;
+        for (var i = 0; i < parent.children.numItems; i++) {
+            var child = parent.children[i];
+            if (!child) continue;
+            if (child.type === ProjectItemType.BIN) visit(child);
+            else items.push(child);
+        }
+    }
+    visit(app.project.rootItem);
+    return items;
+}
+
+function _mcpEnvelope(result, commandName) {
+    try {
+        var parsed = (typeof result === "string") ? JSON.parse(result) : result;
+        if (!parsed || parsed.success !== true) {
+            return { error: parsed && parsed.error ? parsed.error : commandName + " failed" };
+        }
+        return { data: parsed.data };
+    } catch (e) {
+        return { error: commandName + " returned invalid JSON: " + e.message };
+    }
+}
+
+function _mcpFindClipAtPosition(track, projectItem, positionSeconds) {
+    if (!track || !track.clips) return null;
+    var best = null;
+    var bestDistance = 999999999;
+    for (var i = 0; i < track.clips.numItems; i++) {
+        var clip = track.clips[i];
+        if (!clip) continue;
+        if (projectItem && clip.projectItem && clip.projectItem !== projectItem &&
+            _mcpMediaPath(clip.projectItem) !== _mcpMediaPath(projectItem)) continue;
+        var distance = Math.abs(_timeToSeconds(clip.start) - positionSeconds);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            best = { clip: clip, clipIndex: i };
+        }
+    }
+    return bestDistance < 0.05 ? best : null;
+}
+
+function _mcpTransitionDisplayName(value, trackType) {
+    var requested = String(value || "");
+    var normalized = requested.toLowerCase().replace(/[_-]/g, " ");
+    var names = {
+        "cross dissolve": "Cross Dissolve",
+        "dip to black": "Dip to Black",
+        "dip to white": "Dip to White",
+        "constant power": "Constant Power",
+        "constant gain": "Constant Gain",
+        "exponential fade": "Exponential Fade"
+    };
+    return names[normalized] || requested || (trackType === "audio" ? "Constant Power" : "Cross Dissolve");
+}
+
+/** Typed bridge: return the canonical TimelineState contract. */
+function mcpGetTimelineState(argsJson) {
+    try {
+        var parsed = _mcpParseObject(argsJson, "mcpGetTimelineState");
+        if (parsed.error) return _err(parsed.error);
+        var args = parsed.value;
+        var resolved = _mcpResolveSequence(args.sequenceId || args.sequence_id);
+        if (resolved.error) return _err(resolved.error);
+        var seq = resolved.sequence;
+        var fps = _mcpSequenceFPS(seq);
+
+        function buildTracks(tracks, trackType) {
+            var result = [];
+            if (!tracks) return result;
+            for (var t = 0; t < tracks.numTracks; t++) {
+                var track = tracks[t];
+                var clips = [];
+                if (track && track.clips) {
+                    for (var c = 0; c < track.clips.numItems; c++) {
+                        var clip = track.clips[c];
+                        if (!clip) continue;
+                        var speed = 1;
+                        try {
+                            if (clip.getSpeed) {
+                                speed = parseFloat(clip.getSpeed());
+                                if (speed > 10) speed = speed / 100;
+                                if (!speed || isNaN(speed)) speed = 1;
+                            }
+                        } catch (ignoreSpeed) { speed = 1; }
+                        clips.push({
+                            clipId: _mcpCanonicalClipId(trackType, t, c, clip),
+                            sourcePath: _mcpMediaPath(clip.projectItem),
+                            sourceRange: {
+                                inPoint: _mcpSecondsToTimecode(_timeToSeconds(clip.inPoint), fps),
+                                outPoint: _mcpSecondsToTimecode(_timeToSeconds(clip.outPoint), fps)
+                            },
+                            timelineRange: {
+                                inPoint: _mcpSecondsToTimecode(_timeToSeconds(clip.start), fps),
+                                outPoint: _mcpSecondsToTimecode(_timeToSeconds(clip.end), fps)
+                            },
+                            speed: speed
+                        });
+                    }
+                }
+                var muted = false;
+                var locked = false;
+                try { if (track.isMuted) muted = !!track.isMuted(); } catch (ignoreMuted) {}
+                try { if (track.isLocked) locked = !!track.isLocked(); } catch (ignoreLocked) {}
+                result.push({ index: t, type: trackType, clips: clips, isMuted: muted, isLocked: locked });
+            }
+            return result;
+        }
+
+        return _ok({
+            sequenceId: String(seq.sequenceID || ""),
+            videoTracks: buildTracks(seq.videoTracks, "video"),
+            audioTracks: buildTracks(seq.audioTracks, "audio"),
+            totalDurationSeconds: _timeToSeconds(seq.end)
+        });
+    } catch (e) { return _err("mcpGetTimelineState failed: " + e.message); }
+}
+
+/** Typed bridge: place an existing project item by its media path. */
+function mcpPlaceClip(argsJson) {
+    var placed = null;
+    var projectItem = null;
+    var originalRange = null;
+    var sourceMarksChanged = false;
+    try {
+        var parsed = _mcpParseObject(argsJson, "mcpPlaceClip");
+        if (parsed.error) return _err(parsed.error);
+        var args = parsed.value;
+        if (!args.sourcePath && !args.source_path) return _err("mcpPlaceClip requires sourcePath");
+        var resolved = _mcpResolveSequence(args.sequenceId || args.sequence_id);
+        if (resolved.error) return _err(resolved.error);
+        var seq = resolved.sequence;
+        projectItem = _mcpFindProjectItem(args.sourcePath || args.source_path);
+        if (!projectItem) return _err("Source is not imported in the project: " + (args.sourcePath || args.source_path));
+
+        var trackArgs = args.track || {};
+        var trackType = String(trackArgs.type || trackArgs.trackType || trackArgs.track_type || "video").toLowerCase();
+        if (trackType !== "video" && trackType !== "audio") return _err("Unsupported track type: " + trackType);
+        var trackIndex = parseInt(trackArgs.trackIndex !== undefined ? trackArgs.trackIndex : trackArgs.track_index, 10);
+        if (isNaN(trackIndex)) trackIndex = 0;
+        var tracks = trackType === "audio" ? seq.audioTracks : seq.videoTracks;
+        if (!tracks || trackIndex < 0 || trackIndex >= tracks.numTracks) {
+            return _err(trackType + " track index out of range: " + trackIndex);
+        }
+        var track = tracks[trackIndex];
+        if (!track.overwriteClip) return _err("Deterministic overwrite is unavailable on " + trackType + " track " + trackIndex);
+        var positionSeconds = _mcpTimecodeToSeconds(args.position);
+        if (positionSeconds < 0) return _err("Timeline position cannot be negative");
+
+        if (args.sourceRange || args.source_range) {
+            var range = args.sourceRange || args.source_range;
+            var rawInPoint = range.inPoint !== undefined ? range.inPoint : range.in_point;
+            var rawOutPoint = range.outPoint !== undefined ? range.outPoint : range.out_point;
+            var inSeconds = _mcpTimecodeToSeconds(rawInPoint);
+            var outSeconds = _mcpTimecodeToSeconds(rawOutPoint);
+            originalRange = _mcpReadProjectItemRange(projectItem);
+            if (originalRange.error) return _err(originalRange.error);
+            var hasIn = _mcpTimecodeWasProvided(rawInPoint);
+            var hasOut = _mcpTimecodeWasProvided(rawOutPoint);
+            var effectiveIn = hasIn ? inSeconds : originalRange.inPoint;
+            var effectiveOut = hasOut ? outSeconds : originalRange.outPoint;
+            if (effectiveIn < 0 || effectiveOut <= effectiveIn) return _err("Invalid sourceRange: effective outPoint must follow inPoint");
+            var marked = _mcpSetProjectItemRange(projectItem, effectiveIn, effectiveOut);
+            if (marked.error) return _err(marked.error);
+            sourceMarksChanged = true;
+        }
+
+        var overwriteError = null;
+        try {
+            track.overwriteClip(projectItem, _secondsToTime(positionSeconds));
+            placed = _mcpFindClipAtPosition(track, projectItem, positionSeconds);
+        } catch (placeErr) {
+            overwriteError = placeErr;
+        } finally {
+            if (sourceMarksChanged) {
+                var restored = _mcpSetProjectItemRange(projectItem, originalRange.inPoint, originalRange.outPoint);
+                if (restored.error) {
+                    if (placed && placed.clip) { try { placed.clip.remove(false, true); } catch (ignoreRestoreRollback) {} }
+                    return _err("Source marks were not restored: " + restored.error);
+                }
+            }
+        }
+        if (overwriteError) return _err("Overwrite failed: " + overwriteError.message);
+        if (!placed) return _err("Premiere reported no overwritten clip at " + positionSeconds + " seconds");
+
+        if (args.sourceRange || args.source_range) {
+            var actualRange = args.sourceRange || args.source_range;
+            var actualInPoint = actualRange.inPoint !== undefined ? actualRange.inPoint : actualRange.in_point;
+            var actualOutPoint = actualRange.outPoint !== undefined ? actualRange.outPoint : actualRange.out_point;
+            var requestedIn = _mcpTimecodeToSeconds(actualInPoint);
+            var requestedOut = _mcpTimecodeToSeconds(actualOutPoint);
+            var expectedIn = _mcpTimecodeWasProvided(actualInPoint) ? requestedIn : originalRange.inPoint;
+            var expectedOut = _mcpTimecodeWasProvided(actualOutPoint) ? requestedOut : originalRange.outPoint;
+            var tolerance = Math.max(0.02, 1.1 / _mcpSequenceFPS(seq));
+            if (Math.abs(_timeToSeconds(placed.clip.inPoint) - expectedIn) > tolerance ||
+                Math.abs(_timeToSeconds(placed.clip.outPoint) - expectedOut) > tolerance) {
+                try { placed.clip.remove(false, true); } catch (ignoreRangeRollback) {}
+                return _err("Premiere did not apply the requested source range");
+            }
+        }
+
+        var speed = parseFloat(args.speed);
+        if (isNaN(speed) || speed === 0) speed = 1;
+        if (speed <= 0) {
+            try { placed.clip.remove(false, true); } catch (ignoreRemoveSpeed) {}
+            return _err("mcpPlaceClip supports positive speed values only");
+        }
+        if (Math.abs(speed - 1) > 0.0001) {
+            if (!_mcpSequenceIsActive(seq)) {
+                try { placed.clip.remove(false, true); } catch (ignoreRemoveInactive) {}
+                return _err("Speed changes require the requested sequence to be active");
+            }
+            app.enableQE();
+            var qeSeq = qe.project.getActiveSequence();
+            var qeTrack = trackType === "audio" ? qeSeq.getAudioTrackAt(trackIndex) : qeSeq.getVideoTrackAt(trackIndex);
+            var qeClip = qeTrack ? qeTrack.getItemAt(placed.clipIndex) : null;
+            if (!qeClip || !qeClip.setSpeed) {
+                try { placed.clip.remove(false, true); } catch (ignoreRemoveQE) {}
+                return _err("Premiere QE DOM cannot set speed on the inserted clip");
+            }
+            qeClip.setSpeed(speed * 100, false, false);
+        }
+
+        return _ok({ clipId: _mcpCanonicalClipId(trackType, trackIndex, placed.clipIndex, placed.clip) });
+    } catch (e) {
+        if (placed && placed.clip) { try { placed.clip.remove(false, true); } catch (ignoreRollback) {} }
+        return _err("mcpPlaceClip failed: " + e.message);
+    }
+}
+
+function mcpRemoveClip(argsJson) {
+    try {
+        var parsed = _mcpParseObject(argsJson, "mcpRemoveClip");
+        if (parsed.error) return _err(parsed.error);
+        var args = parsed.value;
+        var resolved = _mcpResolveSequence(args.sequenceId || args.sequence_id);
+        if (resolved.error) return _err(resolved.error);
+        var clipRef = _mcpResolveClipId(resolved.sequence, args.clipId || args.clip_id);
+        if (clipRef.error) return _err(clipRef.error);
+        var removedId = _mcpCanonicalClipId(clipRef.trackType, clipRef.trackIndex, clipRef.clipIndex, clipRef.clip);
+        var beforeCount = clipRef.track.clips ? clipRef.track.clips.numItems : 0;
+        var removedIdentity = _mcpClipIdentity(clipRef.clip);
+        clipRef.clip.remove(false, true);
+        var removalCheck = _mcpVerifyClipRemoved(clipRef.track, removedIdentity, beforeCount);
+        if (removalCheck.error) return _err("mcpRemoveClip could not verify removal: " + removalCheck.error);
+        return _ok({ clipId: removedId, removed: true });
+    } catch (e) { return _err("mcpRemoveClip failed: " + e.message); }
+}
+
+function mcpAddTransition(argsJson) {
+    try {
+        var parsed = _mcpParseObject(argsJson, "mcpAddTransition");
+        if (parsed.error) return _err(parsed.error);
+        var args = parsed.value;
+        var resolved = _mcpResolveSequence(args.sequenceId || args.sequence_id);
+        if (resolved.error) return _err(resolved.error);
+        var seq = resolved.sequence;
+        if (!_mcpSequenceIsActive(seq)) return _err("Adding transitions requires the requested sequence to be active");
+        var trackArgs = args.track || {};
+        var trackType = String(trackArgs.type || "video").toLowerCase();
+        if (trackType !== "video" && trackType !== "audio") return _err("Unsupported track type: " + trackType);
+        var trackIndex = parseInt(trackArgs.trackIndex !== undefined ? trackArgs.trackIndex : trackArgs.track_index, 10);
+        if (isNaN(trackIndex)) trackIndex = 0;
+        var tracks = trackType === "audio" ? seq.audioTracks : seq.videoTracks;
+        if (!tracks || trackIndex < 0 || trackIndex >= tracks.numTracks) return _err(trackType + " track index out of range: " + trackIndex);
+        var track = tracks[trackIndex];
+        var position = _mcpTimecodeToSeconds(args.position);
+        var tolerance = (1 / _mcpSequenceFPS(seq)) + 0.002;
+        var clipIndex = -1;
+        var best = 999999999;
+        for (var i = 0; i < track.clips.numItems; i++) {
+            var distance = Math.abs(_timeToSeconds(track.clips[i].end) - position);
+            if (distance < best) { best = distance; clipIndex = i; }
+        }
+        if (clipIndex < 0 || best > tolerance) {
+            return _err("No edit point found at " + position + " seconds on " + trackType + " track " + trackIndex);
+        }
+        var requestedName = String(args.transitionType || args.transition_type || "");
+        var transitionName = _mcpTransitionDisplayName(requestedName, trackType);
+        var duration = parseFloat(args.durationSeconds !== undefined ? args.durationSeconds : args.duration_seconds);
+        if (isNaN(duration)) duration = 1;
+        if (duration <= 0) return _err("Transition duration must be positive");
+        var raw = trackType === "audio" ?
+            addAudioTransition(trackIndex, clipIndex, transitionName, duration) :
+            addVideoTransition(trackIndex, clipIndex, transitionName, duration, true);
+        var result = _mcpEnvelope(raw, "mcpAddTransition");
+        if (result.error) return _err(result.error);
+        var verified = result.data || {};
+        if (verified.verified !== true || !verified.transitionName || !(verified.duration > 0)) {
+            return _err("Premiere did not return verifiable transition readback");
+        }
+        return _ok({
+            transitionId: "transition:" + trackType + ":" + trackIndex + ":" + verified.transitionIndex,
+            transitionType: verified.transitionName,
+            requestedTransitionType: transitionName,
+            durationSeconds: verified.duration,
+            requestedDurationSeconds: duration,
+            durationAdjusted: verified.durationAdjusted === true,
+            verified: true
+        });
+    } catch (e) { return _err("mcpAddTransition failed: " + e.message); }
+}
+
+function mcpAddText(argsJson) {
+    return _err("unsupported mcpAddText: Premiere's CEP ExtendScript DOM cannot create a styled Essential Graphics text clip reliably; import and place a MOGRT instead");
+}
+
+function _mcpEffectParameterValue(value) {
+    if (typeof value !== "string") return value;
+    var trimmed = value.replace(/^\s+|\s+$/g, "");
+    if (trimmed === "true") return true;
+    if (trimmed === "false") return false;
+    if (/^-?(?:\d+\.?\d*|\.\d+)$/.test(trimmed)) return parseFloat(trimmed);
+    if (trimmed.charAt(0) === "[") {
+        try { return JSON.parse(trimmed); } catch (ignoreArray) {}
+    }
+    return value;
+}
+
+function _mcpRollbackAddedEffects(clip, beforeCount) {
+    if (!clip || !clip.components || beforeCount < 0) return false;
+    var guard = 0;
+    while (clip.components.numItems > beforeCount && guard < 32) {
+        guard++;
+        var component = clip.components[clip.components.numItems - 1];
+        var countBeforeRemoval = clip.components.numItems;
+        try {
+            if (component && component.remove) component.remove();
+            else if (clip.removeComponent) clip.removeComponent(component);
+            else return false;
+        } catch (removeError) {
+            try {
+                if (clip.removeComponent) clip.removeComponent(component);
+                else return false;
+            } catch (removeFallbackError) { return false; }
+        }
+        if (!clip.components || clip.components.numItems >= countBeforeRemoval) return false;
+    }
+    return clip.components && clip.components.numItems === beforeCount;
+}
+
+function _mcpEffectFailure(clip, beforeCount, message) {
+    var rolledBack = _mcpRollbackAddedEffects(clip, beforeCount);
+    return _err(message + (rolledBack ? "; newly attached effect was rolled back" : "; rollback failed, so the effect may remain attached"));
+}
+
+function mcpApplyEffect(argsJson) {
+    var rollbackClip = null;
+    var rollbackBeforeCount = -1;
+    try {
+        var parsed = _mcpParseObject(argsJson, "mcpApplyEffect");
+        if (parsed.error) return _err(parsed.error);
+        var args = parsed.value;
+        var resolved = _mcpResolveSequence(args.sequenceId || args.sequence_id);
+        if (resolved.error) return _err(resolved.error);
+        var seq = resolved.sequence;
+        if (!_mcpSequenceIsActive(seq)) return _err("Applying effects requires the requested sequence to be active");
+        var clipRef = _mcpResolveClipId(seq, args.clipId || args.clip_id);
+        if (clipRef.error) return _err(clipRef.error);
+        var effect = args.effect || {};
+        var effectName = String(effect.name || "");
+        if (!effectName) return _err("mcpApplyEffect requires effect.name");
+        var beforeCount = clipRef.clip.components ? clipRef.clip.components.numItems : 0;
+        rollbackClip = clipRef.clip;
+        rollbackBeforeCount = beforeCount;
+        app.enableQE();
+        var raw = clipRef.trackType === "audio" ?
+            applyAudioEffect(clipRef.trackIndex, clipRef.clipIndex, effectName) :
+            applyVideoEffect(clipRef.trackIndex, clipRef.clipIndex, effectName);
+        var applyResult = _mcpEnvelope(raw, "mcpApplyEffect");
+        if (applyResult.error) {
+            if (clipRef.clip.components && clipRef.clip.components.numItems > beforeCount) {
+                return _mcpEffectFailure(clipRef.clip, beforeCount, applyResult.error);
+            }
+            return _err(applyResult.error);
+        }
+
+        var components = clipRef.clip.components;
+        var afterCount = components ? components.numItems : 0;
+        if (afterCount <= beforeCount) {
+            return _err("Effect command returned without attaching a new component: " + effectName);
+        }
+        var component = null;
+        var componentIndex = -1;
+        for (var addedIndex = beforeCount; addedIndex < afterCount; addedIndex++) {
+            var addedCandidate = components[addedIndex];
+            if (addedCandidate && (String(addedCandidate.displayName || "").toLowerCase() === effectName.toLowerCase() ||
+                String(addedCandidate.matchName || "").toLowerCase() === effectName.toLowerCase())) {
+                component = addedCandidate;
+                componentIndex = addedIndex;
+                break;
+            }
+        }
+        if (!component && afterCount === beforeCount + 1) {
+            component = components[beforeCount];
+            componentIndex = beforeCount;
+        }
+        if (!component) {
+            return _mcpEffectFailure(clipRef.clip, beforeCount, "A component was attached, but Premiere could not verify it as effect '" + effectName + "'");
+        }
+
+        var parameters = effect.parameters || {};
+        var hasParameters = false;
+        for (var checkKey in parameters) { if (parameters.hasOwnProperty(checkKey)) { hasParameters = true; break; } }
+        if (!hasParameters) return _ok({ clipId: args.clipId || args.clip_id, effectName: component.displayName || component.matchName || effectName, componentIndex: componentIndex, parametersApplied: [], verified: true });
+
+        if (!component || !component.properties) {
+            return _mcpEffectFailure(clipRef.clip, beforeCount, "Effect was added, but its parameters are not exposed by Premiere: " + effectName);
+        }
+
+        var applied = [];
+        var failures = [];
+        for (var key in parameters) {
+            if (!parameters.hasOwnProperty(key)) continue;
+            var property = null;
+            try { if (component.properties.getParamForDisplayName) property = component.properties.getParamForDisplayName(key); } catch (ignoreNamed) {}
+            if (!property) {
+                for (var pi = 0; pi < component.properties.numItems; pi++) {
+                    var possible = component.properties[pi];
+                    if (possible && String(possible.displayName || "").toLowerCase() === String(key).toLowerCase()) {
+                        property = possible;
+                        break;
+                    }
+                }
+            }
+            if (!property || !property.setValue || !property.getValue) { failures.push(key + " (not readable and writable)"); continue; }
+            try {
+                var requestedValue = _mcpEffectParameterValue(parameters[key]);
+                var write = _setComponentParamAndVerify(property, requestedValue);
+                if (write.error) { failures.push(key + " (" + write.error + ")"); continue; }
+                applied.push(key);
+            } catch (setErr) { failures.push(key + " (" + setErr.message + ")"); }
+        }
+        if (failures.length) {
+            return _mcpEffectFailure(clipRef.clip, beforeCount, "Effect was added, but some parameters were not applied: " + failures.join(", "));
+        }
+        return _ok({ clipId: args.clipId || args.clip_id, effectName: component.displayName || component.matchName || effectName, componentIndex: componentIndex, parametersApplied: applied, verified: true });
+    } catch (e) {
+        if (rollbackClip && rollbackBeforeCount >= 0 && rollbackClip.components && rollbackClip.components.numItems > rollbackBeforeCount) {
+            return _mcpEffectFailure(rollbackClip, rollbackBeforeCount, "mcpApplyEffect failed: " + e.message);
+        }
+        return _err("mcpApplyEffect failed: " + e.message);
+    }
+}
+
+function mcpSetAudioLevel(argsJson) {
+    try {
+        var parsed = _mcpParseObject(argsJson, "mcpSetAudioLevel");
+        if (parsed.error) return _err(parsed.error);
+        var args = parsed.value;
+        var resolved = _mcpResolveSequence(args.sequenceId || args.sequence_id);
+        if (resolved.error) return _err(resolved.error);
+        var clipRef = _mcpResolveClipId(resolved.sequence, args.clipId || args.clip_id);
+        if (clipRef.error) return _err(clipRef.error);
+        if (clipRef.trackType !== "audio") return _err("mcpSetAudioLevel requires an audio:<track>:<clip> clipId");
+        var level = parseFloat(args.levelDb !== undefined ? args.levelDb : args.level_db);
+        if (isNaN(level)) return _err("mcpSetAudioLevel requires levelDb");
+        level = Math.max(-96, Math.min(15, level));
+        var property = _findVolumeParam(clipRef.clip);
+        if (!property || !property.setValue || !property.getValue) return _err("Volume/Level parameter is not readable and writable on audio clip");
+        var amplitude = _dbToAmplitude(level);
+        var write = _setComponentParamAndVerify(property, amplitude);
+        if (write.error) return _err("Could not set audio level: " + write.error);
+        var actualDb = _amplitudeToDb(write.value);
+        if (Math.abs(actualDb - level) > 0.25) return _err("Premiere did not accept the requested audio level");
+        return _ok({ clipId: args.clipId || args.clip_id, levelDb: actualDb, verified: true });
+    } catch (e) { return _err("mcpSetAudioLevel failed: " + e.message); }
+}
+
+function _mcpStrictEDLTime(value, label, defaultFPS) {
+    if (value === undefined || value === null || value === "") return { error: label + " is required" };
+    if (typeof value === "number") {
+        if (!isFinite(value) || value < 0) return { error: label + " must be a non-negative finite time" };
+        return { value: value };
+    }
+    if (typeof value === "string") {
+        if (!/^\s*\d+(?:\.\d+)?\s*$/.test(value)) return { error: label + " must be numeric or a Timecode object" };
+        var numeric = parseFloat(value);
+        return { value: numeric };
+    }
+    if (typeof value !== "object" || value instanceof Array) return { error: label + " must be numeric or a Timecode object" };
+    var hours = parseFloat(value.hours || 0);
+    var minutes = parseFloat(value.minutes || 0);
+    var seconds = parseFloat(value.seconds || 0);
+    var frames = parseFloat(value.frames || 0);
+    var fpsValue = value.frameRate !== undefined ? value.frameRate : value.frame_rate;
+    var fps = parseFloat(fpsValue) || parseFloat(defaultFPS) || 24;
+    if (!isFinite(hours) || !isFinite(minutes) || !isFinite(seconds) || !isFinite(frames) || !isFinite(fps) ||
+        hours < 0 || minutes < 0 || seconds < 0 || frames < 0 || fps <= 0) {
+        return { error: label + " contains invalid Timecode fields" };
+    }
+    if (hours !== Math.floor(hours) || minutes !== Math.floor(minutes) || seconds !== Math.floor(seconds) || frames !== Math.floor(frames)) {
+        return { error: label + " Timecode fields must be whole numbers" };
+    }
+    if (minutes >= 60 || seconds >= 60 || frames >= Math.ceil(fps)) return { error: label + " contains out-of-range Timecode fields" };
+    return { value: hours * 3600 + minutes * 60 + seconds + frames / fps };
+}
+
+function _mcpEDLTrackType(value) {
+    if (value === 1 || value === "1") return "video";
+    if (value === 2 || value === "2") return "audio";
+    var normalized = String(value || "").toLowerCase();
+    if (normalized === "video" || normalized === "track_type_video") return "video";
+    if (normalized === "audio" || normalized === "track_type_audio") return "audio";
+    return "";
+}
+
+function mcpExecuteEDL(argsJson) {
+    var createdSequence = null;
+    var previousActiveSequence = null;
+    try {
+        var parsed = _mcpParseObject(argsJson, "mcpExecuteEDL");
+        if (parsed.error) return _err(parsed.error);
+        var args = parsed.value;
+        var edl = args.edl || {};
+        var entries = edl.entries || [];
+        if (!(entries instanceof Array) || entries.length === 0) return _err("mcpExecuteEDL requires edl.entries");
+        if (!app.project) return _err("No project is open");
+        previousActiveSequence = app.project.activeSequence;
+        var autoCreate = args.autoCreateSequence === true || args.auto_create_sequence === true;
+        var canImport = args.autoImport === true || args.auto_import === true;
+        var errors = [];
+        var warnings = [];
+        var plannedEntries = [];
+        var requestedResolution = edl.sequenceResolution || edl.sequence_resolution || null;
+        var requestedWidth = 0;
+        var requestedHeight = 0;
+        if (requestedResolution) {
+            var requestedWidthRaw = parseFloat(requestedResolution.width);
+            var requestedHeightRaw = parseFloat(requestedResolution.height);
+            requestedWidth = parseInt(requestedWidthRaw, 10);
+            requestedHeight = parseInt(requestedHeightRaw, 10);
+            if (isNaN(requestedWidth) || requestedWidth <= 0 || requestedWidth !== requestedWidthRaw ||
+                isNaN(requestedHeight) || requestedHeight <= 0 || requestedHeight !== requestedHeightRaw) {
+                errors.push("EDL sequenceResolution must contain positive width and height values");
+            }
+        }
+        var requestedFPSValue = edl.sequenceFrameRate !== undefined ? edl.sequenceFrameRate : edl.sequence_frame_rate;
+        var parsedRequestedFPS = parseFloat(requestedFPSValue);
+        var requestedFPS = parsedRequestedFPS || 0;
+        if (requestedFPSValue !== undefined && requestedFPSValue !== null && requestedFPSValue !== 0 && requestedFPSValue !== "0" &&
+            (isNaN(parsedRequestedFPS) || parsedRequestedFPS <= 0)) errors.push("EDL sequenceFrameRate must be a positive number or 0 when unspecified");
+        if (requestedFPS > 240) errors.push("EDL sequenceFrameRate cannot exceed 240 fps");
+        if (autoCreate && (!requestedResolution || !requestedWidth || !requestedHeight)) errors.push("autoCreateSequence requires edl.sequenceResolution");
+        if (autoCreate && !requestedFPS) errors.push("autoCreateSequence requires a positive edl.sequenceFrameRate");
+
+        var requiredVideoTracks = 1;
+        var requiredAudioTracks = 1;
+        for (var i = 0; i < entries.length; i++) {
+            var entry = entries[i] || {};
+            var sourceId = String(entry.sourceAssetId || entry.source_asset_id || "");
+            if (!sourceId) { errors.push("Entry " + i + ": sourceAssetId is required"); continue; }
+            var item = _mcpFindProjectItem(sourceId);
+            var sourceReference = item ? (_mcpMediaPath(item) || sourceId) : "";
+            if (!item) {
+                var sourceFile = new File(sourceId);
+                if (canImport && sourceFile.exists) sourceReference = sourceFile.fsName;
+                else { errors.push("Entry " + i + ": source is not imported" + (canImport ? " and file was not found" : "") + ": " + sourceId); continue; }
+            }
+            var track = entry.track || {};
+            var trackType = _mcpEDLTrackType(track.type);
+            if (!trackType) { errors.push("Entry " + i + ": track.type must be video or audio"); continue; }
+            var trackIndexValue = track.trackIndex !== undefined ? track.trackIndex : track.track_index;
+            if (trackIndexValue === undefined) trackIndexValue = 0;
+            var trackIndexRaw = parseFloat(trackIndexValue);
+            var trackIndex = parseInt(trackIndexRaw, 10);
+            if (isNaN(trackIndex) || trackIndex !== trackIndexRaw || trackIndex < 0 || trackIndex >= 64) { errors.push("Entry " + i + ": trackIndex must be an integer between 0 and 63"); continue; }
+            if (trackType === "video") requiredVideoTracks = Math.max(requiredVideoTracks, trackIndex + 1);
+            else requiredAudioTracks = Math.max(requiredAudioTracks, trackIndex + 1);
+
+            var sourceRange = entry.sourceRange || entry.source_range;
+            var timelineRange = entry.timelineRange || entry.timeline_range;
+            if (!sourceRange) { errors.push("Entry " + i + ": sourceRange is required"); continue; }
+            if (!timelineRange) { errors.push("Entry " + i + ": timelineRange is required"); continue; }
+            var sourceInRaw = sourceRange.inPoint !== undefined ? sourceRange.inPoint : sourceRange.in_point;
+            var sourceOutRaw = sourceRange.outPoint !== undefined ? sourceRange.outPoint : sourceRange.out_point;
+            var timelineInRaw = timelineRange.inPoint !== undefined ? timelineRange.inPoint : timelineRange.in_point;
+            var timelineOutRaw = timelineRange.outPoint !== undefined ? timelineRange.outPoint : timelineRange.out_point;
+            var sourceIn = _mcpStrictEDLTime(sourceInRaw, "Entry " + i + " sourceRange.inPoint", requestedFPS);
+            var sourceOut = _mcpStrictEDLTime(sourceOutRaw, "Entry " + i + " sourceRange.outPoint", requestedFPS);
+            var timelineIn = _mcpStrictEDLTime(timelineInRaw, "Entry " + i + " timelineRange.inPoint", requestedFPS);
+            var timelineOut = _mcpStrictEDLTime(timelineOutRaw, "Entry " + i + " timelineRange.outPoint", requestedFPS);
+            if (sourceIn.error) errors.push(sourceIn.error);
+            if (sourceOut.error) errors.push(sourceOut.error);
+            if (timelineIn.error) errors.push(timelineIn.error);
+            if (timelineOut.error) errors.push(timelineOut.error);
+            if (sourceIn.error || sourceOut.error || timelineIn.error || timelineOut.error) continue;
+            if (sourceOut.value <= sourceIn.value) { errors.push("Entry " + i + ": sourceRange.outPoint must follow inPoint"); continue; }
+            if (timelineOut.value <= timelineIn.value) { errors.push("Entry " + i + ": timelineRange.outPoint must follow inPoint"); continue; }
+            var speed = entry.speed === undefined ? 1 : parseFloat(entry.speed);
+            if (isNaN(speed) || speed <= 0) { errors.push("Entry " + i + ": speed must be a positive number"); continue; }
+            var frameTolerance = Math.max(0.02, 1.1 / (requestedFPS || 24));
+            var expectedTimelineDuration = (sourceOut.value - sourceIn.value) / speed;
+            if (Math.abs((timelineOut.value - timelineIn.value) - expectedTimelineDuration) > frameTolerance) {
+                errors.push("Entry " + i + ": timelineRange duration does not match sourceRange duration at the requested speed");
+                continue;
+            }
+
+            var transition = entry.transition || null;
+            var transitionName = transition ? String(transition.type || "") : "";
+            var transitionDuration = 0;
+            var transitionAlignment = "";
+            if (transitionName) {
+                var transitionDurationRaw = transition.durationSeconds !== undefined ? transition.durationSeconds : transition.duration_seconds;
+                transitionDuration = parseFloat(transitionDurationRaw);
+                if (isNaN(transitionDuration) || transitionDuration <= 0) { errors.push("Entry " + i + ": transition duration must be positive"); continue; }
+                transitionAlignment = String(transition.alignment || "").replace(/^\s+|\s+$/g, "");
+                if (transitionAlignment) {
+                    errors.push("Entry " + i + ": transition alignment '" + transitionAlignment + "' is unsupported because Premiere QE cannot verify it");
+                    continue;
+                }
+            }
+            plannedEntries.push({
+                index: i,
+                sourceReference: sourceReference,
+                trackType: trackType,
+                trackIndex: trackIndex,
+                sourceIn: sourceIn.value,
+                sourceOut: sourceOut.value,
+                timelineIn: timelineIn.value,
+                timelineOut: timelineOut.value,
+                speed: speed,
+                transitionName: transitionName ? _mcpTransitionDisplayName(transitionName, trackType) : "",
+                transitionDuration: transitionDuration,
+                transitionAlignment: transitionAlignment,
+                effects: entry.effects || []
+            });
+        }
+
+        if (errors.length || plannedEntries.length !== entries.length) {
+            return _ok({
+                sequenceId: "", status: "failed", clipsPlaced: 0,
+                transitionsAdded: 0, errors: errors, warnings: warnings
+            });
+        }
+
+        var seq = null;
+        if (autoCreate) {
+            var createResult = _mcpEnvelope(createSequence(JSON.stringify({
+                name: String(edl.name || "EDL Sequence"),
+                width: requestedWidth,
+                height: requestedHeight,
+                fps: requestedFPS,
+                videoTracks: requiredVideoTracks,
+                audioTracks: requiredAudioTracks
+            })), "mcpExecuteEDL sequence creation");
+            if (createResult.error) {
+                return _ok({ sequenceId: "", status: "failed", clipsPlaced: 0, transitionsAdded: 0, errors: [createResult.error], warnings: warnings });
+            }
+            var createdSequenceId = String(createResult.data.sequenceID || "");
+            var createdResolved = _mcpResolveSequence(createdSequenceId);
+            createdSequence = createdResolved.error ? null : createdResolved.sequence;
+            seq = app.project.activeSequence;
+            if (!createdSequence || !seq || String(seq.sequenceID || "") !== createdSequenceId) {
+                if (createdSequence && _mcpDeleteSequenceQuietly(createdSequence) && previousActiveSequence) {
+                    try { app.project.activeSequence = previousActiveSequence; } catch (ignoreActivationRestore) {}
+                }
+                createdSequence = null;
+                return _ok({ sequenceId: "", status: "failed", clipsPlaced: 0, transitionsAdded: 0, errors: ["Premiere did not activate the verified EDL sequence"], warnings: warnings });
+            }
+        } else {
+            seq = app.project.activeSequence;
+            if (!seq) return _err("No active sequence; set autoCreateSequence or open a sequence first");
+        }
+
+        var actualSpec = _mcpActualSequenceSpec(seq);
+        if (requestedResolution && (actualSpec.width !== requestedWidth || actualSpec.height !== requestedHeight)) {
+            errors.push("Active sequence resolution " + actualSpec.width + "x" + actualSpec.height + " does not match requested " + requestedWidth + "x" + requestedHeight);
+        }
+        if (requestedFPS && (!actualSpec.fps || Math.abs(actualSpec.fps - requestedFPS) > 0.02)) {
+            errors.push("Active sequence frame rate " + actualSpec.fps + " does not match requested " + requestedFPS);
+        }
+        for (var pe = 0; pe < plannedEntries.length; pe++) {
+            var planned = plannedEntries[pe];
+            var available = planned.trackType === "audio" ? seq.audioTracks : seq.videoTracks;
+            if (!available || planned.trackIndex >= available.numTracks) errors.push("Entry " + planned.index + ": " + planned.trackType + " track " + planned.trackIndex + " does not exist");
+        }
+        if (errors.length) {
+            if (createdSequence) {
+                var preflightDeleted = _mcpDeleteSequenceQuietly(createdSequence);
+                if (preflightDeleted) {
+                    if (previousActiveSequence) { try { app.project.activeSequence = previousActiveSequence; } catch (ignorePreflightActiveRestore) {} }
+                    warnings.push("The auto-created sequence was deleted after settings preflight failed");
+                    createdSequence = null;
+                }
+                else warnings.push("Could not delete the auto-created sequence after settings preflight failed");
+            }
+            return _ok({ sequenceId: createdSequence ? String(createdSequence.sequenceID || "") : "", status: "failed", clipsPlaced: 0, transitionsAdded: 0, errors: errors, warnings: warnings });
+        }
+
+        var clips = [];
+        for (var ci = 0; ci < plannedEntries.length; ci++) {
+            var plan = plannedEntries[ci];
+            clips.push({
+                file: plan.sourceReference,
+                autoImport: canImport,
+                trackType: plan.trackType,
+                trackIndex: plan.trackIndex,
+                position: plan.timelineIn,
+                expectedTimelineOut: plan.timelineOut,
+                inPoint: plan.sourceIn,
+                outPoint: plan.sourceOut,
+                speed: plan.speed,
+                transitionName: plan.transitionName,
+                transitionDuration: plan.transitionDuration,
+                transitionAlignment: plan.transitionAlignment,
+                effects: plan.effects
+            });
+        }
+        var assembled = _mcpEnvelope(assembleFromEDL(JSON.stringify({ clips: clips })), "mcpExecuteEDL");
+        if (assembled.error) {
+            errors.push(assembled.error);
+            if (createdSequence && _mcpDeleteSequenceQuietly(createdSequence)) {
+                if (previousActiveSequence) { try { app.project.activeSequence = previousActiveSequence; } catch (ignoreAssemblyActiveRestore) {} }
+                warnings.push("The auto-created sequence was deleted after EDL assembly failed");
+                createdSequence = null;
+            }
+            return _ok({ sequenceId: createdSequence ? String(createdSequence.sequenceID || "") : "", status: "failed", clipsPlaced: 0, transitionsAdded: 0, errors: errors, warnings: warnings });
+        }
+        var data = assembled.data || {};
+        if (data.errors && data.errors.length) {
+            for (var ae = 0; ae < data.errors.length; ae++) errors.push(data.errors[ae]);
+        }
+        if (data.warnings && data.warnings.length) {
+            for (var aw = 0; aw < data.warnings.length; aw++) warnings.push(data.warnings[aw]);
+        }
+        var placedCount = parseInt(data.placed, 10) || 0;
+        var transitionCount = parseInt(data.transitionsAdded, 10) || 0;
+        var completed = errors.length === 0 && placedCount === entries.length;
+        if (!completed && createdSequence) {
+            if (_mcpDeleteSequenceQuietly(createdSequence)) {
+                if (previousActiveSequence) { try { app.project.activeSequence = previousActiveSequence; } catch (ignorePartialActiveRestore) {} }
+                warnings.push("The auto-created sequence was deleted because the EDL did not complete; imported project items remain");
+                createdSequence = null;
+                placedCount = 0;
+                transitionCount = 0;
+            } else {
+                warnings.push("The failed auto-created sequence remains because Premiere could not delete it");
+            }
+        } else if (!completed && placedCount > 0) {
+            warnings.push("The active sequence contains partial EDL edits; inspect or undo them before retrying");
+        }
+        return _ok({
+            sequenceId: createdSequence ? String(createdSequence.sequenceID || "") : (autoCreate ? "" : String(seq.sequenceID || "")),
+            status: completed ? "completed" : "failed",
+            clipsPlaced: placedCount,
+            transitionsAdded: transitionCount,
+            errors: errors,
+            warnings: warnings
+        });
+    } catch (e) {
+        if (createdSequence && _mcpDeleteSequenceQuietly(createdSequence) && previousActiveSequence) {
+            try { app.project.activeSequence = previousActiveSequence; } catch (ignoreCatchActiveRestore) {}
+        }
+        return _err("mcpExecuteEDL failed: " + e.message);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Renamed Go command compatibility wrappers
+// ---------------------------------------------------------------------------
+
+function lumetriSetExposure2(trackIndex, clipIndex, value) { return lumetriSetExposure(trackIndex, clipIndex, value); }
+function lumetriSetContrast2(trackIndex, clipIndex, value) { return lumetriSetContrast(trackIndex, clipIndex, value); }
+function lumetriSetTemperature2(trackIndex, clipIndex, value) { return lumetriSetTemperature(trackIndex, clipIndex, value); }
+function lumetriSetTint2(trackIndex, clipIndex, value) { return lumetriSetTint(trackIndex, clipIndex, value); }
+function lumetriSetSaturation2(trackIndex, clipIndex, value) { return lumetriSetSaturation(trackIndex, clipIndex, value); }
+function getEstimatedRenderTime2(sequenceIndex) { return getEstimatedRenderTime(sequenceIndex); }
+function getInstalledPlugins2() { return getInstalledPlugins(); }
+function getInstalledEffects2() { return getInstalledEffects(); }
+function getInstalledTransitions2() { return getInstalledTransitions(); }
+function getExportHistory2(sequenceIndex) { return getExportHistory(sequenceIndex); }
+function getPerformanceReport2() { return getAnalyticsPerformanceReport(); }
+function executeMenuItemByID(menuItemID) { return executeMenuItem(menuItemID); }
+function selectAll() { return selectAllClips(); }
+function listExportPresetsFromDisk() { return listExportPresets(); }
+
+function exportEDLFile(outputPath, format) {
+    var result = exportEDL(outputPath, format);
+    var envelope = _mcpEnvelope(result, "exportEDLFile");
+    if (envelope.error) return _err(envelope.error);
+    var output = new File(outputPath);
+    if (!output.exists || output.length === 0) return _err("exportEDLFile did not create a non-empty EDL file");
+    return result;
+}
+
+function importOMFFile(omfPath, targetBin) {
+    if (!omfPath) return _err("omfPath is required");
+    var source = new File(omfPath);
+    if (!source.exists) return _err("OMF file not found: " + omfPath);
+    var result = importOMF(source.fsName, targetBin);
+    var envelope = _mcpEnvelope(result, "importOMFFile");
+    if (envelope.error) return _err(envelope.error);
+    if (!envelope.data || envelope.data.imported !== true) return _err("Premiere did not import the OMF file");
+    return result;
+}
+
+function applyVignetteEffect(trackIndex, clipIndex, amount, feather) {
+    return applyVignette(trackIndex, clipIndex, amount, feather);
+}
+
+// ---------------------------------------------------------------------------
+// Media Browser commands (ported from the lightweight core host)
+// ---------------------------------------------------------------------------
+
+function browsePath(argsJson) {
+    try {
+        var parsed = _mcpParseObject(argsJson, "browsePath");
+        if (parsed.error) return _err(parsed.error);
+        var pathValue = parsed.value.path;
+        if (!pathValue) return _err("browsePath requires path");
+        var folder = new Folder(pathValue);
+        if (!folder.exists) return _err("Path not found: " + pathValue);
+        var entries = folder.getFiles();
+        var items = [];
+        for (var i = 0; i < entries.length; i++) {
+            var entry = entries[i];
+            if (!entry) continue;
+            items.push({
+                name: entry.name,
+                path: entry.fsName,
+                isFolder: entry instanceof Folder,
+                size: entry instanceof File ? entry.length : 0,
+                modified: entry.modified ? entry.modified.toString() : ""
+            });
+        }
+        return _ok({ path: folder.fsName, items: items, count: items.length });
+    } catch (e) { return _err("browsePath failed: " + e.message); }
+}
+
+function browseMediaFiles(argsJson) {
+    try {
+        var parsed = _mcpParseObject(argsJson, "browseMediaFiles");
+        if (parsed.error) return _err(parsed.error);
+        var pathValue = parsed.value.path;
+        if (!pathValue) return _err("browseMediaFiles requires path");
+        var folder = new Folder(pathValue);
+        if (!folder.exists) return _err("Path not found: " + pathValue);
+        var supported = {
+            mp4:1,mov:1,avi:1,mkv:1,mxf:1,m4v:1,wmv:1,mpg:1,mpeg:1,m2t:1,mts:1,webm:1,
+            wav:1,mp3:1,aac:1,aif:1,aiff:1,flac:1,ogg:1,m4a:1,
+            png:1,jpg:1,jpeg:1,tif:1,tiff:1,psd:1,ai:1,bmp:1,gif:1,webp:1,exr:1,dpx:1,
+            prproj:1,mogrt:1
+        };
+        var entries = folder.getFiles();
+        var items = [];
+        for (var i = 0; i < entries.length; i++) {
+            var entry = entries[i];
+            if (!entry) continue;
+            if (entry instanceof Folder) {
+                items.push({ name: entry.name, path: entry.fsName, isFolder: true, type: "folder" });
+                continue;
+            }
+            var dot = entry.name.lastIndexOf(".");
+            var ext = dot >= 0 ? entry.name.substring(dot + 1).toLowerCase() : "";
+            if (supported[ext]) items.push({ name: entry.name, path: entry.fsName, isFolder: false, type: ext, size: entry.length });
+        }
+        return _ok({ path: folder.fsName, items: items, count: items.length });
+    } catch (e) { return _err("browseMediaFiles failed: " + e.message); }
+}
+
+function getFavoriteLocations() {
+    try {
+        var locations = [];
+        function addLocation(name, folder) {
+            try { if (folder && folder.exists) locations.push({ name: name, path: folder.fsName }); } catch (ignore) {}
+        }
+        addLocation("Documents", Folder.myDocuments);
+        addLocation("Desktop", Folder.desktop);
+        try { addLocation("Home", Folder.myDocuments.parent); } catch (ignoreHome) {}
+        try { addLocation("Movies", new Folder(Folder.myDocuments.parent.fsName + "/Movies")); } catch (ignoreMovies) {}
+        try { addLocation("Downloads", new Folder(Folder.myDocuments.parent.fsName + "/Downloads")); } catch (ignoreDownloads) {}
+        if (app.project && app.project.path) {
+            try { addLocation("Current Project", new File(app.project.path).parent); } catch (ignoreProject) {}
+        }
+        return _ok({ locations: locations });
+    } catch (e) { return _err("getFavoriteLocations failed: " + e.message); }
+}
+
+function importFromMediaBrowser(argsJson) {
+    try {
+        var parsed = _mcpParseObject(argsJson, "importFromMediaBrowser");
+        if (parsed.error) return _err(parsed.error);
+        if (!app.project) return _err("No project is open");
+        var paths = parsed.value.paths || (parsed.value.path ? [parsed.value.path] : null);
+        if (!paths || !(paths instanceof Array) || paths.length === 0) return _err("importFromMediaBrowser requires paths");
+        var normalized = [];
+        for (var i = 0; i < paths.length; i++) {
+            var file = new File(paths[i]);
+            if (!file.exists) return _err("File not found: " + paths[i]);
+            normalized.push(file.fsName);
+        }
+        var target = app.project.getInsertionBin ? app.project.getInsertionBin() : app.project.rootItem;
+        var imported = app.project.importFiles(normalized, true, target, false);
+        if (imported === false) return _err("Premiere did not import the requested media files");
+        return _ok({ imported: true, count: normalized.length, paths: normalized });
+    } catch (e) { return _err("importFromMediaBrowser failed: " + e.message); }
+}
+
+function getRecentLocations() {
+    try {
+        var locations = [];
+        var seen = {};
+        function addPath(name, pathValue) {
+            if (!pathValue) return;
+            var folder = new Folder(pathValue);
+            if (!folder.exists) return;
+            var key = String(folder.fsName).toLowerCase();
+            if (seen[key]) return;
+            seen[key] = true;
+            locations.push({ name: name, path: folder.fsName });
+        }
+        if (app.project && app.project.path) addPath("Current Project", new File(app.project.path).parent.fsName);
+        var items = _mcpCollectProjectItems();
+        for (var i = 0; i < items.length && locations.length < 25; i++) {
+            var mediaPath = _mcpMediaPath(items[i]);
+            if (mediaPath) addPath("Media", new File(mediaPath).parent.fsName);
+        }
+        return _ok({ locations: locations, count: locations.length, source: "current project and imported media" });
+    } catch (e) { return _err("getRecentLocations failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// QE-backed Timeline panel options
+// ---------------------------------------------------------------------------
+
+function _mcpSetQESequenceOption(argsJson, commandName, methodName) {
+    try {
+        var parsed = _mcpParseObject(argsJson, commandName);
+        if (parsed.error) return _err(parsed.error);
+        if (!app.project || !app.project.activeSequence) return _err("No active sequence");
+        var enabled = parsed.value.enabled !== false;
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (!qeSeq) return _err("QE DOM is unavailable for the active sequence");
+        if (typeof qeSeq[methodName] !== "function") return _err(commandName + " is unavailable in this Premiere version");
+        qeSeq[methodName](enabled);
+        return _ok({ enabled: enabled, command: commandName });
+    } catch (e) { return _err(commandName + " failed: " + e.message); }
+}
+
+function setAudioWaveformLabelColor(argsJson) { return _mcpSetQESequenceOption(argsJson, "setAudioWaveformLabelColor", "setAudioWaveformsUseLabelColor"); }
+function setLogarithmicWaveformScaling(argsJson) { return _mcpSetQESequenceOption(argsJson, "setLogarithmicWaveformScaling", "setLogarithmicWaveformScaling"); }
+function setTimeRulerNumbers(argsJson) { return _mcpSetQESequenceOption(argsJson, "setTimeRulerNumbers", "setTimeRulerNumbersEnabled"); }
+function setMultiCameraAudioFollowsVideo(argsJson) { return _mcpSetQESequenceOption(argsJson, "setMultiCameraAudioFollowsVideo", "setMultiCameraAudioFollowsVideo"); }
+function setMultiCameraSelectionTopPanel(argsJson) { return _mcpSetQESequenceOption(argsJson, "setMultiCameraSelectionTopPanel", "setMultiCameraSelectionTopPanel"); }
+function setMultiCameraFollowsNestSetting(argsJson) { return _mcpSetQESequenceOption(argsJson, "setMultiCameraFollowsNestSetting", "setMultiCameraFollowsNestSetting"); }
+function setRectifiedAudioWaveforms(argsJson) { return _mcpSetQESequenceOption(argsJson, "setRectifiedAudioWaveforms", "setRectifiedWaveforms"); }
+
+// ---------------------------------------------------------------------------
+// Frame capture and deliberately disabled arbitrary-code tools
+// ---------------------------------------------------------------------------
+
+function _mcpBinaryToBase64(data) {
+    var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    var result = "";
+    var i = 0;
+    while (i < data.length) {
+        var remaining = data.length - i;
+        var a = data.charCodeAt(i++) & 255;
+        var b = remaining > 1 ? data.charCodeAt(i++) & 255 : 0;
+        var c = remaining > 2 ? data.charCodeAt(i++) & 255 : 0;
+        result += chars.charAt(a >> 2);
+        result += chars.charAt(((a & 3) << 4) | (b >> 4));
+        result += remaining > 1 ? chars.charAt(((b & 15) << 2) | (c >> 6)) : "=";
+        result += remaining > 2 ? chars.charAt(c & 63) : "=";
+    }
+    return result;
+}
+
+function captureFrameAsBase64(argsJson) {
+    var outputFile = null;
+    try {
+        if (!app.project || !app.project.activeSequence) return _err("No active sequence");
+        var seq = app.project.activeSequence;
+        var position = seq.getPlayerPosition();
+        if (!position) return _err("Could not read the playhead position");
+        outputFile = new File(Folder.temp.fsName + "/premiere_mcp_frame_" + (new Date()).getTime() + ".png");
+        var exported = false;
+        if (seq.exportFramePNG) {
+            seq.exportFramePNG(String(position.ticks), outputFile.fsName);
+            exported = outputFile.exists;
+        }
+        if (!exported) {
+            app.enableQE();
+            var qeSeq = qe.project.getActiveSequence();
+            if (!qeSeq || !qeSeq.exportFramePNG) return _err("Frame export is unavailable in this Premiere version");
+            qeSeq.exportFramePNG(position.ticks, outputFile.fsName);
+        }
+        if (!outputFile.exists || outputFile.length === 0) return _err("Premiere did not create the captured PNG");
+        outputFile.encoding = "BINARY";
+        if (!outputFile.open("r")) return _err("Could not open the captured PNG");
+        var binary = outputFile.read();
+        outputFile.close();
+        var settings = null;
+        try { settings = seq.getSettings(); } catch (ignoreSettings) {}
+        var width = settings ? parseInt(settings.videoFrameWidth, 10) || 0 : (seq.frameSizeHorizontal || 0);
+        var height = settings ? parseInt(settings.videoFrameHeight, 10) || 0 : (seq.frameSizeVertical || 0);
+        var payload = {
+            image_base64: _mcpBinaryToBase64(binary),
+            format: "png",
+            width: width,
+            height: height,
+            timecode: _timeToSeconds(position)
+        };
+        try { outputFile.remove(); } catch (ignoreCleanup) {}
+        return _ok(payload);
+    } catch (e) {
+        if (outputFile) { try { if (outputFile.opened) outputFile.close(); } catch (ignoreClose) {} try { if (outputFile.exists) outputFile.remove(); } catch (ignoreRemove) {} }
+        return _err("captureFrameAsBase64 failed: " + e.message);
+    }
+}
+
+function executeSecureScript(script, validate) {
+    return _err("unsupported executeSecureScript: arbitrary code evaluation is disabled; expose a named, validated host command instead");
+}
+
+function executeQEScript(script) {
+    return _err("unsupported executeQEScript: arbitrary QE code evaluation is disabled; expose a named, validated host command instead");
+}
+
+// ---------------------------------------------------------------------------
+// AI/workflow commands: real timeline heuristics or explicit unsupported
+// ---------------------------------------------------------------------------
+
+function smartCut(params) { return _err("unsupported smartCut: silence detection requires decoded audio analysis, which ExtendScript does not provide"); }
+function smartTrim(params) { return _err("unsupported smartTrim: silence detection requires decoded audio analysis, which ExtendScript does not provide"); }
+function autoColorMatch(params) { return _err("unsupported autoColorMatch: frame color analysis is unavailable in ExtendScript"); }
+function autoAudioLevels(params) { return _err("unsupported autoAudioLevels: LUFS and peak analysis require decoded audio samples"); }
+function analyzeClip(filePath) { return _err("unsupported analyzeClip: motion, brightness, and audio analysis require the media-analysis service"); }
+function detectJumpCuts(sequenceID, threshold) { return _err("unsupported detectJumpCuts: adjacent-frame comparison is unavailable in ExtendScript"); }
+function detectAudioIssues(sequenceID) { return _err("unsupported detectAudioIssues: waveform sample analysis is unavailable in ExtendScript"); }
+function generateRoughCut(params) { return _err("unsupported generateRoughCut: script-to-asset matching must run in the intelligence service"); }
+function refineEdit(params) { return _err("unsupported refineEdit: no deterministic edit plan was supplied"); }
+function generateTrailer(params) { return _err("unsupported generateTrailer: highlight selection requires content analysis"); }
+function createSocialCuts(params) { return _err("unsupported createSocialCuts: automatic reframing and highlight selection are unavailable in ExtendScript"); }
+function aITagClips(filePath) { return _err("unsupported aITagClips: semantic media tagging requires a vision/audio model"); }
+
+function _aiCollectSequenceStats(seq) {
+    var stats = {
+        sequence_id: String(seq.sequenceID || ""),
+        total_duration_seconds: _timeToSeconds(seq.end),
+        video_clip_count: 0,
+        audio_clip_count: 0,
+        avg_clip_duration_seconds: 0,
+        video_tracks_used: 0,
+        audio_tracks_used: 0,
+        transition_count: 0,
+        effects_count: 0,
+        total_gap_duration_seconds: 0,
+        gap_count: 0,
+        gaps: []
+    };
+    var clipDurationTotal = 0;
+    var intervals = [];
+    for (var v = 0; v < seq.videoTracks.numTracks; v++) {
+        var vt = seq.videoTracks[v];
+        if (vt.clips && vt.clips.numItems > 0) stats.video_tracks_used++;
+        if (vt.transitions) stats.transition_count += vt.transitions.numItems;
+        for (var vc = 0; vt.clips && vc < vt.clips.numItems; vc++) {
+            var vClip = vt.clips[vc];
+            var start = _timeToSeconds(vClip.start);
+            var end = _timeToSeconds(vClip.end);
+            intervals.push({ start: start, end: end });
+            stats.video_clip_count++;
+            clipDurationTotal += Math.max(0, end - start);
+            try { stats.effects_count += Math.max(0, vClip.components.numItems - 2); } catch (ignoreEffects) {}
+        }
+    }
+    for (var a = 0; a < seq.audioTracks.numTracks; a++) {
+        var at = seq.audioTracks[a];
+        if (at.clips && at.clips.numItems > 0) stats.audio_tracks_used++;
+        if (at.transitions) stats.transition_count += at.transitions.numItems;
+        for (var ac = 0; at.clips && ac < at.clips.numItems; ac++) stats.audio_clip_count++;
+    }
+    stats.avg_clip_duration_seconds = stats.video_clip_count ? clipDurationTotal / stats.video_clip_count : 0;
+    intervals.sort(function (left, right) { return left.start - right.start; });
+    var cursor = 0;
+    for (var i = 0; i < intervals.length; i++) {
+        if (intervals[i].start > cursor + 0.01) {
+            var gap = { start: cursor, end: intervals[i].start, duration: intervals[i].start - cursor };
+            stats.gaps.push(gap);
+            stats.total_gap_duration_seconds += gap.duration;
+        }
+        if (intervals[i].end > cursor) cursor = intervals[i].end;
+    }
+    if (stats.total_duration_seconds > cursor + 0.01) {
+        var tailGap = { start: cursor, end: stats.total_duration_seconds, duration: stats.total_duration_seconds - cursor };
+        stats.gaps.push(tailGap);
+        stats.total_gap_duration_seconds += tailGap.duration;
+    }
+    stats.gap_count = stats.gaps.length;
+    return stats;
+}
+
+function suggestTransitions(sequenceID) {
+    try {
+        var resolved = _mcpResolveSequence(sequenceID);
+        if (resolved.error) return _err(resolved.error);
+        var seq = resolved.sequence;
+        var fps = _mcpSequenceFPS(seq);
+        var tolerance = (1 / fps) + 0.002;
+        var suggestions = [];
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            for (var c = 0; track.clips && c < track.clips.numItems - 1; c++) {
+                var left = track.clips[c];
+                var right = track.clips[c + 1];
+                var editPoint = _timeToSeconds(left.end);
+                if (Math.abs(editPoint - _timeToSeconds(right.start)) > tolerance) continue;
+                var shortest = Math.min(_timeToSeconds(left.duration), _timeToSeconds(right.duration));
+                if (shortest < 0.5) continue;
+                suggestions.push({
+                    position_seconds: editPoint,
+                    type: "Cross Dissolve",
+                    duration_seconds: Math.min(0.5, shortest / 4),
+                    confidence: 0.5,
+                    reason: "Deterministic timeline heuristic: contiguous edit between clips on video track " + t
+                });
+                if (suggestions.length >= 100) break;
+            }
+            if (suggestions.length >= 100) break;
+        }
+        return _ok({ suggestions: suggestions });
+    } catch (e) { return _err("suggestTransitions failed: " + e.message); }
+}
+
+function suggestMusic(sequenceID) {
+    try {
+        var resolved = _mcpResolveSequence(sequenceID);
+        if (resolved.error) return _err(resolved.error);
+        var seq = resolved.sequence;
+        var points = [];
+        var seen = {};
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            for (var c = 0; track.clips && c < track.clips.numItems; c++) {
+                var start = _timeToSeconds(track.clips[c].start);
+                if (start <= 0) continue;
+                var key = String(Math.round(start * 1000));
+                if (!seen[key]) { seen[key] = true; points.push(start); }
+            }
+        }
+        points.sort(function (left, right) { return left - right; });
+        var intervalTotal = 0;
+        for (var p = 1; p < points.length; p++) intervalTotal += points[p] - points[p - 1];
+        var avg = points.length > 1 ? intervalTotal / (points.length - 1) : 0;
+        var suggestions = [];
+        for (var i = 0; i < points.length && i < 100; i++) {
+            suggestions.push({
+                time_seconds: points[i],
+                type: "edit_point",
+                reason: "Timeline edit point suitable for manual beat alignment",
+                intensity: 0.5
+            });
+        }
+        return _ok({ suggestions: suggestions, avg_pacing_seconds: avg, overall_mood: "undetermined (timeline-only analysis)" });
+    } catch (e) { return _err("suggestMusic failed: " + e.message); }
+}
+
+function analyzeSequence(sequenceID) {
+    try {
+        var resolved = _mcpResolveSequence(sequenceID);
+        if (resolved.error) return _err(resolved.error);
+        var stats = _aiCollectSequenceStats(resolved.sequence);
+        var issues = [];
+        var suggestions = [];
+        if (stats.gap_count) { issues.push(stats.gap_count + " uncovered video gap(s) detected"); suggestions.push("Review uncovered timeline gaps before delivery"); }
+        if (stats.audio_clip_count === 0) issues.push("No audio clips found");
+        issues.push("Audio balance was not scored because waveform samples are unavailable in ExtendScript");
+        if (stats.effects_count > stats.video_clip_count * 2) suggestions.push("Preview effect-heavy sections before export");
+        var editsPerMinute = stats.total_duration_seconds > 0 ? stats.video_clip_count / (stats.total_duration_seconds / 60) : 0;
+        return _ok({
+            sequence_id: stats.sequence_id,
+            total_duration_seconds: stats.total_duration_seconds,
+            clip_count: stats.video_clip_count + stats.audio_clip_count,
+            avg_clip_duration_seconds: stats.avg_clip_duration_seconds,
+            pacing_score: editsPerMinute,
+            audio_balance_score: 0,
+            gap_count: stats.gap_count,
+            transition_count: stats.transition_count,
+            issues: issues,
+            suggestions: suggestions
+        });
+    } catch (e) { return _err("analyzeSequence failed: " + e.message); }
+}
+
+function getSequenceStatistics(sequenceID) {
+    try {
+        var resolved = _mcpResolveSequence(sequenceID);
+        if (resolved.error) return _err(resolved.error);
+        var stats = _aiCollectSequenceStats(resolved.sequence);
+        delete stats.gaps;
+        delete stats.gap_count;
+        return _ok(stats);
+    } catch (e) { return _err("getSequenceStatistics failed: " + e.message); }
+}
+
+function addBRollSuggestions(sequenceID) {
+    try {
+        var resolved = _mcpResolveSequence(sequenceID);
+        if (resolved.error) return _err(resolved.error);
+        var seq = resolved.sequence;
+        var suggestions = [];
+        for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+            var track = seq.videoTracks[t];
+            for (var c = 0; track.clips && c < track.clips.numItems; c++) {
+                var clip = track.clips[c];
+                var duration = _timeToSeconds(clip.end) - _timeToSeconds(clip.start);
+                if (duration < 8) continue;
+                suggestions.push({
+                    position_seconds: _timeToSeconds(clip.start) + Math.min(3, duration / 3),
+                    duration_seconds: Math.min(4, duration / 3),
+                    content_type: "cutaway",
+                    reason: "Long uninterrupted timeline clip; consider visual coverage",
+                    keywords: [String(clip.name || "")]
+                });
+                if (suggestions.length >= 50) break;
+            }
+            if (suggestions.length >= 50) break;
+        }
+        return _ok({ suggestions: suggestions, count: suggestions.length });
+    } catch (e) { return _err("addBRollSuggestions failed: " + e.message); }
+}
+
+function autoOrganizeProject(params) {
+    try {
+        var parsed = _mcpParseObject(params, "autoOrganizeProject");
+        if (parsed.error) return _err(parsed.error);
+        var options = parsed.value.params || parsed.value;
+        var strategy = String(options.strategy || "media_type").toLowerCase();
+        if (strategy !== "media_type" && strategy !== "media type" && strategy !== "extension") {
+            return _err("unsupported autoOrganizeProject strategy: " + strategy + "; supported: media_type");
+        }
+        if (!app.project || !app.project.rootItem) return _err("No project is open");
+        var names = ["Video", "Audio", "Images", "Graphics"];
+        var before = {};
+        for (var i = 0; i < app.project.rootItem.children.numItems; i++) {
+            var child = app.project.rootItem.children[i];
+            if (child && child.type === ProjectItemType.BIN) before[String(child.name)] = true;
+        }
+        var organized = _mcpEnvelope(autoOrganizeBins(), "autoOrganizeProject");
+        if (organized.error) return _err(organized.error);
+        var moved = 0;
+        var movedByType = organized.data ? organized.data.moved : null;
+        if (movedByType) for (var key in movedByType) if (movedByType.hasOwnProperty(key)) moved += parseInt(movedByType[key], 10) || 0;
+        var created = 0;
+        for (var n = 0; n < names.length; n++) if (!before[names[n]]) created++;
+        return _ok({
+            bins_created: created,
+            items_moved: moved,
+            categories: names,
+            summary: "Organized root-bin media by file type; " + moved + " item(s) moved"
+        });
+    } catch (e) { return _err("autoOrganizeProject failed: " + e.message); }
+}
+
+function _aiFileTokens(pathValue) {
+    var name = String(pathValue || "").replace(/\\/g, "/");
+    name = name.substring(name.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "").toLowerCase();
+    var raw = name.split(/[^a-z0-9]+/);
+    var tokens = [];
+    for (var i = 0; i < raw.length; i++) if (raw[i].length >= 3) tokens.push(raw[i]);
+    return tokens;
+}
+
+function _aiMetadataSimilar(referencePath, maxResults) {
+    var normalizedReference = _mcpNormalizePath(referencePath);
+    var refName = String(referencePath || "").replace(/\\/g, "/");
+    var refDot = refName.lastIndexOf(".");
+    var refExt = refDot >= 0 ? refName.substring(refDot + 1).toLowerCase() : "";
+    var refDir = refName.substring(0, refName.lastIndexOf("/")).toLowerCase();
+    var refTokens = _aiFileTokens(referencePath);
+    var candidates = [];
+    var items = _mcpCollectProjectItems();
+    for (var i = 0; i < items.length; i++) {
+        var path = _mcpMediaPath(items[i]);
+        if (!path || _mcpNormalizePath(path) === normalizedReference) continue;
+        var normalized = String(path).replace(/\\/g, "/");
+        var dot = normalized.lastIndexOf(".");
+        var ext = dot >= 0 ? normalized.substring(dot + 1).toLowerCase() : "";
+        var score = refExt && ext === refExt ? 0.45 : 0;
+        var tokens = _aiFileTokens(path);
+        var shared = 0;
+        for (var rt = 0; rt < refTokens.length; rt++) {
+            for (var ct = 0; ct < tokens.length; ct++) if (refTokens[rt] === tokens[ct]) { shared++; break; }
+        }
+        if (refTokens.length) score += 0.45 * (shared / refTokens.length);
+        var dir = normalized.substring(0, normalized.lastIndexOf("/")).toLowerCase();
+        if (refDir && dir === refDir) score += 0.1;
+        if (score <= 0) continue;
+        candidates.push({ file_path: path, similarity: Math.round(Math.min(1, score) * 1000) / 1000, match_type: "filename/path metadata" });
+    }
+    candidates.sort(function (left, right) { return right.similarity - left.similarity; });
+    if (candidates.length > maxResults) candidates.length = maxResults;
+    return candidates;
+}
+
+function findSimilarClips(filePath, maxResults) {
+    try {
+        if (!filePath) return _err("filePath is required");
+        var reference = _mcpFindProjectItem(filePath);
+        if (!reference && !(new File(filePath)).exists) return _err("Reference clip was not found: " + filePath);
+        var referencePath = reference ? _mcpMediaPath(reference) : new File(filePath).fsName;
+        var limit = parseInt(maxResults, 10);
+        if (isNaN(limit) || limit <= 0) limit = 10;
+        if (limit > 100) limit = 100;
+        var similar = _aiMetadataSimilar(referencePath, limit);
+        return _ok({ reference_clip: referencePath, similar_clips: similar, count: similar.length });
+    } catch (e) { return _err("findSimilarClips failed: " + e.message); }
+}
+
+function suggestReplacements(sequenceID) {
+    try {
+        var resolved = _mcpResolveSequence(sequenceID);
+        if (resolved.error) return _err(resolved.error);
+        var seq = resolved.sequence;
+        var suggestions = [];
+        function inspect(tracks, trackType) {
+            for (var t = 0; t < tracks.numTracks; t++) {
+                var track = tracks[t];
+                for (var c = 0; track.clips && c < track.clips.numItems; c++) {
+                    var clip = track.clips[c];
+                    var offline = false;
+                    try { offline = !!(clip.projectItem && clip.projectItem.isOffline && clip.projectItem.isOffline()); } catch (ignoreOffline) {}
+                    if (!offline) continue;
+                    var path = _mcpMediaPath(clip.projectItem);
+                    var alternatives = _aiMetadataSimilar(path, 1);
+                    if (!alternatives.length) continue;
+                    suggestions.push({
+                        current_clip_id: _mcpCanonicalClipId(trackType, t, c, clip),
+                        replacement_path: alternatives[0].file_path,
+                        confidence: alternatives[0].similarity,
+                        reason: "Offline media; candidate matched by filename/path metadata",
+                        position_seconds: _timeToSeconds(clip.start)
+                    });
+                }
+            }
+        }
+        inspect(seq.videoTracks, "video");
+        inspect(seq.audioTracks, "audio");
+        return _ok({ suggestions: suggestions, count: suggestions.length });
+    } catch (e) { return _err("suggestReplacements failed: " + e.message); }
+}
+
+function createReviewMarkers(sequenceID) {
+    try {
+        var resolved = _mcpResolveSequence(sequenceID);
+        if (resolved.error) return _err(resolved.error);
+        var seq = resolved.sequence;
+        if (!seq.markers) return _err("Sequence markers are unavailable");
+        var stats = _aiCollectSequenceStats(seq);
+        var existing = {};
+        var marker = seq.markers.getFirstMarker();
+        while (marker) {
+            existing[String(Math.round(_timeToSeconds(marker.start) * 1000)) + ":" + String(marker.name || "")] = true;
+            marker = seq.markers.getNextMarker(marker);
+        }
+        var added = [];
+        for (var i = 0; i < stats.gaps.length && added.length < 100; i++) {
+            var gap = stats.gaps[i];
+            if (gap.duration < 0.1) continue;
+            var name = "Review: timeline gap";
+            var key = String(Math.round(gap.start * 1000)) + ":" + name;
+            if (existing[key]) continue;
+            var created = seq.markers.createMarker(gap.start);
+            if (!created) return _err("Premiere could not create a review marker at " + gap.start + " seconds");
+            created.name = name;
+            created.comments = "Uncovered video gap lasting " + (Math.round(gap.duration * 1000) / 1000) + " seconds";
+            existing[key] = true;
+            added.push({ time_seconds: gap.start, name: name, comment: created.comments, priority: gap.duration >= 1 ? "high" : "normal" });
+        }
+        return _ok({ markers_added: added.length, markers: added });
+    } catch (e) { return _err("createReviewMarkers failed: " + e.message); }
+}
+
+function generateEditSummary(sequenceID) {
+    try {
+        var resolved = _mcpResolveSequence(sequenceID);
+        if (resolved.error) return _err(resolved.error);
+        var seq = resolved.sequence;
+        var stats = _aiCollectSequenceStats(seq);
+        var style = stats.avg_clip_duration_seconds < 3 ? "fast-cut" : (stats.avg_clip_duration_seconds < 8 ? "moderate" : "long-take");
+        var moments = [];
+        if (seq.markers) {
+            var marker = seq.markers.getFirstMarker();
+            while (marker && moments.length < 25) {
+                moments.push((marker.name || "Marker") + " at " + (Math.round(_timeToSeconds(marker.start) * 100) / 100) + "s");
+                marker = seq.markers.getNextMarker(marker);
+            }
+        }
+        var summary = "Sequence '" + String(seq.name || "") + "' is " +
+            (Math.round(stats.total_duration_seconds * 100) / 100) + " seconds long with " +
+            stats.video_clip_count + " video clip(s), " + stats.audio_clip_count + " audio clip(s), and " +
+            stats.gap_count + " uncovered video gap(s).";
+        return _ok({
+            sequence_id: stats.sequence_id,
+            summary: summary,
+            duration_seconds: stats.total_duration_seconds,
+            clip_count: stats.video_clip_count + stats.audio_clip_count,
+            key_moments: moments,
+            editing_style: style
+        });
+    } catch (e) { return _err("generateEditSummary failed: " + e.message); }
+}
+
+function estimateRenderTime(sequenceID) {
+    try {
+        var resolved = _mcpResolveSequence(sequenceID);
+        if (resolved.error) return _err(resolved.error);
+        var seq = resolved.sequence;
+        var stats = _aiCollectSequenceStats(seq);
+        var settings = null;
+        try { settings = seq.getSettings(); } catch (ignoreSettings) {}
+        var width = settings ? parseInt(settings.videoFrameWidth, 10) || 1920 : 1920;
+        var height = settings ? parseInt(settings.videoFrameHeight, 10) || 1080 : 1080;
+        var resolutionFactor = (width * height) / (1920 * 1080);
+        var trackFactor = 1 + Math.max(0, stats.video_tracks_used + stats.audio_tracks_used - 2) * 0.08;
+        var effectFactor = 1 + stats.effects_count * 0.03;
+        var estimated = stats.total_duration_seconds * Math.max(0.25, resolutionFactor) * trackFactor * effectFactor;
+        var complexityScore = stats.effects_count + stats.video_tracks_used * 2 + stats.video_clip_count / 10;
+        var complexity = complexityScore > 30 ? "high" : (complexityScore > 12 ? "medium" : "low");
+        return _ok({
+            sequence_id: stats.sequence_id,
+            estimated_seconds: Math.round(estimated),
+            complexity: complexity,
+            effects_heavy: stats.effects_count > Math.max(5, stats.video_clip_count),
+            resolution_factor: resolutionFactor,
+            notes: "Heuristic based on timeline duration, resolution, tracks, and effect count; hardware and codec are not measurable from ExtendScript."
+        });
+    } catch (e) { return _err("estimateRenderTime failed: " + e.message); }
+}
+
+function checkDeliverySpecs(sequenceID, standard) {
+    try {
+        var resolved = _mcpResolveSequence(sequenceID);
+        if (resolved.error) return _err(resolved.error);
+        var seq = resolved.sequence;
+        var key = String(standard || "").toLowerCase().replace(/[ -]/g, "_");
+        var settings = seq.getSettings();
+        var width = parseInt(settings.videoFrameWidth, 10) || seq.frameSizeHorizontal || 0;
+        var height = parseInt(settings.videoFrameHeight, 10) || seq.frameSizeVertical || 0;
+        var fps = _mcpSequenceFPS(seq);
+        var target = null;
+        if (key === "hd" || key === "broadcast_hd") target = { width: 1920, height: 1080, label: "1920x1080" };
+        else if (key === "uhd" || key === "4k") target = { width: 3840, height: 2160, label: "3840x2160" };
+        else if (key === "vertical" || key === "tiktok" || key === "instagram_reels") target = { width: 1080, height: 1920, label: "1080x1920" };
+        else if (key === "square" || key === "instagram_square") target = { width: 1080, height: 1080, label: "1080x1080" };
+        else if (key === "youtube") target = { minWidth: 1280, minHeight: 720, label: ">=1280x720" };
+        else return _err("unsupported checkDeliverySpecs standard: " + standard + "; supported: hd, uhd, vertical, square, youtube, tiktok, instagram_reels");
+        var resolutionPass = target.minWidth ? (width >= target.minWidth && height >= target.minHeight) : (width === target.width && height === target.height);
+        var fpsPass = fps > 0 && fps <= 120;
+        var duration = _timeToSeconds(seq.end);
+        var checks = [
+            { spec: "resolution", status: resolutionPass ? "pass" : "fail", current_value: width + "x" + height, target_value: target.label, pass: resolutionPass },
+            { spec: "frame_rate", status: fpsPass ? "pass" : "fail", current_value: String(Math.round(fps * 1000) / 1000), target_value: "valid sequence frame rate (0-120 fps)", pass: fpsPass },
+            { spec: "duration", status: duration > 0 ? "pass" : "fail", current_value: String(duration) + "s", target_value: ">0s", pass: duration > 0 }
+        ];
+        return _ok({ sequence_id: String(seq.sequenceID || ""), standard: key, all_pass: resolutionPass && fpsPass && duration > 0, checks: checks });
+    } catch (e) { return _err("checkDeliverySpecs failed: " + e.message); }
+}
+
+function createProjectReport() {
+    try {
+        if (!app.project) return _err("No project is open");
+        var usedPaths = {};
+        var effects = {};
+        var totalDuration = 0;
+        for (var s = 0; s < app.project.sequences.numSequences; s++) {
+            var seq = app.project.sequences[s];
+            totalDuration += _timeToSeconds(seq.end);
+            function inspectTracks(tracks, countEffects) {
+                for (var t = 0; t < tracks.numTracks; t++) {
+                    var track = tracks[t];
+                    for (var c = 0; track.clips && c < track.clips.numItems; c++) {
+                        var clip = track.clips[c];
+                        var path = _mcpMediaPath(clip.projectItem);
+                        if (path) usedPaths[_mcpNormalizePath(path)] = true;
+                        if (countEffects && clip.components) {
+                            for (var ci = 2; ci < clip.components.numItems; ci++) {
+                                var name = String(clip.components[ci].displayName || clip.components[ci].matchName || "Unknown");
+                                effects[name] = (effects[name] || 0) + 1;
+                            }
+                        }
+                    }
+                }
+            }
+            inspectTracks(seq.videoTracks, true);
+            inspectTracks(seq.audioTracks, false);
+        }
+        var mediaItems = _mcpCollectProjectItems();
+        var used = 0;
+        var mediaCount = 0;
+        for (var i = 0; i < mediaItems.length; i++) {
+            var mediaPath = _mcpMediaPath(mediaItems[i]);
+            if (!mediaPath) continue;
+            mediaCount++;
+            if (usedPaths[_mcpNormalizePath(mediaPath)]) used++;
+        }
+        var unused = Math.max(0, mediaCount - used);
+        return _ok({
+            project_name: String(app.project.name || ""),
+            total_duration_seconds: totalDuration,
+            sequence_count: app.project.sequences.numSequences,
+            total_clips: mediaCount,
+            used_clips: used,
+            unused_clips: unused,
+            effects_used: effects,
+            summary: "Project contains " + mediaCount + " media item(s) across " + app.project.sequences.numSequences + " sequence(s); " + unused + " item(s) are unused."
+        });
+    } catch (e) { return _err("createProjectReport failed: " + e.message); }
 }

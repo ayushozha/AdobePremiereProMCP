@@ -19,32 +19,32 @@ func (e *Engine) CaptureFrameAsBase64(ctx context.Context) (*FrameCaptureResult,
 		return nil, fmt.Errorf("CaptureFrameAsBase64: %w", err)
 	}
 
-	// Parse the JSON response from ExtendScript
+	// CEP normalizes successful ExtendScript envelopes to their data payload.
+	// Keep accepting the legacy envelope so standalone/older panels remain
+	// compatible during upgrades.
 	var resp struct {
-		Success bool `json:"success"`
-		Data    struct {
-			ImageBase64 string  `json:"image_base64"`
-			Format      string  `json:"format"`
-			Width       int     `json:"width"`
-			Height      int     `json:"height"`
-			Timecode    float64 `json:"timecode"`
-		} `json:"data"`
-		Error string `json:"error"`
+		Success *bool              `json:"success"`
+		Data    FrameCaptureResult `json:"data"`
+		Error   string             `json:"error"`
 	}
 	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
 		return nil, fmt.Errorf("CaptureFrameAsBase64: failed to parse response: %w", err)
 	}
-	if !resp.Success {
-		return nil, fmt.Errorf("CaptureFrameAsBase64: %s", resp.Error)
+	if resp.Success != nil {
+		if !*resp.Success {
+			return nil, fmt.Errorf("CaptureFrameAsBase64: %s", resp.Error)
+		}
+		return &resp.Data, nil
 	}
 
-	return &FrameCaptureResult{
-		ImageBase64: resp.Data.ImageBase64,
-		Format:      resp.Data.Format,
-		Width:       resp.Data.Width,
-		Height:      resp.Data.Height,
-		Timecode:    resp.Data.Timecode,
-	}, nil
+	var direct FrameCaptureResult
+	if err := json.Unmarshal([]byte(raw), &direct); err != nil {
+		return nil, fmt.Errorf("CaptureFrameAsBase64: failed to parse payload: %w", err)
+	}
+	if direct.ImageBase64 == "" {
+		return nil, fmt.Errorf("CaptureFrameAsBase64: response did not contain image data")
+	}
+	return &direct, nil
 }
 
 // ---------------------------------------------------------------------------

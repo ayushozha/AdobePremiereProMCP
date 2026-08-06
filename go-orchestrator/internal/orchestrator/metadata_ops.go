@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -27,8 +26,8 @@ func (e *Engine) GetClipMetadata(ctx context.Context, projectItemIndex int) (*Ge
 func (e *Engine) SetClipMetadata(ctx context.Context, projectItemIndex int, field, value string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"field": field,
-		"value": value,
+		"field":            field,
+		"value":            value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setClipMetadata", string(argsJSON))
 	if err != nil {
@@ -40,9 +39,9 @@ func (e *Engine) SetClipMetadata(ctx context.Context, projectItemIndex int, fiel
 // AddCustomMetadataField adds a custom metadata schema field to the project.
 func (e *Engine) AddCustomMetadataField(ctx context.Context, fieldName, fieldLabel string, fieldType int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"fieldName": fieldName,
+		"fieldName":  fieldName,
 		"fieldLabel": fieldLabel,
-		"fieldType": fieldType,
+		"fieldType":  fieldType,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "addCustomMetadataField", string(argsJSON))
 	if err != nil {
@@ -65,8 +64,8 @@ func (e *Engine) GetMetadataSchema(ctx context.Context) (*GenericResult, error) 
 func (e *Engine) BatchSetMetadata(ctx context.Context, itemIndices []int, field, value string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"itemIndices": itemIndices,
-		"field": field,
-		"value": value,
+		"field":       field,
+		"value":       value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "batchSetMetadata", string(argsJSON))
 	if err != nil {
@@ -93,7 +92,7 @@ func (e *Engine) GetAvailableLabelColors(ctx context.Context) (*GenericResult, e
 func (e *Engine) SetClipLabelByName(ctx context.Context, projectItemIndex int, colorName string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"colorName": colorName,
+		"colorName":        colorName,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setClipLabelByName", string(argsJSON))
 	if err != nil {
@@ -118,7 +117,7 @@ func (e *Engine) GetLabelColorForClip(ctx context.Context, projectItemIndex int)
 func (e *Engine) BatchSetLabels(ctx context.Context, itemIndices []int, colorIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"itemIndices": itemIndices,
-		"colorIndex": colorIndex,
+		"colorIndex":  colorIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "batchSetLabels", string(argsJSON))
 	if err != nil {
@@ -159,7 +158,7 @@ func (e *Engine) GetFootageInterpretation(ctx context.Context, projectItemIndex 
 func (e *Engine) SetFootageFrameRate(ctx context.Context, projectItemIndex int, fps float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"fps": fps,
+		"fps":              fps,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setFootageFrameRate", string(argsJSON))
 	if err != nil {
@@ -172,7 +171,7 @@ func (e *Engine) SetFootageFrameRate(ctx context.Context, projectItemIndex int, 
 func (e *Engine) SetFootageFieldOrder(ctx context.Context, projectItemIndex int, fieldOrder int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"fieldOrder": fieldOrder,
+		"fieldOrder":       fieldOrder,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setFootageFieldOrder", string(argsJSON))
 	if err != nil {
@@ -185,7 +184,7 @@ func (e *Engine) SetFootageFieldOrder(ctx context.Context, projectItemIndex int,
 func (e *Engine) SetFootageAlphaChannel(ctx context.Context, projectItemIndex int, alphaType int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"alphaType": alphaType,
+		"alphaType":        alphaType,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setFootageAlphaChannel", string(argsJSON))
 	if err != nil {
@@ -198,8 +197,8 @@ func (e *Engine) SetFootageAlphaChannel(ctx context.Context, projectItemIndex in
 func (e *Engine) SetFootagePixelAspectRatio(ctx context.Context, projectItemIndex int, num, den float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"num": num,
-		"den": den,
+		"num":              num,
+		"den":              den,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setFootagePixelAspectRatio", string(argsJSON))
 	if err != nil {
@@ -276,7 +275,7 @@ func (e *Engine) RefreshMedia(ctx context.Context, projectItemIndex int) (*Gener
 func (e *Engine) ReplaceMedia(ctx context.Context, projectItemIndex int, newFilePath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"newFilePath": newFilePath,
+		"newFilePath":      newFilePath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "replaceMedia", string(argsJSON))
 	if err != nil {
@@ -304,7 +303,7 @@ func (e *Engine) DuplicateProjectItem(ctx context.Context, projectItemIndex int)
 // CreateSmartBin creates a smart bin with search criteria.
 func (e *Engine) CreateSmartBin(ctx context.Context, name, searchQuery string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"name": name,
+		"name":        name,
 		"searchQuery": searchQuery,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createSmartBin", string(argsJSON))

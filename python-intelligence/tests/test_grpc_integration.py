@@ -6,12 +6,8 @@ and exercises the ParseScript, MatchAssets, and GenerateEDL RPCs over the wire.
 
 from __future__ import annotations
 
-import threading
-import time
-
 import grpc
 import pytest
-
 from premierpro.common.v1 import common_pb2
 from premierpro.intelligence.v1 import intelligence_pb2, intelligence_pb2_grpc
 
@@ -202,7 +198,9 @@ class TestParseScript:
         # Auto-detection should detect this as youtube format.
         assert response.metadata.format == "youtube"
 
-    def test_parse_empty_text_returns_error(self, stub: intelligence_pb2_grpc.IntelligenceServiceStub):
+    def test_parse_empty_text_returns_error(
+        self, stub: intelligence_pb2_grpc.IntelligenceServiceStub
+    ):
         """Sending empty text should return an INVALID_ARGUMENT error."""
         request = intelligence_pb2.ParseScriptRequest(text="", format_hint="auto")
         with pytest.raises(grpc.RpcError) as exc_info:
@@ -430,12 +428,20 @@ class TestAnalyzePacing:
                     index=0,
                     source_asset_id="a1",
                     source_range=common_pb2.TimeRange(
-                        in_point=common_pb2.Timecode(hours=0, minutes=0, seconds=0, frames=0, frame_rate=24.0),
-                        out_point=common_pb2.Timecode(hours=0, minutes=0, seconds=3, frames=0, frame_rate=24.0),
+                        in_point=common_pb2.Timecode(
+                            hours=0, minutes=0, seconds=0, frames=0, frame_rate=24.0
+                        ),
+                        out_point=common_pb2.Timecode(
+                            hours=0, minutes=0, seconds=3, frames=0, frame_rate=24.0
+                        ),
                     ),
                     timeline_range=common_pb2.TimeRange(
-                        in_point=common_pb2.Timecode(hours=0, minutes=0, seconds=0, frames=0, frame_rate=24.0),
-                        out_point=common_pb2.Timecode(hours=0, minutes=0, seconds=3, frames=0, frame_rate=24.0),
+                        in_point=common_pb2.Timecode(
+                            hours=0, minutes=0, seconds=0, frames=0, frame_rate=24.0
+                        ),
+                        out_point=common_pb2.Timecode(
+                            hours=0, minutes=0, seconds=3, frames=0, frame_rate=24.0
+                        ),
                     ),
                     track=common_pb2.TrackTarget(type=common_pb2.TRACK_TYPE_VIDEO, track_index=0),
                     notes="Segment 0: dialogue",
@@ -444,12 +450,20 @@ class TestAnalyzePacing:
                     index=1,
                     source_asset_id="a2",
                     source_range=common_pb2.TimeRange(
-                        in_point=common_pb2.Timecode(hours=0, minutes=0, seconds=0, frames=0, frame_rate=24.0),
-                        out_point=common_pb2.Timecode(hours=0, minutes=0, seconds=5, frames=0, frame_rate=24.0),
+                        in_point=common_pb2.Timecode(
+                            hours=0, minutes=0, seconds=0, frames=0, frame_rate=24.0
+                        ),
+                        out_point=common_pb2.Timecode(
+                            hours=0, minutes=0, seconds=5, frames=0, frame_rate=24.0
+                        ),
                     ),
                     timeline_range=common_pb2.TimeRange(
-                        in_point=common_pb2.Timecode(hours=0, minutes=0, seconds=3, frames=0, frame_rate=24.0),
-                        out_point=common_pb2.Timecode(hours=0, minutes=0, seconds=8, frames=0, frame_rate=24.0),
+                        in_point=common_pb2.Timecode(
+                            hours=0, minutes=0, seconds=3, frames=0, frame_rate=24.0
+                        ),
+                        out_point=common_pb2.Timecode(
+                            hours=0, minutes=0, seconds=8, frames=0, frame_rate=24.0
+                        ),
                     ),
                     track=common_pb2.TrackTarget(type=common_pb2.TRACK_TYPE_VIDEO, track_index=1),
                     notes="Segment 1: broll",

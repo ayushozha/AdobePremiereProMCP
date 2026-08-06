@@ -2,6 +2,11 @@
 
 Complete reference for the 50 most-used MCP tools organized by category. Each tool is callable via the MCP protocol through the Go orchestrator.
 
+> **Compatibility reference:** this file includes legacy/full-catalog schemas.
+> A documented schema is not a live-support claim. Use the live `tools/list`
+> response for the selected profile, prefer the default curated surface, and
+> require state readback before accepting a Premiere mutation as successful.
+
 ---
 
 ## Table of Contents
@@ -582,7 +587,7 @@ Place (overwrite) a media clip onto the active sequence timeline at a specified 
 
 ### `premiere_remove_clip`
 
-Remove a clip from the timeline by its clip ID. This performs a lift edit (leaves a gap). For ripple delete (closing the gap), use premiere_ripple_delete_gap instead.
+Remove a clip from the timeline by its clip ID. This performs a lift edit (leaves a gap). To remove by track position and close the gap in one operation, use `premiere_remove_clip_from_track` with `ripple=true`; `premiere_ripple_delete_gap` only closes a range already verified to be empty.
 
 **Parameters:**
 | Name | Type | Required | Default | Description |
@@ -1108,24 +1113,24 @@ Mute or unmute an entire audio track.
 
 ### `premiere_export`
 
-Export a sequence to a media file using a built-in preset. This is the simplest export option.
+Queue a sequence through Adobe Media Encoder using a named `.epr` preset configured on the TypeScript bridge.
 
 **Parameters:**
 | Name | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
-| `sequence_id` | string | No | — | Unique identifier of the sequence to export. If omitted, exports the active sequence. |
+| `sequence_id` | string | Yes | — | Unique identifier of the sequence to export. Obtain it from `premiere_get_project`, `premiere_get_sequence_list`, or `premiere_get_timeline`. |
 | `output_path` | string | Yes | — | Absolute file path for the exported output (e.g. `/Users/me/exports/final.mp4`). |
-| `preset` | string | No | `"h264_1080p"` | Export preset name. Values: `h264_1080p`, `h264_4k`, `prores_422`, `prores_4444`, `dnxhd`, `gif`. |
+| `preset` | string | No | `"h264_1080p"` | Configured preset alias. Values: `h264_1080p`, `h264_4k`, `prores_422`, `prores_4444`, `dnxhd`. The corresponding `PREMIERE_EXPORT_PRESET_*` variable must point to an existing `.epr` file. |
 
 **Returns:**
 ```json
-{ "status": "ok", "output_path": "/Users/me/exports/final.mp4", "file_size_mb": 245.3 }
+{ "job_id": "ame-job-123", "status": "queued", "output_path": "/Users/me/exports/final.mp4" }
 ```
 
 **Example:**
 ```
 "Export the sequence as a 4K MP4"
--> premiere_export { output_path: "/Users/me/exports/final_4k.mp4", preset: "h264_4k" }
+-> premiere_export { sequence_id: "seq-abc", output_path: "/Users/me/exports/final_4k.mp4", preset: "h264_4k" }
 ```
 
 ---
@@ -1254,7 +1259,7 @@ Execute an arbitrary ExtendScript snippet with security validation. Dangerous op
 
 ### `premiere_auto_edit`
 
-Perform a fully automated edit: scan an assets directory, parse a script, match script segments to media files, and assemble a complete sequence with clips, transitions, and text overlays.
+Perform a fully automated rough cut: scan an assets directory, parse a script, match script segments to media files, and assemble a sequence with deterministic clip placement and supported transitions. Add titles afterward with the verified MOGRT workflow.
 
 **Parameters:**
 | Name | Type | Required | Default | Description |

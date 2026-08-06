@@ -85,9 +85,7 @@ impl ThumbnailGenerator {
             .context("failed to extract video frame via ffmpeg")?;
 
         if data.is_empty() {
-            anyhow::bail!(
-                "ffmpeg produced zero bytes — does the file contain a video stream?"
-            );
+            anyhow::bail!("ffmpeg produced zero bytes — does the file contain a video stream?");
         }
 
         debug!(bytes = data.len(), "thumbnail captured in memory");

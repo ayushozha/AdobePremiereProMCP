@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -25,8 +24,8 @@ func (e *Engine) BatchImportWithMetadata(ctx context.Context, itemsJSON string) 
 func (e *Engine) ImportImageSequence(ctx context.Context, folderPath string, fps float64, targetBin string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"folderPath": folderPath,
-		"fps": fps,
-		"targetBin": targetBin,
+		"fps":        fps,
+		"targetBin":  targetBin,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "importImageSequence", string(argsJSON))
 	if err != nil {
@@ -42,8 +41,8 @@ func (e *Engine) ImportImageSequence(ctx context.Context, folderPath string, fps
 func (e *Engine) BatchExportSequences(ctx context.Context, sequenceIndices []int, outputDir, presetPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndices": sequenceIndices,
-		"outputDir": outputDir,
-		"presetPath": presetPath,
+		"outputDir":       outputDir,
+		"presetPath":      presetPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "batchExportSequences", string(argsJSON))
 	if err != nil {
@@ -54,7 +53,7 @@ func (e *Engine) BatchExportSequences(ctx context.Context, sequenceIndices []int
 
 func (e *Engine) ExportAllSequences(ctx context.Context, outputDir, presetPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"outputDir": outputDir,
+		"outputDir":  outputDir,
 		"presetPath": presetPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "exportAllSequences", string(argsJSON))
@@ -70,10 +69,10 @@ func (e *Engine) ExportAllSequences(ctx context.Context, outputDir, presetPath s
 
 func (e *Engine) ApplyEffectToMultipleClips(ctx context.Context, trackType string, trackIndex int, clipIndices []int, effectName string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
-		"trackIndex": trackIndex,
+		"trackType":   trackType,
+		"trackIndex":  trackIndex,
 		"clipIndices": clipIndices,
-		"effectName": effectName,
+		"effectName":  effectName,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "applyEffectToMultipleClips", string(argsJSON))
 	if err != nil {
@@ -84,9 +83,9 @@ func (e *Engine) ApplyEffectToMultipleClips(ctx context.Context, trackType strin
 
 func (e *Engine) RemoveAllEffects(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "removeAllEffects", string(argsJSON))
 	if err != nil {
@@ -97,9 +96,9 @@ func (e *Engine) RemoveAllEffects(ctx context.Context, trackType string, trackIn
 
 func (e *Engine) ApplyTransitionToAllCuts(ctx context.Context, trackIndex int, transitionName string, duration float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackIndex": trackIndex,
+		"trackIndex":     trackIndex,
 		"transitionName": transitionName,
-		"duration": duration,
+		"duration":       duration,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "applyTransitionToAllCuts", string(argsJSON))
 	if err != nil {
@@ -115,7 +114,7 @@ func (e *Engine) ApplyTransitionToAllCuts(ctx context.Context, trackIndex int, t
 func (e *Engine) ApplyLUTToAllClips(ctx context.Context, trackIndex int, lutPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"lutPath": lutPath,
+		"lutPath":    lutPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "applyLUTToAllClips", string(argsJSON))
 	if err != nil {
@@ -198,7 +197,7 @@ func (e *Engine) ScaleAllClipsToFrame(ctx context.Context) (*GenericResult, erro
 
 func (e *Engine) SelectAllClipsOnTrack(ctx context.Context, trackType string, trackIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "selectAllClipsOnTrack", string(argsJSON))
@@ -211,7 +210,7 @@ func (e *Engine) SelectAllClipsOnTrack(ctx context.Context, trackType string, tr
 func (e *Engine) SelectAllClipsBetween(ctx context.Context, startSeconds, endSeconds float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"startSeconds": startSeconds,
-		"endSeconds": endSeconds,
+		"endSeconds":   endSeconds,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "selectAllClipsBetween", string(argsJSON))
 	if err != nil {
@@ -222,10 +221,10 @@ func (e *Engine) SelectAllClipsBetween(ctx context.Context, startSeconds, endSec
 
 func (e *Engine) DeleteAllClipsBetween(ctx context.Context, trackType string, trackIndex int, startSeconds, endSeconds float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
-		"trackIndex": trackIndex,
+		"trackType":    trackType,
+		"trackIndex":   trackIndex,
 		"startSeconds": startSeconds,
-		"endSeconds": endSeconds,
+		"endSeconds":   endSeconds,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "deleteAllClipsBetween", string(argsJSON))
 	if err != nil {

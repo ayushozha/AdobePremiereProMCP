@@ -3,70 +3,67 @@ REM Double-click this file to launch the PremierPro AI Editor on Windows.
 
 cd /d "%~dp0"
 
-REM Check for existing API keys
-if defined ANTHROPIC_API_KEY goto :has_auth
-if defined OPENAI_API_KEY goto :has_auth
+REM Authentication is resolved by the CLI from ANTHROPIC_API_KEY,
+REM OPENAI_API_KEY, or %%USERPROFILE%%\.premierpro-mcp\config.json.
+REM Claude/Codex OAuth sessions are not API keys and are not scraped here.
 
-REM Try Claude Code auth
-where claude >nul 2>&1
-if %ERRORLEVEL% equ 0 (
-    for /f "tokens=*" %%i in ('claude auth print-api-key 2^>nul') do set "ANTHROPIC_API_KEY=%%i"
-    if defined ANTHROPIC_API_KEY goto :has_auth
-)
-
-REM Try Codex auth
-where codex >nul 2>&1
-if %ERRORLEVEL% equ 0 (
-    for /f "tokens=*" %%i in ('codex auth print-api-key 2^>nul') do set "OPENAI_API_KEY=%%i"
-    if defined OPENAI_API_KEY goto :has_auth
-)
-
-REM No auth found — prompt
-echo.
-echo   No API key found. Choose a provider to login:
-echo     1) Claude (Anthropic)
-echo     2) OpenAI / Codex
-echo.
-set /p choice="  Choice [1]: "
-
-if "%choice%"=="2" (
-    where codex >nul 2>&1
-    if %ERRORLEVEL% equ 0 (
-        call codex login
-        for /f "tokens=*" %%i in ('codex auth print-api-key 2^>nul') do set "OPENAI_API_KEY=%%i"
-    ) else (
-        set /p OPENAI_API_KEY="  Paste your OpenAI API key: "
-    )
-) else (
-    where claude >nul 2>&1
-    if %ERRORLEVEL% equ 0 (
-        call claude login
-        for /f "tokens=*" %%i in ('claude auth print-api-key 2^>nul') do set "ANTHROPIC_API_KEY=%%i"
-    ) else (
-        set /p ANTHROPIC_API_KEY="  Paste your Anthropic API key: "
+for %%T in (node npm npx go) do (
+    where %%T >nul 2>&1
+    if errorlevel 1 (
+        echo   ERROR: %%T is required but was not found on PATH.
+        goto :failed
     )
 )
-
-:has_auth
 
 REM Ensure CLI dependencies
 if not exist "cli\node_modules" (
     echo   Installing CLI dependencies...
-    cd cli && call npm install --silent && cd ..
+    pushd cli
+    call npm ci --silent
+    if errorlevel 1 goto :subdir_failed
+    popd
 )
 
 REM Ensure bridge dependencies
 if not exist "ts-bridge\node_modules" (
     echo   Installing bridge dependencies...
-    cd ts-bridge && call npm install --silent && cd ..
+    pushd ts-bridge
+    call npm ci --silent
+    if errorlevel 1 goto :subdir_failed
+    popd
 )
 
-REM Ensure MCP server binary
-if not exist "go-orchestrator\bin\premierpro-mcp.exe" (
-    echo   Building MCP server...
-    cd go-orchestrator && go build -o bin\premierpro-mcp.exe .\cmd\server\ && cd ..
+REM A source checkout intentionally does not track generated protobuf stubs.
+if not exist "gen\go\premierpro\premiere\v1\premiere.pb.go" (
+    where buf >nul 2>&1
+    if errorlevel 1 (
+        echo   ERROR: buf is required to generate protobuf clients.
+        goto :failed
+    )
+    echo   Generating protobuf clients...
+    call buf generate
+    if errorlevel 1 goto :failed
 )
+
+REM Rebuild through Go's cache so the launcher never runs a stale server.
+echo   Building MCP server...
+if not exist "go-orchestrator\bin" mkdir "go-orchestrator\bin"
+pushd go-orchestrator
+call go build -o bin\premierpro-mcp.exe .\cmd\server\
+if errorlevel 1 goto :subdir_failed
+popd
 
 REM Launch the CLI
-npx --prefix cli tsx cli\src\index.ts
+call npx --prefix cli tsx cli\src\index.ts
+if errorlevel 1 goto :failed
 pause
+exit /b 0
+
+:subdir_failed
+popd
+
+:failed
+echo.
+echo   PremierPro launcher failed. Fix the error above and try again.
+pause
+exit /b 1

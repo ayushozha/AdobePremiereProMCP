@@ -180,12 +180,13 @@ class EDLValidator:
         issues: list[ValidationIssue],
     ) -> None:
         # Validate individual timecodes.
-        for point_name, tc in [("in-point", time_range.in_point), ("out-point", time_range.out_point)]:
+        for point_name, tc in [
+            ("in-point", time_range.in_point),
+            ("out-point", time_range.out_point),
+        ]:
             err = self._validate_timecode(tc, fps)
             if err:
-                issues.append(
-                    _issue("error", entry_index, f"Invalid {label} {point_name}: {err}")
-                )
+                issues.append(_issue("error", entry_index, f"Invalid {label} {point_name}: {err}"))
                 return
 
         # Out must be >= in.
@@ -221,10 +222,7 @@ class EDLValidator:
             return f"Seconds value {tc.seconds} exceeds 59."
         max_frames = math.ceil(tc.frame_rate) - 1 if tc.frame_rate > 0 else 0
         if tc.frames > max_frames:
-            return (
-                f"Frames value {tc.frames} exceeds maximum {max_frames} "
-                f"for {tc.frame_rate} fps."
-            )
+            return f"Frames value {tc.frames} exceeds maximum {max_frames} for {tc.frame_rate} fps."
         return None
 
     def _validate_frame_alignment(
@@ -236,7 +234,10 @@ class EDLValidator:
         issues: list[ValidationIssue],
     ) -> None:
         """Warn if timecodes are not aligned to frame boundaries."""
-        for point_name, tc in [("in-point", time_range.in_point), ("out-point", time_range.out_point)]:
+        for point_name, tc in [
+            ("in-point", time_range.in_point),
+            ("out-point", time_range.out_point),
+        ]:
             total_seconds = tc.to_seconds()
             frame_number = total_seconds * fps
             rounded_frame = round(frame_number)
@@ -364,7 +365,9 @@ class EDLValidator:
 
             gap_frames = next_start - current_end
             if gap_frames > 0:
-                gap_seconds = gap_frames / edl.sequence_frame_rate if edl.sequence_frame_rate > 0 else 0
+                gap_seconds = (
+                    gap_frames / edl.sequence_frame_rate if edl.sequence_frame_rate > 0 else 0
+                )
                 issues.append(
                     _issue(
                         "warning",

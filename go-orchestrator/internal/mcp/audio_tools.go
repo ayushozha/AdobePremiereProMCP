@@ -288,7 +288,7 @@ func registerAudioTools(s *server.MCPServer, orch Orchestrator, logger *zap.Logg
 	// 24. premiere_get_audio_tracks
 	s.AddTool(
 		gomcp.NewTool("premiere_get_audio_tracks",
-			gomcp.WithDescription("List all audio tracks in the active sequence with each track's index, name, clip count, channel type, mute/solo/lock state, and volume level. Use this to find track indices for other audio operations or to understand the audio track layout."),
+			gomcp.WithDescription("List all audio tracks in the active sequence with each track's index, name, clip count, mute state, and lock state. Use this to find track indices or understand the audio layout. Use premiere_get_audio_mixer_state for readable mixer details."),
 		),
 		makeAudioHandler(orch, logger, "getAudioTracks", nil),
 	)

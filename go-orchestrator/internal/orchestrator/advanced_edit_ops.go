@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -13,10 +12,10 @@ import (
 
 func (e *Engine) RippleTrim(ctx context.Context, trackType string, trackIndex, clipIndex int, trimEnd bool, deltaSeconds float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
-		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"trimEnd": trimEnd,
+		"trackType":    trackType,
+		"trackIndex":   trackIndex,
+		"clipIndex":    clipIndex,
+		"trimEnd":      trimEnd,
 		"deltaSeconds": deltaSeconds,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "rippleTrim", string(argsJSON))
@@ -28,9 +27,9 @@ func (e *Engine) RippleTrim(ctx context.Context, trackType string, trackIndex, c
 
 func (e *Engine) RollTrim(ctx context.Context, trackType string, trackIndex, clipIndex int, deltaSeconds float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
-		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"trackType":    trackType,
+		"trackIndex":   trackIndex,
+		"clipIndex":    clipIndex,
 		"deltaSeconds": deltaSeconds,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "rollTrim", string(argsJSON))
@@ -42,9 +41,9 @@ func (e *Engine) RollTrim(ctx context.Context, trackType string, trackIndex, cli
 
 func (e *Engine) SlipClip(ctx context.Context, trackType string, trackIndex, clipIndex int, deltaSeconds float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
-		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"trackType":    trackType,
+		"trackIndex":   trackIndex,
+		"clipIndex":    clipIndex,
 		"deltaSeconds": deltaSeconds,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "slipClip", string(argsJSON))
@@ -56,9 +55,9 @@ func (e *Engine) SlipClip(ctx context.Context, trackType string, trackIndex, cli
 
 func (e *Engine) SlideClip(ctx context.Context, trackType string, trackIndex, clipIndex int, deltaSeconds float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
-		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"trackType":    trackType,
+		"trackIndex":   trackIndex,
+		"clipIndex":    clipIndex,
 		"deltaSeconds": deltaSeconds,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "slideClip", string(argsJSON))
@@ -74,9 +73,9 @@ func (e *Engine) SlideClip(ctx context.Context, trackType string, trackIndex, cl
 
 func (e *Engine) PasteInsert(ctx context.Context, trackType string, trackIndex int, time float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"time": time,
+		"time":       time,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "pasteInsert", string(argsJSON))
 	if err != nil {
@@ -87,13 +86,13 @@ func (e *Engine) PasteInsert(ctx context.Context, trackType string, trackIndex i
 
 func (e *Engine) PasteAttributes(ctx context.Context, srcTrackType string, srcTrackIndex, srcClipIndex int, destTrackType string, destTrackIndex, destClipIndex int, attributes string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"srcTrackType": srcTrackType,
-		"srcTrackIndex": srcTrackIndex,
-		"srcClipIndex": srcClipIndex,
-		"destTrackType": destTrackType,
+		"srcTrackType":   srcTrackType,
+		"srcTrackIndex":  srcTrackIndex,
+		"srcClipIndex":   srcClipIndex,
+		"destTrackType":  destTrackType,
 		"destTrackIndex": destTrackIndex,
-		"destClipIndex": destClipIndex,
-		"attributes": attributes,
+		"destClipIndex":  destClipIndex,
+		"attributes":     attributes,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "pasteAttributes", string(argsJSON))
 	if err != nil {
@@ -152,7 +151,7 @@ func (e *Engine) ExtractSelection(ctx context.Context) (*GenericResult, error) {
 
 func (e *Engine) FindGaps(ctx context.Context, trackType string, trackIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "findGaps", string(argsJSON))
@@ -164,9 +163,9 @@ func (e *Engine) FindGaps(ctx context.Context, trackType string, trackIndex int)
 
 func (e *Engine) CloseGap(ctx context.Context, trackType string, trackIndex, gapIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"gapIndex": gapIndex,
+		"gapIndex":   gapIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "closeGap", string(argsJSON))
 	if err != nil {
@@ -177,7 +176,7 @@ func (e *Engine) CloseGap(ctx context.Context, trackType string, trackIndex, gap
 
 func (e *Engine) CloseAllGaps(ctx context.Context, trackType string, trackIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "closeAllGaps", string(argsJSON))
@@ -189,10 +188,10 @@ func (e *Engine) CloseAllGaps(ctx context.Context, trackType string, trackIndex 
 
 func (e *Engine) RippleDeleteGap(ctx context.Context, trackType string, trackIndex int, startTime, endTime float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"startTime": startTime,
-		"endTime": endTime,
+		"startTime":  startTime,
+		"endTime":    endTime,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "rippleDeleteGap", string(argsJSON))
 	if err != nil {
@@ -218,9 +217,9 @@ func (e *Engine) GroupClips(ctx context.Context, clipRefsJSON string) (*GenericR
 
 func (e *Engine) UngroupClips(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "ungroupClips", string(argsJSON))
 	if err != nil {
@@ -231,9 +230,9 @@ func (e *Engine) UngroupClips(ctx context.Context, trackType string, trackIndex,
 
 func (e *Engine) GetGroupedClips(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "getGroupedClips", string(argsJSON))
 	if err != nil {
@@ -323,7 +322,7 @@ func (e *Engine) GoToPreviousEditPoint(ctx context.Context) (*GenericResult, err
 
 func (e *Engine) GoToNextClip(ctx context.Context, trackType string, trackIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "goToNextClip", string(argsJSON))
@@ -335,7 +334,7 @@ func (e *Engine) GoToNextClip(ctx context.Context, trackType string, trackIndex 
 
 func (e *Engine) GoToPreviousClip(ctx context.Context, trackType string, trackIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "goToPreviousClip", string(argsJSON))
@@ -369,12 +368,12 @@ func (e *Engine) GoToSequenceEnd(ctx context.Context) (*GenericResult, error) {
 
 func (e *Engine) AddClipMarker(ctx context.Context, trackType string, trackIndex, clipIndex int, time float64, name, comment string, colorIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"time": time,
-		"name": name,
-		"comment": comment,
+		"clipIndex":  clipIndex,
+		"time":       time,
+		"name":       name,
+		"comment":    comment,
 		"colorIndex": colorIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "addClipMarker", string(argsJSON))
@@ -386,9 +385,9 @@ func (e *Engine) AddClipMarker(ctx context.Context, trackType string, trackIndex
 
 func (e *Engine) GetClipMarkers(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "getClipMarkers", string(argsJSON))
 	if err != nil {
@@ -399,9 +398,9 @@ func (e *Engine) GetClipMarkers(ctx context.Context, trackType string, trackInde
 
 func (e *Engine) DeleteClipMarker(ctx context.Context, trackType string, trackIndex, clipIndex, markerIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
-		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"trackType":   trackType,
+		"trackIndex":  trackIndex,
+		"clipIndex":   clipIndex,
 		"markerIndex": markerIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "deleteClipMarker", string(argsJSON))

@@ -11,14 +11,13 @@ import pytest
 from src.analysis.pacing import PacingAnalyzer
 from src.analysis.rhythm import RhythmAnalyzer
 from src.models import (
-    EDLEntry,
     EditDecisionList,
+    EDLEntry,
     Timecode,
     TimeRange,
     TrackTarget,
     TrackType,
 )
-
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -91,9 +90,7 @@ class TestMoodTargets:
     def test_calm_has_longest_target(self, pacing: PacingAnalyzer) -> None:
         assert pacing.MOOD_TARGETS["calm"] == max(pacing.MOOD_TARGETS.values())
 
-    def test_analyze_returns_suggested_avg_closer_to_target(
-        self, pacing: PacingAnalyzer
-    ) -> None:
+    def test_analyze_returns_suggested_avg_closer_to_target(self, pacing: PacingAnalyzer) -> None:
         # All entries are 10 s (long), target "energetic" is 2.5 s
         entries = [
             _make_entry(0, 0, 10, "BROLL"),
@@ -108,9 +105,7 @@ class TestMoodTargets:
         # But we apply damped adjustments, so it won't jump all the way to 2.5
         assert result.suggested_avg_clip_duration < 10.0
 
-    def test_analyze_extends_short_clips_for_calm_mood(
-        self, pacing: PacingAnalyzer
-    ) -> None:
+    def test_analyze_extends_short_clips_for_calm_mood(self, pacing: PacingAnalyzer) -> None:
         # All entries are 2 s, target "calm" is 8.0 s
         entries = [
             _make_entry(0, 0, 2, "BROLL"),
@@ -121,9 +116,7 @@ class TestMoodTargets:
 
         assert result.suggested_avg_clip_duration > result.current_avg_clip_duration
 
-    def test_unknown_mood_falls_back_to_cinematic(
-        self, pacing: PacingAnalyzer
-    ) -> None:
+    def test_unknown_mood_falls_back_to_cinematic(self, pacing: PacingAnalyzer) -> None:
         entries = [_make_entry(0, 0, 10, "BROLL")]
         edl = _make_edl(entries)
         result = pacing.analyze(edl, target_mood="nonexistent_mood")
@@ -155,7 +148,7 @@ class TestDialogueProtection:
         """Dialogue segments should never be trimmed shorter than their current duration."""
         entries = [
             _make_entry(0, 0, 12, "DIALOGUE"),  # 12 s of dialogue
-            _make_entry(1, 12, 20, "BROLL"),     # 8 s of B-roll
+            _make_entry(1, 12, 20, "BROLL"),  # 8 s of B-roll
         ]
         edl = _make_edl(entries)
         # energetic target is 2.5 s — the dialogue must NOT be cut to 2.5
@@ -226,17 +219,13 @@ class TestRhythmDetection:
 
 
 class TestRhythmSuggestion:
-    def test_dramatic_creates_accelerating_sequence(
-        self, rhythm: RhythmAnalyzer
-    ) -> None:
+    def test_dramatic_creates_accelerating_sequence(self, rhythm: RhythmAnalyzer) -> None:
         durations = rhythm.suggest_rhythm("dramatic", 5)
         assert len(durations) == 5
         # Should generally trend shorter (accelerate toward climax)
         assert durations[0] > durations[-1]
 
-    def test_energetic_produces_short_durations(
-        self, rhythm: RhythmAnalyzer
-    ) -> None:
+    def test_energetic_produces_short_durations(self, rhythm: RhythmAnalyzer) -> None:
         durations = rhythm.suggest_rhythm("energetic", 4)
         assert len(durations) == 4
         assert all(d <= 4.0 for d in durations)
@@ -254,9 +243,7 @@ class TestRhythmSuggestion:
         assert len(durations) == 1
         assert durations[0] > 0
 
-    def test_all_suggested_durations_are_positive(
-        self, rhythm: RhythmAnalyzer
-    ) -> None:
+    def test_all_suggested_durations_are_positive(self, rhythm: RhythmAnalyzer) -> None:
         for mood in ("dramatic", "energetic", "calm", "comedic", "documentary", "cinematic"):
             durations = rhythm.suggest_rhythm(mood, 8)
             assert all(d > 0 for d in durations), f"Mood '{mood}' produced non-positive duration"

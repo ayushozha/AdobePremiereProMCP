@@ -144,7 +144,7 @@ func registerTemplateTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 
 	// 7. premiere_list_export_presets_disk
 	s.AddTool(gomcp.NewTool("premiere_list_export_presets_disk",
-		gomcp.WithDescription("List all available export preset (.epr) files on disk."),
+		gomcp.WithDescription("Scan Premiere Pro and Adobe Media Encoder preset directories on this host and list the .epr files that actually exist. An empty result means no presets were found in those known directories; callers may still provide an explicit .epr path."),
 	), tplH(orch, logger, "list_export_presets_disk", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
 		result, err := orch.ListExportPresetsFromDisk(ctx)
 		if err != nil {

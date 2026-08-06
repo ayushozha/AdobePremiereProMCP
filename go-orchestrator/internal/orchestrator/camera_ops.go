@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -78,10 +77,10 @@ func (e *Engine) GroupClipsByCamera(ctx context.Context, binPath string) (*Gener
 // MarkShotType marks a clip with a shot type (wide, medium, closeup, insert, cutaway).
 func (e *Engine) MarkShotType(ctx context.Context, trackType string, trackIndex, clipIndex int, shotType string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
-		"shotType": shotType,
+		"clipIndex":  clipIndex,
+		"shotType":   shotType,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "markShotType", string(argsJSON))
 	if err != nil {
@@ -93,9 +92,9 @@ func (e *Engine) MarkShotType(ctx context.Context, trackType string, trackIndex,
 // GetShotType retrieves the shot type marker from a clip.
 func (e *Engine) GetShotType(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "getShotType", string(argsJSON))
 	if err != nil {
@@ -108,7 +107,7 @@ func (e *Engine) GetShotType(ctx context.Context, trackType string, trackIndex, 
 func (e *Engine) FilterByShotType(ctx context.Context, sequenceIndex int, shotType string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"shotType": shotType,
+		"shotType":      shotType,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "filterByShotType", string(argsJSON))
 	if err != nil {
@@ -121,7 +120,7 @@ func (e *Engine) FilterByShotType(ctx context.Context, sequenceIndex int, shotTy
 func (e *Engine) CreateShotList(ctx context.Context, sequenceIndex int, outputPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"outputPath": outputPath,
+		"outputPath":    outputPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createShotList", string(argsJSON))
 	if err != nil {
@@ -133,7 +132,7 @@ func (e *Engine) CreateShotList(ctx context.Context, sequenceIndex int, outputPa
 // ImportShotList imports a shot list from CSV and applies to timeline.
 func (e *Engine) ImportShotList(ctx context.Context, csvPath string, sequenceIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"csvPath": csvPath,
+		"csvPath":       csvPath,
 		"sequenceIndex": sequenceIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "importShotList", string(argsJSON))
@@ -150,9 +149,9 @@ func (e *Engine) ImportShotList(ctx context.Context, csvPath string, sequenceInd
 // MarkScene marks a clip with a scene number.
 func (e *Engine) MarkScene(ctx context.Context, trackType string, trackIndex, clipIndex int, sceneNumber string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
-		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"trackType":   trackType,
+		"trackIndex":  trackIndex,
+		"clipIndex":   clipIndex,
 		"sceneNumber": sceneNumber,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "markScene", string(argsJSON))
@@ -165,9 +164,9 @@ func (e *Engine) MarkScene(ctx context.Context, trackType string, trackIndex, cl
 // MarkTake marks a clip with a take number.
 func (e *Engine) MarkTake(ctx context.Context, trackType string, trackIndex, clipIndex int, takeNumber string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 		"takeNumber": takeNumber,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "markTake", string(argsJSON))
@@ -270,7 +269,7 @@ func (e *Engine) GetSourceTimecode(ctx context.Context, projectItemIndex int) (*
 func (e *Engine) SetSourceTimecodeOffset(ctx context.Context, projectItemIndex int, offset string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"offset": offset,
+		"offset":           offset,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setSourceTimecodeOffset", string(argsJSON))
 	if err != nil {
@@ -294,7 +293,7 @@ func (e *Engine) SyncByTimecode(ctx context.Context, trackIndices []int) (*Gener
 // FindTimecodeBreaks finds gaps in timecode continuity on a track.
 func (e *Engine) FindTimecodeBreaks(ctx context.Context, trackType string, trackIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "findTimecodeBreaks", string(argsJSON))
@@ -312,7 +311,7 @@ func (e *Engine) FindTimecodeBreaks(ctx context.Context, trackType string, track
 func (e *Engine) RateClip(ctx context.Context, projectItemIndex, rating int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"rating": rating,
+		"rating":           rating,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "rateClip", string(argsJSON))
 	if err != nil {
@@ -365,7 +364,7 @@ func (e *Engine) GetTopRatedClips(ctx context.Context, count int) (*GenericResul
 func (e *Engine) SetClipNote(ctx context.Context, projectItemIndex int, note string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"note": note,
+		"note":             note,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setClipNote", string(argsJSON))
 	if err != nil {
@@ -402,7 +401,7 @@ func (e *Engine) SearchClipNotes(ctx context.Context, searchText string) (*Gener
 func (e *Engine) ExportClipNotes(ctx context.Context, outputPath, format string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"outputPath": outputPath,
-		"format": format,
+		"format":     format,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "exportClipNotes", string(argsJSON))
 	if err != nil {

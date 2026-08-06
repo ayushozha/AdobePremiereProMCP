@@ -9,11 +9,13 @@ Usage::
 from __future__ import annotations
 
 import argparse
-import os
 import signal
 import sys
 from pathlib import Path
-from types import FrameType
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from types import FrameType
 
 # Ensure the generated proto stubs are importable.
 # Resolve the gen/python directory relative to this file's location:
@@ -40,7 +42,9 @@ def _configure_logging(level: str) -> None:
             structlog.dev.ConsoleRenderer(),
         ],
         wrapper_class=structlog.make_filtering_bound_logger(
-            {"debug": 10, "info": 20, "warn": 30, "warning": 30, "error": 40}.get(level.lower(), 20),
+            {"debug": 10, "info": 20, "warn": 30, "warning": 30, "error": 40}.get(
+                level.lower(), 20
+            ),
         ),
         context_class=dict,
         logger_factory=structlog.PrintLoggerFactory(),
@@ -85,6 +89,7 @@ def main(argv: list[str] | None = None) -> None:
 
     log.info(
         "settings.loaded",
+        grpc_host=settings.grpc_host,
         grpc_port=settings.grpc_port,
         log_level=settings.log_level,
         embedding_model=settings.embedding_model,
@@ -95,7 +100,7 @@ def main(argv: list[str] | None = None) -> None:
 
     server = create_server(settings)
     server.start()
-    log.info("server.started", port=settings.grpc_port)
+    log.info("server.started", host=settings.grpc_host, port=settings.grpc_port)
 
     # ── Graceful shutdown ────────────────────────────────────────────────────
     shutdown_requested = False

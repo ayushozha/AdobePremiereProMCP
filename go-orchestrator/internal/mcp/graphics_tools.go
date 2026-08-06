@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	gomcp "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -268,17 +269,22 @@ func registerGraphicsTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 
 	s.AddTool(
 		gomcp.NewTool("premiere_export_captions",
-			gomcp.WithDescription("Export captions from the active sequence as SRT or VTT file."),
+			gomcp.WithDescription("Export captions from the active sequence as an SRT or VTT sidecar, but only when its read-back identity matches sequence_id. Activate and verify the intended sequence immediately before calling this tool."),
+			gomcp.WithString("sequence_id", gomcp.Required(), gomcp.MaxLength(255), gomcp.Description("Exact ID of the sequence that must currently be active")),
 			gomcp.WithString("output_path", gomcp.Required(), gomcp.Description("Absolute path for the output caption file")),
 			gomcp.WithString("format", gomcp.Description("Export format: 'SRT' (default) or 'VTT'"), gomcp.Enum("SRT", "VTT")),
 		),
 		func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
 			logger.Debug("handling premiere_export_captions")
+			sequenceID := strings.TrimSpace(gomcp.ParseString(req, "sequence_id", ""))
+			if sequenceID == "" {
+				return gomcp.NewToolResultError("parameter 'sequence_id' is required"), nil
+			}
 			outputPath := gomcp.ParseString(req, "output_path", "")
 			if outputPath == "" {
 				return gomcp.NewToolResultError("parameter 'output_path' is required"), nil
 			}
-			result, err := orch.ExportCaptions(ctx, outputPath, gomcp.ParseString(req, "format", "SRT"))
+			result, err := orch.ExportCaptions(ctx, sequenceID, outputPath, gomcp.ParseString(req, "format", "SRT"))
 			if err != nil {
 				return gomcp.NewToolResultError(fmt.Sprintf("failed to export captions: %v", err)), nil
 			}
@@ -288,7 +294,7 @@ func registerGraphicsTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 
 	s.AddTool(
 		gomcp.NewTool("premiere_style_captions",
-			gomcp.WithDescription("Style all captions on a track (font, size, color, background, position)."),
+			gomcp.WithDescription("Unavailable on the CEP backend: returns an explicit unsupported error because portable caption style properties cannot be read back reliably."),
 			gomcp.WithNumber("track_index", gomcp.Description("Zero-based caption track index (default: 0)")),
 			gomcp.WithString("font", gomcp.Description("Font family name")),
 			gomcp.WithNumber("size", gomcp.Description("Font size in points (default: 24)")),

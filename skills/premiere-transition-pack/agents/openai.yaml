@@ -1,0 +1,4 @@
+interface:
+  display_name: "Premiere Transition Pack"
+  short_description: "Apply restrained, consistent transition recipes"
+  default_prompt: "Use $premiere-transition-pack to add suitable transitions without over-editing the sequence."

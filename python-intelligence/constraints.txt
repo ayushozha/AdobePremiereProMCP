@@ -1,0 +1,39 @@
+# Reproducible base + development dependency set for CPython 3.12.
+# Resolved from pyproject.toml on 2026-08-05. Constraints keep the project
+# metadata flexible for library consumers while CI, Docker, and `just install`
+# use the same tested versions. Wheel resolution was checked for CPython 3.12
+# on macOS arm64, Linux x86_64, and Windows x86_64. Optional `ai` dependencies
+# are not included.
+annotated-types==0.8.0
+ast-serialize==0.6.0
+grpcio==1.83.0
+grpcio-tools==1.83.0
+iniconfig==2.3.0
+joblib==1.5.3
+librt==0.13.0
+lxml==6.1.1
+mypy==2.3.0
+mypy-extensions==1.1.0
+narwhals==2.24.0
+numpy==2.5.1
+packaging==26.3
+pathspec==1.1.1
+pluggy==1.6.0
+protobuf==7.35.1
+pydantic==2.13.4
+pydantic-core==2.46.4
+pydantic-settings==2.14.2
+pygments==2.20.0
+pypdf==6.14.2
+pytest==9.1.1
+pytest-asyncio==1.4.0
+python-docx==1.2.0
+python-dotenv==1.2.2
+ruff==0.16.1
+scikit-learn==1.9.0
+scipy==1.18.0
+setuptools==83.0.0
+structlog==26.1.0
+threadpoolctl==3.6.0
+typing-extensions==4.16.0
+typing-inspection==0.4.2

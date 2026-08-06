@@ -9,15 +9,16 @@ from __future__ import annotations
 import pytest
 
 from src.matching.keyword_matcher import KeywordMatcher
-from src.matching.scoring import ScoredMatch, combine_scores, cosine_similarity, normalize_text
+from src.matching.matcher import AssetMatcher
+from src.matching.scoring import combine_scores, cosine_similarity, normalize_text
 from src.matching.suggest import suggest_assets
 from src.models import (
     AssetInfo,
     AssetType,
+    MatchStrategy,
     ScriptSegment,
     SegmentType,
 )
-
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -60,9 +61,7 @@ def _make_asset(
 
 
 class TestKeywordMatching:
-    def test_matches_by_filename_overlap(
-        self, keyword_matcher: KeywordMatcher
-    ) -> None:
+    def test_matches_by_filename_overlap(self, keyword_matcher: KeywordMatcher) -> None:
         segment = _make_segment(content="sunset on the beach")
         assets = [
             _make_asset("a1", "sunset_beach_001.mp4"),
@@ -76,9 +75,7 @@ class TestKeywordMatching:
         if a1_scores and a2_scores:
             assert a1_scores[0].score > a2_scores[0].score
 
-    def test_returns_empty_for_no_overlap(
-        self, keyword_matcher: KeywordMatcher
-    ) -> None:
+    def test_returns_empty_for_no_overlap(self, keyword_matcher: KeywordMatcher) -> None:
         segment = _make_segment(content="quantum physics lecture")
         assets = [_make_asset("a1", "sunset_beach.mp4")]
         results = keyword_matcher.match(segment, assets)
@@ -86,9 +83,7 @@ class TestKeywordMatching:
         for r in results:
             assert r.score < 0.5
 
-    def test_exact_hint_match_boosts_score(
-        self, keyword_matcher: KeywordMatcher
-    ) -> None:
+    def test_exact_hint_match_boosts_score(self, keyword_matcher: KeywordMatcher) -> None:
         segment_no_hints = _make_segment(
             content="sunset over the ocean",
             asset_hints=[],
@@ -107,18 +102,14 @@ class TestKeywordMatching:
         # Having explicit hints should boost or at least not lower the score
         assert score_with >= score_no
 
-    def test_reasoning_contains_overlapping_keywords(
-        self, keyword_matcher: KeywordMatcher
-    ) -> None:
+    def test_reasoning_contains_overlapping_keywords(self, keyword_matcher: KeywordMatcher) -> None:
         segment = _make_segment(content="sunset on the beach")
         assets = [_make_asset("a1", "sunset_beach_clip.mp4")]
         results = keyword_matcher.match(segment, assets)
         assert len(results) > 0
         assert "sunset" in results[0].reasoning.lower() or "beach" in results[0].reasoning.lower()
 
-    def test_sorted_by_descending_score(
-        self, keyword_matcher: KeywordMatcher
-    ) -> None:
+    def test_sorted_by_descending_score(self, keyword_matcher: KeywordMatcher) -> None:
         segment = _make_segment(content="mountain sunset landscape")
         assets = [
             _make_asset("a1", "sunset_mountain.mp4"),
@@ -128,6 +119,22 @@ class TestKeywordMatching:
         results = keyword_matcher.match(segment, assets)
         scores = [r.score for r in results]
         assert scores == sorted(scores, reverse=True)
+
+
+class TestAssetMatcherStrategyOverride:
+    def test_per_call_strategy_does_not_mutate_shared_default(self) -> None:
+        matcher = AssetMatcher(
+            strategy=MatchStrategy.HYBRID,
+            confidence_threshold=0.0,
+        )
+        result = matcher.match(
+            [_make_segment(content="sunset beach")],
+            [_make_asset(file_name="sunset_beach.mp4")],
+            strategy=MatchStrategy.KEYWORD,
+        )
+
+        assert result.matches
+        assert matcher.strategy == MatchStrategy.HYBRID
 
 
 # ── Text normalization tests ───────────────────────────────────────────────

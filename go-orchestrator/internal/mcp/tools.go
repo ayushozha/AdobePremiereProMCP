@@ -9,7 +9,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 	"go.uber.org/zap"
 
-	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/orchestrator"
+	"github.com/ayushozha/AdobePremiereProMCP/go-orchestrator/internal/orchestrator"
 )
 
 // registerTools registers every MCP tool with the server. Each tool is defined
@@ -150,10 +150,10 @@ func registerEditingTools(s *server.MCPServer, orch Orchestrator, logger *zap.Lo
 				gomcp.Description("Timeline position in seconds where the clip's start should be placed (default: 0). For example, 10.5 places the clip at the 10.5-second mark."),
 			),
 			gomcp.WithNumber("in_point_seconds",
-				gomcp.Description("Source in-point in seconds -- the point in the original media where playback begins. Omit to use the media start."),
+				gomcp.Description("Source in-point in seconds. Omit to preserve the project item's current source in mark."),
 			),
 			gomcp.WithNumber("out_point_seconds",
-				gomcp.Description("Source out-point in seconds -- the point in the original media where playback ends. Omit to use the media end."),
+				gomcp.Description("Source out-point in seconds. Omit to preserve the project item's current source out mark."),
 			),
 			gomcp.WithNumber("speed",
 				gomcp.Description("Playback speed multiplier (default: 1.0). Use 2.0 for double speed, 0.5 for half speed. Must be positive."),
@@ -203,43 +203,6 @@ func registerEditingTools(s *server.MCPServer, orch Orchestrator, logger *zap.Lo
 		makeAddTransitionHandler(orch, logger),
 	)
 
-	// premiere_add_text
-	s.AddTool(
-		gomcp.NewTool("premiere_add_text",
-			gomcp.WithDescription("Add a text overlay (Essential Graphics title) to the timeline on a video track. The text is rendered as a transparent-background graphics clip. Place it on a track above your video clips so it overlays. Supports positioning, font size, and color."),
-			gomcp.WithString("sequence_id",
-				gomcp.Required(),
-				gomcp.Description("Unique identifier of the target sequence. Obtain from premiere_get_project or premiere_get_sequence_list."),
-			),
-			gomcp.WithString("text",
-				gomcp.Required(),
-				gomcp.Description("Text content to display on screen. Supports line breaks via '\\n'."),
-			),
-			gomcp.WithNumber("track_index",
-				gomcp.Description("Zero-based video track index to place the text on (default: topmost track). Place on a track above your video clips for overlay."),
-			),
-			gomcp.WithNumber("position_seconds",
-				gomcp.Description("Start position on the timeline in seconds (default: 0). The text clip begins at this point."),
-			),
-			gomcp.WithNumber("duration_seconds",
-				gomcp.Description("How long the text is visible in seconds (default: 5.0)."),
-			),
-			gomcp.WithNumber("font_size",
-				gomcp.Description("Font size in points (default: 48). Typical range: 12 to 200."),
-			),
-			gomcp.WithString("color",
-				gomcp.Description("Text color as a CSS-style hex string (default: '#FFFFFF' white). Examples: '#FF0000' (red), '#00FF00' (green), '#000000' (black)."),
-			),
-			gomcp.WithNumber("x",
-				gomcp.Description("Horizontal position as a normalized value 0.0-1.0 (default: 0.5, centered). 0.0 = left edge, 1.0 = right edge."),
-			),
-			gomcp.WithNumber("y",
-				gomcp.Description("Vertical position as a normalized value 0.0-1.0 (default: 0.5, centered). 0.0 = top edge, 1.0 = bottom edge."),
-			),
-		),
-		makeAddTextHandler(orch, logger),
-	)
-
 	// premiere_set_audio_level
 	s.AddTool(
 		gomcp.NewTool("premiere_set_audio_level",
@@ -263,7 +226,7 @@ func registerEditingTools(s *server.MCPServer, orch Orchestrator, logger *zap.Lo
 	// premiere_get_timeline
 	s.AddTool(
 		gomcp.NewTool("premiere_get_timeline",
-			gomcp.WithDescription("Retrieve the full state of a sequence's timeline, including every video and audio track, all clips on each track (with names, positions, durations, in/out points), and applied effects. Useful for understanding the current edit state before making changes. For the active sequence only, you can omit sequence_id."),
+			gomcp.WithDescription("Retrieve the typed state of a sequence timeline: sequence ID and duration; video/audio track indices, types, mute/lock state; and each clip's canonical ID, source path, source/timeline ranges, and speed. For the active sequence, omit sequence_id. Use premiere_get_clip_info when names or effect parameters are needed."),
 			gomcp.WithString("sequence_id",
 				gomcp.Description("Unique identifier of the sequence to inspect. If omitted, uses the currently active sequence. Obtain IDs from premiere_get_project."),
 			),
@@ -280,17 +243,18 @@ func registerExportTools(s *server.MCPServer, orch Orchestrator, logger *zap.Log
 	// premiere_export
 	s.AddTool(
 		gomcp.NewTool("premiere_export",
-			gomcp.WithDescription("Export a sequence to a media file using a built-in preset. This is the simplest export option. For more control (custom .epr preset files, work area selection), use premiere_export_direct. For asynchronous export via Adobe Media Encoder, use premiere_export_via_ame."),
+			gomcp.WithDescription("Export a sequence through Adobe Media Encoder using a named .epr preset configured on the TypeScript bridge. For an explicit preset path or direct blocking export, use premiere_export_via_ame or premiere_export_direct."),
 			gomcp.WithString("sequence_id",
-				gomcp.Description("Unique identifier of the sequence to export. If omitted, exports the currently active sequence. Obtain IDs from premiere_get_project."),
+				gomcp.Required(),
+				gomcp.Description("Unique identifier of the sequence to export. Obtain IDs from premiere_get_project."),
 			),
 			gomcp.WithString("output_path",
 				gomcp.Required(),
 				gomcp.Description("Absolute file path for the exported output (e.g. '/Users/me/exports/final.mp4'). The file extension should match the chosen preset."),
 			),
 			gomcp.WithString("preset",
-				gomcp.Description("Export preset name (default: 'h264_1080p'). h264_1080p/h264_4k: MP4 for web delivery; prores_422/prores_4444: high-quality intermediate; dnxhd: Avid-compatible; gif: animated GIF."),
-				gomcp.Enum("h264_1080p", "h264_4k", "prores_422", "prores_4444", "dnxhd", "gif"),
+				gomcp.Description("Configured export preset name (default: 'h264_1080p'). Each name must map to an absolute .epr path through PREMIERE_EXPORT_PRESET_* on the bridge."),
+				gomcp.Enum("h264_1080p", "h264_4k", "prores_422", "prores_4444", "dnxhd"),
 			),
 		),
 		makeExportHandler(orch, logger),
@@ -321,6 +285,50 @@ func registerAITools(s *server.MCPServer, orch Orchestrator, logger *zap.Logger)
 		makeScanAssetsHandler(orch, logger),
 	)
 
+	// premiere_probe_media
+	s.AddTool(
+		gomcp.NewTool("premiere_probe_media",
+			gomcp.WithDescription("Probe one local media file through the Rust media engine and return codec, duration, resolution, audio, file-size, and fingerprint metadata without importing it into Premiere."),
+			gomcp.WithString("file_path", gomcp.Required(), gomcp.Description("Absolute path to the media file to inspect.")),
+		),
+		makeProbeMediaHandler(orch, logger),
+	)
+
+	// premiere_generate_thumbnail
+	s.AddTool(
+		gomcp.NewTool("premiere_generate_thumbnail",
+			gomcp.WithDescription("Extract one PNG or JPEG video frame through the Rust media engine. Returns encoded image bytes as base64 JSON plus the actual dimensions."),
+			gomcp.WithString("file_path", gomcp.Required(), gomcp.Description("Absolute path to a video file.")),
+			gomcp.WithNumber("timestamp_seconds", gomcp.Description("Frame timestamp in seconds (default: 0).")),
+			gomcp.WithNumber("width", gomcp.Description("Output width in pixels (default: 320; maximum: 8192).")),
+			gomcp.WithNumber("height", gomcp.Description("Output height in pixels (default: 180; maximum: 8192).")),
+			gomcp.WithString("output_format", gomcp.Description("Encoded image format (default: png)."), gomcp.Enum("png", "jpg")),
+		),
+		makeGenerateThumbnailHandler(orch, logger),
+	)
+
+	// premiere_analyze_waveform
+	s.AddTool(
+		gomcp.NewTool("premiere_analyze_waveform",
+			gomcp.WithDescription("Analyze a media file's audio through the Rust engine. Returns peak/RMS levels, duration, waveform samples, and measured silence regions for reviewable dialogue-cut planning."),
+			gomcp.WithString("file_path", gomcp.Required(), gomcp.Description("Absolute path to a media file with audio.")),
+			gomcp.WithNumber("audio_track", gomcp.Description("Zero-based audio stream index (default: 0).")),
+			gomcp.WithNumber("silence_threshold_db", gomcp.Description("Samples below this dBFS level are considered silent (default: -40).")),
+			gomcp.WithNumber("min_silence_duration_seconds", gomcp.Description("Minimum silence-region duration (default: 0.5 seconds).")),
+		),
+		makeAnalyzeWaveformHandler(orch, logger),
+	)
+
+	// premiere_detect_scenes
+	s.AddTool(
+		gomcp.NewTool("premiere_detect_scenes",
+			gomcp.WithDescription("Detect video scene-change boundaries through the Rust media engine and return their timestamps and confidence scores."),
+			gomcp.WithString("file_path", gomcp.Required(), gomcp.Description("Absolute path to a video file.")),
+			gomcp.WithNumber("threshold", gomcp.Description("Scene sensitivity threshold from 0 to 1 (default: 0.4).")),
+		),
+		makeDetectScenesHandler(orch, logger),
+	)
+
 	// premiere_parse_script
 	s.AddTool(
 		gomcp.NewTool("premiere_parse_script",
@@ -342,7 +350,7 @@ func registerAITools(s *server.MCPServer, orch Orchestrator, logger *zap.Logger)
 	// premiere_auto_edit
 	s.AddTool(
 		gomcp.NewTool("premiere_auto_edit",
-			gomcp.WithDescription("Perform a fully automated edit: scan an assets directory, parse a script, match script segments to media files by name/content, and assemble a complete sequence with clips, transitions, and text overlays. This is a high-level compound operation. For step-by-step control, use premiere_scan_assets, premiere_parse_script, premiere_import_files, and premiere_place_clip individually."),
+			gomcp.WithDescription("Perform a fully automated rough cut: scan an assets directory, parse a script, match script segments to media files by name/content, and assemble a sequence with deterministic clip placement and supported transitions. Titles are a separate verified MOGRT workflow. For step-by-step control, use premiere_scan_assets, premiere_parse_script, premiere_import_files, and premiere_place_clip individually."),
 			gomcp.WithString("script_path",
 				gomcp.Description("Absolute path to the script file. Provide this or 'script_text', not both."),
 			),
@@ -464,6 +472,18 @@ func makePlaceClipHandler(orch Orchestrator, logger *zap.Logger) server.ToolHand
 		positionSecs := gomcp.ParseFloat64(req, "position_seconds", 0)
 		inSecs := gomcp.ParseFloat64(req, "in_point_seconds", 0)
 		outSecs := gomcp.ParseFloat64(req, "out_point_seconds", 0)
+		arguments, _ := objectArguments(req.Params.Arguments)
+		_, hasInPoint := arguments["in_point_seconds"]
+		_, hasOutPoint := arguments["out_point_seconds"]
+		if positionSecs < 0 {
+			return gomcp.NewToolResultError("parameter 'position_seconds' must be non-negative"), nil
+		}
+		if (hasInPoint && inSecs < 0) || (hasOutPoint && outSecs <= 0) {
+			return gomcp.NewToolResultError("source in point must be non-negative and source out point must be positive"), nil
+		}
+		if hasInPoint && hasOutPoint && outSecs <= inSecs {
+			return gomcp.NewToolResultError("parameter 'out_point_seconds' must be after 'in_point_seconds'"), nil
+		}
 
 		params := &PlaceClipParams{
 			SourcePath: sourcePath,
@@ -475,10 +495,13 @@ func makePlaceClipHandler(orch Orchestrator, logger *zap.Logger) server.ToolHand
 			Speed:    gomcp.ParseFloat64(req, "speed", 1.0),
 		}
 
-		if inSecs > 0 || outSecs > 0 {
-			params.SourceRange = &TimeRange{
-				InPoint:  secondsToTimecode(inSecs, 24),
-				OutPoint: secondsToTimecode(outSecs, 24),
+		if hasInPoint || hasOutPoint {
+			params.SourceRange = &TimeRange{}
+			if hasInPoint {
+				params.SourceRange.InPoint = secondsToTimecode(inSecs, 24)
+			}
+			if hasOutPoint {
+				params.SourceRange.OutPoint = secondsToTimecode(outSecs, 24)
 			}
 		}
 
@@ -662,6 +685,96 @@ func makeScanAssetsHandler(orch Orchestrator, logger *zap.Logger) server.ToolHan
 		if err != nil {
 			logger.Error("scan assets failed", zap.Error(err))
 			return gomcp.NewToolResultError(fmt.Sprintf("failed to scan assets: %v", err)), nil
+		}
+		return toolResultJSON(result)
+	}
+}
+
+func makeProbeMediaHandler(orch Orchestrator, logger *zap.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
+		filePath := gomcp.ParseString(req, "file_path", "")
+		if filePath == "" {
+			return gomcp.NewToolResultError("parameter 'file_path' is required"), nil
+		}
+		result, err := orch.ProbeMedia(ctx, filePath)
+		if err != nil {
+			logger.Error("probe media failed", zap.Error(err))
+			return gomcp.NewToolResultError(fmt.Sprintf("failed to probe media: %v", err)), nil
+		}
+		return toolResultJSON(result)
+	}
+}
+
+func makeGenerateThumbnailHandler(orch Orchestrator, logger *zap.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
+		filePath := gomcp.ParseString(req, "file_path", "")
+		if filePath == "" {
+			return gomcp.NewToolResultError("parameter 'file_path' is required"), nil
+		}
+		timestamp := gomcp.ParseFloat64(req, "timestamp_seconds", 0)
+		width := gomcp.ParseInt(req, "width", 320)
+		height := gomcp.ParseInt(req, "height", 180)
+		if timestamp < 0 {
+			return gomcp.NewToolResultError("parameter 'timestamp_seconds' must be non-negative"), nil
+		}
+		if width < 1 || width > 8192 || height < 1 || height > 8192 {
+			return gomcp.NewToolResultError("parameters 'width' and 'height' must be between 1 and 8192"), nil
+		}
+		result, err := orch.GenerateThumbnail(ctx, filePath, &orchestrator.ThumbnailOptions{
+			TimestampSeconds: timestamp,
+			Width:            uint32(width),
+			Height:           uint32(height),
+			OutputFormat:     gomcp.ParseString(req, "output_format", "png"),
+		})
+		if err != nil {
+			logger.Error("generate thumbnail failed", zap.Error(err))
+			return gomcp.NewToolResultError(fmt.Sprintf("failed to generate thumbnail: %v", err)), nil
+		}
+		return toolResultJSON(result)
+	}
+}
+
+func makeAnalyzeWaveformHandler(orch Orchestrator, logger *zap.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
+		filePath := gomcp.ParseString(req, "file_path", "")
+		if filePath == "" {
+			return gomcp.NewToolResultError("parameter 'file_path' is required"), nil
+		}
+		audioTrack := gomcp.ParseInt(req, "audio_track", 0)
+		minDuration := gomcp.ParseFloat64(req, "min_silence_duration_seconds", 0.5)
+		if audioTrack < 0 {
+			return gomcp.NewToolResultError("parameter 'audio_track' must be non-negative"), nil
+		}
+		if minDuration <= 0 {
+			return gomcp.NewToolResultError("parameter 'min_silence_duration_seconds' must be positive"), nil
+		}
+		result, err := orch.AnalyzeWaveform(ctx, filePath, &orchestrator.WaveformOptions{
+			AudioTrack:             uint32(audioTrack),
+			SilenceThresholdDB:     gomcp.ParseFloat64(req, "silence_threshold_db", -40),
+			MinSilenceDurationSecs: minDuration,
+		})
+		if err != nil {
+			logger.Error("analyze waveform failed", zap.Error(err))
+			return gomcp.NewToolResultError(fmt.Sprintf("failed to analyze waveform: %v", err)), nil
+		}
+		return toolResultJSON(result)
+	}
+}
+
+func makeDetectScenesHandler(orch Orchestrator, logger *zap.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
+		filePath := gomcp.ParseString(req, "file_path", "")
+		if filePath == "" {
+			return gomcp.NewToolResultError("parameter 'file_path' is required"), nil
+		}
+		threshold := gomcp.ParseFloat64(req, "threshold", 0.4)
+		if threshold < 0 || threshold > 1 {
+			return gomcp.NewToolResultError("parameter 'threshold' must be between 0 and 1"), nil
+		}
+		result, err := orch.DetectScenes(ctx, filePath, threshold)
+		if err != nil {
+			logger.Error("detect scenes failed", zap.Error(err))
+			return gomcp.NewToolResultError(fmt.Sprintf("failed to detect scenes: %v", err)), nil
 		}
 		return toolResultJSON(result)
 	}

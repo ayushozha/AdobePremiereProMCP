@@ -8,12 +8,13 @@ import (
 	"fmt"
 	"time"
 
-	commonpb "github.com/anthropics/premierpro-mcp/gen/go/premierpro/common/v1"
-	premierepb "github.com/anthropics/premierpro-mcp/gen/go/premierpro/premiere/v1"
+	commonpb "github.com/ayushozha/AdobePremiereProMCP/gen/go/premierpro/common/v1"
+	premierepb "github.com/ayushozha/AdobePremiereProMCP/gen/go/premierpro/premiere/v1"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/metadata"
 )
 
 // PremiereBridgeClient provides Go-native access to the TypeScript Premiere bridge.
@@ -24,13 +25,28 @@ type PremiereBridgeClient struct {
 	logger      *zap.Logger
 }
 
-// newPremiereBridgeClient dials the Premiere bridge and returns a ready client.
-func newPremiereBridgeClient(addr string, dialTimeout, callTimeout time.Duration, logger *zap.Logger) (*PremiereBridgeClient, error) {
+// newPremiereBridgeClient creates a lazy Premiere-bridge client.
+func newPremiereBridgeClient(addr string, callTimeout time.Duration, logger *zap.Logger) (*PremiereBridgeClient, error) {
 	logger = logger.With(zap.String("client", "premiere_bridge"), zap.String("addr", addr))
-	logger.Info("connecting to premiere bridge service")
+	logger.Info("initializing premiere bridge client")
+	sharedToken, err := loadOrCreateSharedToken()
+	if err != nil {
+		return nil, fmt.Errorf("load premiere bridge credentials: %w", err)
+	}
 
 	conn, err := grpc.NewClient(addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(func(
+			ctx context.Context,
+			method string,
+			req, reply any,
+			cc *grpc.ClientConn,
+			invoker grpc.UnaryInvoker,
+			opts ...grpc.CallOption,
+		) error {
+			ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+sharedToken)
+			return invoker(ctx, method, req, reply, cc, opts...)
+		}),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:                30 * time.Second,
 			Timeout:             10 * time.Second,
@@ -41,7 +57,7 @@ func newPremiereBridgeClient(addr string, dialTimeout, callTimeout time.Duration
 		return nil, fmt.Errorf("premiere bridge dial %s: %w", addr, err)
 	}
 
-	logger.Info("connected to premiere bridge service")
+	logger.Info("premiere bridge client initialized")
 	return &PremiereBridgeClient{
 		conn:        conn,
 		client:      premierepb.NewPremiereBridgeServiceClient(conn),

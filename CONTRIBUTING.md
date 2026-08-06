@@ -32,8 +32,8 @@ Thank you for your interest in contributing to the Adobe Premiere Pro MCP server
 
 | Tool | Version | Purpose |
 |---|---|---|
-| [Go](https://go.dev/) | 1.22+ | MCP server & orchestrator |
-| [Rust](https://rustup.rs/) | 1.77+ | Media processing engine |
+| [Go](https://go.dev/) | 1.26.1+ | MCP server & orchestrator |
+| [Rust](https://rustup.rs/) | 1.85+ | Media processing engine |
 | [Python](https://python.org/) | 3.12+ | AI intelligence layer |
 | [Node.js](https://nodejs.org/) | 20+ | Premiere Pro bridge |
 | [just](https://github.com/casey/just) | latest | Build system |
@@ -67,7 +67,7 @@ just test
 just go-run
 
 # Or run directly
-./go-orchestrator/bin/server --transport stdio
+./go-orchestrator/bin/premierpro-mcp --transport stdio
 ```
 
 ### Install CEP Panel
@@ -182,7 +182,7 @@ just test
 ## Code Style Guidelines
 
 ### Go
-- Follow standard Go conventions (`gofmt`, `golangci-lint`)
+- Follow standard Go conventions (`gofmt`, `go vet`)
 - Use meaningful variable names
 - Add comments for exported functions
 - Handle errors explicitly (no silent swallowing)

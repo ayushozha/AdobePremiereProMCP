@@ -207,11 +207,11 @@ func registerAdvancedEditTools(s *server.MCPServer, orch Orchestrator, logger *z
 	}))
 
 	s.AddTool(gomcp.NewTool("premiere_ripple_delete_gap",
-		gomcp.WithDescription("Ripple delete a specific time range on a track: removes all clips within the range and shifts later clips backward."),
+		gomcp.WithDescription("Close a verified empty gap on one track by shifting later clips backward exactly once. The call fails if any clip overlaps the requested range, and verifies every shifted position before reporting success. To remove a clip with ripple, use premiere_remove_clip_from_track with ripple=true."),
 		gomcp.WithString("track_type", gomcp.Required(), gomcp.Description("Track type"), gomcp.Enum("video", "audio")),
 		gomcp.WithNumber("track_index", gomcp.Required(), gomcp.Description("Zero-based track index")),
-		gomcp.WithNumber("start_time", gomcp.Required(), gomcp.Description("Start of the range to delete in seconds")),
-		gomcp.WithNumber("end_time", gomcp.Required(), gomcp.Description("End of the range to delete in seconds")),
+		gomcp.WithNumber("start_time", gomcp.Required(), gomcp.Description("Start of the verified empty gap in seconds")),
+		gomcp.WithNumber("end_time", gomcp.Required(), gomcp.Description("End of the verified empty gap in seconds")),
 	), advH(orch, logger, "ripple_delete_gap", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
 		result, err := orch.RippleDeleteGap(ctx, gomcp.ParseString(req, "track_type", "video"), gomcp.ParseInt(req, "track_index", 0), gomcp.ParseFloat64(req, "start_time", 0), gomcp.ParseFloat64(req, "end_time", 0))
 		if err != nil {

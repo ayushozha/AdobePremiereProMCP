@@ -11,7 +11,6 @@ import pytest
 from src.models import ScriptFormat, SegmentType
 from src.parser import ScriptParser
 
-
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
 

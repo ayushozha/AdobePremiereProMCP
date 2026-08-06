@@ -1,37 +1,31 @@
 version: v2
-clean: true
+# Keep the Go module metadata in gen/go. `clean: true` removes go.mod and
+# go.sum before every generation, which makes the documented `just build`
+# workflow fail immediately after `just proto`.
+clean: false
 
 managed:
   enabled: true
   override:
     - file_option: go_package_prefix
-      value: github.com/anthropics/premierpro-mcp/gen/go
+      value: github.com/ayushozha/AdobePremiereProMCP/gen/go
 
 plugins:
   # ──── Go ────
-  - remote: buf.build/protocolbuffers/go
+  - remote: buf.build/protocolbuffers/go:v1.36.11
     out: gen/go
     opt: paths=source_relative
-  - remote: buf.build/grpc/go
+  - remote: buf.build/grpc/go:v1.6.2
     out: gen/go
     opt: paths=source_relative
 
   # ──── Python ────
-  - remote: buf.build/protocolbuffers/python
+  - remote: buf.build/protocolbuffers/python:v35.1
     out: gen/python
-  - remote: buf.build/grpc/python
+  - remote: buf.build/grpc/python:v1.83.0
     out: gen/python
-  - remote: buf.build/protocolbuffers/pyi
+  - remote: buf.build/protocolbuffers/pyi:v35.1
     out: gen/python
-
-  # ──── TypeScript (ts-proto for nice-grpc) ────
-  - remote: buf.build/community/stephenh-ts-proto
-    out: gen/ts
-    opt:
-      - outputServices=nice-grpc
-      - outputServices=generic-definitions
-      - useExactTypes=false
-      - esModuleInterop=true
 
 inputs:
   - directory: proto/definitions

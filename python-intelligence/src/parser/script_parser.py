@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING
 
 from src.models import (
     ParsedScript,
@@ -23,6 +23,9 @@ from src.parser.duration_estimator import estimate_duration
 from src.parser.formats.narration import parse_narration
 from src.parser.formats.screenplay import parse_screenplay
 from src.parser.formats.youtube import parse_youtube
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +167,7 @@ def _read_file_text(file_path: str) -> str:
 
     if suffix == ".pdf":
         try:
-            from pypdf import PdfReader  # type: ignore[import-untyped]
+            from pypdf import PdfReader
         except ImportError as exc:
             raise ImportError(
                 "pypdf is required for PDF parsing. Install it with: pip install pypdf"
@@ -180,19 +183,16 @@ def _read_file_text(file_path: str) -> str:
 
     if suffix in (".docx", ".doc"):
         try:
-            import docx  # type: ignore[import-untyped]
+            import docx
         except ImportError as exc:
             raise ImportError(
-                "python-docx is required for DOCX parsing. "
-                "Install it with: pip install python-docx"
+                "python-docx is required for DOCX parsing. Install it with: pip install python-docx"
             ) from exc
 
         doc = docx.Document(str(path))
         return "\n".join(para.text for para in doc.paragraphs)
 
-    raise ValueError(
-        f"Unsupported file type '{suffix}'. Supported: .txt, .pdf, .docx"
-    )
+    raise ValueError(f"Unsupported file type '{suffix}'. Supported: .txt, .pdf, .docx")
 
 
 # ── Public API ───────────────────────────────────────────────────────────────
@@ -245,14 +245,8 @@ class ScriptParser:
 
         # Enrich each segment with duration and asset hints.
         for segment in raw_segments:
-            segment.estimated_duration_seconds = round(
-                estimate_duration(segment), 2
-            )
-            hint_source = (
-                segment.visual_direction
-                or segment.audio_direction
-                or segment.content
-            )
+            segment.estimated_duration_seconds = round(estimate_duration(segment), 2)
+            hint_source = segment.visual_direction or segment.audio_direction or segment.content
             if hint_source and segment.type in (
                 SegmentType.BROLL,
                 SegmentType.ACTION,

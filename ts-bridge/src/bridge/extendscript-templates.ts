@@ -43,19 +43,6 @@ function tcToSecondsExpr(tc: Timecode): string {
   return String(totalSeconds);
 }
 
-/** Map our ExportPreset string to an AME preset name Premiere understands. */
-function presetToAMEName(preset: ExportPreset): string {
-  const map: Record<ExportPreset, string> = {
-    h264_1080p: "H.264 - Match Source - High bitrate",
-    h264_4k: "H.264 - Match Source - High bitrate",
-    prores_422: "Apple ProRes 422",
-    prores_4444: "Apple ProRes 4444",
-    dnx_hr: "DNxHR HQX",
-    custom: "Match Source - High bitrate",
-  };
-  return map[preset] ?? "H.264 - Match Source - High bitrate";
-}
-
 // ---------------------------------------------------------------------------
 // Templates
 // ---------------------------------------------------------------------------
@@ -255,6 +242,19 @@ export function importMedia(filePath: string, targetBin: string): string {
       return JSON.stringify({ error: 'No project open' });
     }
 
+    var requestedFile = new File('${esc(filePath)}');
+    if (!requestedFile.exists) {
+      return JSON.stringify({ error: 'Media file does not exist: ' + requestedFile.fsName });
+    }
+    var requestedPath = String(requestedFile.fsName);
+    var windowsHost = $.os && $.os.indexOf('Win') >= 0;
+    function normalizePath(value) {
+      if (!value) return '';
+      var canonical = String((new File(String(value))).fsName).replace(/\\\\/g, '/');
+      return windowsHost ? canonical.toLowerCase() : canonical;
+    }
+    var requestedKey = normalizePath(requestedPath);
+
     var targetFolder = proj.rootItem;
     var binPath = '${esc(targetBin)}';
 
@@ -277,26 +277,53 @@ export function importMedia(filePath: string, targetBin: string): string {
       }
     }
 
-    var filesToImport = ['${esc(filePath)}'];
-    var suppressUI = true;
-    proj.importFiles(filesToImport, suppressUI, targetFolder, false);
-
-    var imported = null;
-    for (var i = targetFolder.children.numItems - 1; i >= 0; i--) {
-      var item = targetFolder.children[i];
-      if (String(item.getMediaPath()) === '${esc(filePath)}') {
-        imported = item;
-        break;
+    var priorNodeIds = {};
+    for (var beforeIndex = 0; beforeIndex < targetFolder.children.numItems; beforeIndex++) {
+      var beforeItem = targetFolder.children[beforeIndex];
+      if (beforeItem && beforeItem.nodeId !== undefined) {
+        priorNodeIds[String(beforeItem.nodeId)] = true;
       }
     }
 
-    if (!imported) {
-      return JSON.stringify({ error: 'Import succeeded but could not locate imported item' });
+    var filesToImport = [requestedPath];
+    var suppressUI = true;
+    var importResult = proj.importFiles(filesToImport, suppressUI, targetFolder, false);
+    if (importResult !== true) {
+      return JSON.stringify({ error: 'Premiere importFiles returned false' });
+    }
+
+    var newMatches = [];
+    var existingMatches = [];
+    for (var i = 0; i < targetFolder.children.numItems; i++) {
+      var item = targetFolder.children[i];
+      if (!item || !item.getMediaPath) continue;
+      var candidatePath = '';
+      try { candidatePath = String(item.getMediaPath() || ''); } catch (_) {}
+      if (normalizePath(candidatePath) !== requestedKey) continue;
+      existingMatches.push(item);
+      var nodeId = item.nodeId !== undefined ? String(item.nodeId) : '';
+      if (!nodeId || !priorNodeIds[nodeId]) newMatches.push(item);
+    }
+
+    if (newMatches.length > 1) {
+      return JSON.stringify({ error: 'Import created multiple indistinguishable project items' });
+    }
+    var imported = newMatches.length === 1 ? newMatches[0] :
+      (existingMatches.length === 1 ? existingMatches[0] : null);
+    if (!imported || imported.nodeId === undefined || String(imported.nodeId) === '') {
+      return JSON.stringify({ error: 'Import succeeded but no unique matching project item was found' });
+    }
+    var importedPath = String(imported.getMediaPath() || '');
+    if (normalizePath(importedPath) !== requestedKey) {
+      return JSON.stringify({ error: 'Imported project item path did not match the request' });
     }
 
     return JSON.stringify({
       projectItemId: String(imported.nodeId),
-      name: String(imported.name)
+      name: String(imported.name),
+      mediaPath: importedPath,
+      verified: true,
+      alreadyPresent: newMatches.length === 0
     });
   } catch (e) {
     return JSON.stringify({ error: String(e.message || e) });
@@ -701,10 +728,8 @@ export function setAudioLevel(
 export function exportSequence(params: {
   sequenceId: string;
   outputPath: string;
-  preset: ExportPreset;
+  presetPath: string;
 }): string {
-  const presetName = presetToAMEName(params.preset);
-
   return `
 (function() {
   try {
@@ -723,7 +748,7 @@ export function exportSequence(params: {
     }
 
     var outputPath = '${esc(params.outputPath)}';
-    var presetName = '${esc(presetName)}';
+    var presetPath = '${esc(params.presetPath)}';
 
     app.encoder.launchEncoder();
     app.encoder.setSidecarXMPEnabled(false);
@@ -731,7 +756,7 @@ export function exportSequence(params: {
     var exportResult = app.encoder.encodeSequence(
       seq,
       outputPath,
-      presetName,
+      presetPath,
       1,    // work area type: entire sequence
       false // remove on completion
     );

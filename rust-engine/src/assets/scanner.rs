@@ -261,9 +261,9 @@ mod tests {
     use std::io::Write;
 
     /// Helper: create a temp directory with a few dummy files.
-    fn make_test_tree() -> std::path::PathBuf {
-        let base = std::env::temp_dir().join("asset_scanner_test");
-        let _ = fs::remove_dir_all(&base);
+    fn make_test_tree() -> tempfile::TempDir {
+        let directory = tempfile::tempdir().unwrap();
+        let base = directory.path();
         let sub = base.join("sub");
         fs::create_dir_all(&sub).unwrap();
 
@@ -276,47 +276,44 @@ mod tests {
             .write_all(b"nested")
             .unwrap();
 
-        base
+        directory
     }
 
     #[test]
     fn scan_finds_all_files_when_no_extension_filter() {
         let dir = make_test_tree();
         let opts = ScanOptions {
-            directory: dir.to_string_lossy().into(),
+            directory: dir.path().to_string_lossy().into(),
             recursive: true,
             extensions: vec![],
         };
         let result = AssetScanner::scan(&opts).unwrap();
         assert_eq!(result.media_files_found, 4);
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn scan_filters_by_extension() {
         let dir = make_test_tree();
         let opts = ScanOptions {
-            directory: dir.to_string_lossy().into(),
+            directory: dir.path().to_string_lossy().into(),
             recursive: true,
             extensions: vec!["mp4".into(), "mov".into()],
         };
         let result = AssetScanner::scan(&opts).unwrap();
         assert_eq!(result.media_files_found, 2);
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn scan_respects_non_recursive() {
         let dir = make_test_tree();
         let opts = ScanOptions {
-            directory: dir.to_string_lossy().into(),
+            directory: dir.path().to_string_lossy().into(),
             recursive: false,
             extensions: vec![],
         };
         let result = AssetScanner::scan(&opts).unwrap();
         // Only the 3 files in the root, not the nested one.
         assert_eq!(result.media_files_found, 3);
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

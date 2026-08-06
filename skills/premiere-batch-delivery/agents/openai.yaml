@@ -1,0 +1,4 @@
+interface:
+  display_name: "Premiere Batch Delivery"
+  short_description: "Validate and export multiple delivery targets"
+  default_prompt: "Use $premiere-batch-delivery to QA and export all required platform deliverables."

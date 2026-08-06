@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	commonpb "github.com/anthropics/premierpro-mcp/gen/go/premierpro/common/v1"
-	mediapb "github.com/anthropics/premierpro-mcp/gen/go/premierpro/media/v1"
+	commonpb "github.com/ayushozha/AdobePremiereProMCP/gen/go/premierpro/common/v1"
+	mediapb "github.com/ayushozha/AdobePremiereProMCP/gen/go/premierpro/media/v1"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -23,10 +23,10 @@ type MediaEngineClient struct {
 	logger      *zap.Logger
 }
 
-// newMediaEngineClient dials the media engine service and returns a ready client.
-func newMediaEngineClient(addr string, dialTimeout, callTimeout time.Duration, logger *zap.Logger) (*MediaEngineClient, error) {
+// newMediaEngineClient creates a lazy media-engine client.
+func newMediaEngineClient(addr string, callTimeout time.Duration, logger *zap.Logger) (*MediaEngineClient, error) {
 	logger = logger.With(zap.String("client", "media_engine"), zap.String("addr", addr))
-	logger.Info("connecting to media engine service")
+	logger.Info("initializing media engine client")
 
 	conn, err := grpc.NewClient(addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -40,7 +40,7 @@ func newMediaEngineClient(addr string, dialTimeout, callTimeout time.Duration, l
 		return nil, fmt.Errorf("media engine dial %s: %w", addr, err)
 	}
 
-	logger.Info("connected to media engine service")
+	logger.Info("media engine client initialized")
 	return &MediaEngineClient{
 		conn:        conn,
 		client:      mediapb.NewMediaEngineServiceClient(conn),

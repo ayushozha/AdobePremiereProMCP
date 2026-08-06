@@ -29,12 +29,12 @@ type Resolution struct {
 
 // VideoInfo holds video-stream metadata.
 type VideoInfo struct {
-	Codec           string  `json:"codec"`
+	Codec           string     `json:"codec"`
 	Resolution      Resolution `json:"resolution"`
-	FrameRate       float64 `json:"frame_rate"`
-	BitrateBPS      uint64  `json:"bitrate_bps"`
-	PixelFormat     string  `json:"pixel_format"`
-	DurationSeconds float64 `json:"duration_seconds"`
+	FrameRate       float64    `json:"frame_rate"`
+	BitrateBPS      uint64     `json:"bitrate_bps"`
+	PixelFormat     string     `json:"pixel_format"`
+	DurationSeconds float64    `json:"duration_seconds"`
 }
 
 // AudioInfo holds audio-stream metadata.
@@ -68,6 +68,22 @@ type ScanResult struct {
 	ScanDurationSeconds float64      `json:"scan_duration_seconds"`
 }
 
+// ThumbnailOptions configures a frame extraction from a media file.
+type ThumbnailOptions struct {
+	TimestampSeconds float64 `json:"timestamp_seconds"`
+	Width            uint32  `json:"width"`
+	Height           uint32  `json:"height"`
+	OutputFormat     string  `json:"output_format"`
+}
+
+// ThumbnailResult contains an encoded PNG or JPEG frame and its dimensions.
+// ThumbnailData is represented as base64 when serialized to JSON.
+type ThumbnailResult struct {
+	ThumbnailData []byte     `json:"thumbnail_data"`
+	OutputPath    string     `json:"output_path,omitempty"`
+	ActualSize    Resolution `json:"actual_size"`
+}
+
 // SilenceRegion describes a silence interval in an audio track.
 type SilenceRegion struct {
 	StartSeconds float64 `json:"start_seconds"`
@@ -77,9 +93,9 @@ type SilenceRegion struct {
 
 // WaveformOptions configures audio waveform analysis.
 type WaveformOptions struct {
-	AudioTrack              uint32  `json:"audio_track"`
-	SilenceThresholdDB      float64 `json:"silence_threshold_db"`
-	MinSilenceDurationSecs  float64 `json:"min_silence_duration_seconds"`
+	AudioTrack             uint32  `json:"audio_track"`
+	SilenceThresholdDB     float64 `json:"silence_threshold_db"`
+	MinSilenceDurationSecs float64 `json:"min_silence_duration_seconds"`
 }
 
 // WaveformResult contains the results of waveform analysis.
@@ -137,10 +153,10 @@ type ScriptSegment struct {
 
 // ScriptMetadata contains summary info about a parsed script.
 type ScriptMetadata struct {
-	Title                        string  `json:"title"`
-	Format                       string  `json:"format"`
+	Title                         string  `json:"title"`
+	Format                        string  `json:"format"`
 	EstimatedTotalDurationSeconds float64 `json:"estimated_total_duration_seconds"`
-	SegmentCount                 uint32  `json:"segment_count"`
+	SegmentCount                  uint32  `json:"segment_count"`
 }
 
 // ParsedScript is the full result of script parsing.
@@ -167,7 +183,7 @@ type UnmatchedSegment struct {
 
 // MatchResult holds the output of asset-to-segment matching.
 type MatchResult struct {
-	Matches   []*AssetMatch     `json:"matches"`
+	Matches   []*AssetMatch       `json:"matches"`
 	Unmatched []*UnmatchedSegment `json:"unmatched,omitempty"`
 }
 
@@ -288,11 +304,11 @@ type EDLEntry struct {
 
 // EDL is a complete edit decision list that can be executed by Premiere.
 type EDL struct {
-	ID                string     `json:"id"`
-	Name              string     `json:"name"`
-	SequenceResolution Resolution `json:"sequence_resolution"`
-	SequenceFrameRate float64    `json:"sequence_frame_rate"`
-	Entries           []*EDLEntry `json:"entries"`
+	ID                 string      `json:"id"`
+	Name               string      `json:"name"`
+	SequenceResolution Resolution  `json:"sequence_resolution"`
+	SequenceFrameRate  float64     `json:"sequence_frame_rate"`
+	Entries            []*EDLEntry `json:"entries"`
 }
 
 // ---------------------------------------------------------------------------
@@ -528,7 +544,7 @@ type ExportPresetDetailInfo struct {
 type ExportPresetListResult struct {
 	ExporterIndex int                      `json:"exporter_index"`
 	ExporterName  string                   `json:"exporter_name"`
-	Presets       []ExportPresetDetailInfo  `json:"presets"`
+	Presets       []ExportPresetDetailInfo `json:"presets"`
 	Count         int                      `json:"count"`
 }
 
@@ -598,9 +614,9 @@ type SetSequenceSettingsParams struct {
 
 // SequenceListResult contains a list of all sequences in the project.
 type SequenceListResult struct {
-	Count             int                  `json:"count"`
-	Sequences         []*SequenceListEntry `json:"sequences"`
-	ActiveSequenceID  string               `json:"active_sequence_id"`
+	Count            int                  `json:"count"`
+	Sequences        []*SequenceListEntry `json:"sequences"`
+	ActiveSequenceID string               `json:"active_sequence_id"`
 }
 
 // SequenceListEntry is a summary of a single sequence in the project list.
@@ -693,13 +709,13 @@ type ActiveSequenceInfo struct {
 
 // ProjectInfoResult is returned by GetProjectInfo.
 type ProjectInfoResult struct {
-	Name           string              `json:"name"`
-	Path           string              `json:"path"`
-	DocumentID     string              `json:"document_id"`
+	Name           string               `json:"name"`
+	Path           string               `json:"path"`
+	DocumentID     string               `json:"document_id"`
 	Sequences      []*SequenceListEntry `json:"sequences"`
-	Bins           []*BinInfo          `json:"bins"`
-	TotalItems     int                 `json:"total_items"`
-	ActiveSequence *ActiveSequenceInfo `json:"active_sequence,omitempty"`
+	Bins           []*BinInfo           `json:"bins"`
+	TotalItems     int                  `json:"total_items"`
+	ActiveSequence *ActiveSequenceInfo  `json:"active_sequence,omitempty"`
 }
 
 // ProjectItemInfo describes a single item in the project panel.
@@ -714,16 +730,16 @@ type ProjectItemInfo struct {
 
 // ProjectItemsResult is returned by FindProjectItems, GetProjectItems, GetOfflineItems.
 type ProjectItemsResult struct {
-	Query       string             `json:"query,omitempty"`
-	BinPath     string             `json:"bin_path,omitempty"`
-	ItemCount   int                `json:"item_count"`
-	Items       []*ProjectItemInfo `json:"items"`
+	Query     string             `json:"query,omitempty"`
+	BinPath   string             `json:"bin_path,omitempty"`
+	ItemCount int                `json:"item_count"`
+	Items     []*ProjectItemInfo `json:"items"`
 }
 
 // ItemMetadataResult is returned by GetItemMetadata.
 type ItemMetadataResult struct {
-	ItemPath string            `json:"item_path"`
-	Metadata map[string]any    `json:"metadata"`
+	ItemPath string         `json:"item_path"`
+	Metadata map[string]any `json:"metadata"`
 }
 
 // ConsolidateResult is returned by ConsolidateDuplicates.
@@ -735,12 +751,12 @@ type ConsolidateResult struct {
 
 // ProjectSettingsResult is returned by GetProjectSettingsInfo.
 type ProjectSettingsResult struct {
-	Name           string `json:"name"`
-	Path           string `json:"path"`
-	DocumentID     string `json:"document_id"`
-	GPURenderer    string `json:"gpu_renderer,omitempty"`
-	RootItemCount  int    `json:"root_item_count,omitempty"`
-	SequenceCount  int    `json:"sequence_count,omitempty"`
+	Name          string `json:"name"`
+	Path          string `json:"path"`
+	DocumentID    string `json:"document_id"`
+	GPURenderer   string `json:"gpu_renderer,omitempty"`
+	RootItemCount int    `json:"root_item_count,omitempty"`
+	SequenceCount int    `json:"sequence_count,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -818,11 +834,11 @@ type AutoAudioLevelsResult struct {
 
 // TransitionSuggestion represents a single AI-suggested transition.
 type TransitionSuggestion struct {
-	Position       float64 `json:"position_seconds"`
-	Type           string  `json:"type"`
-	Duration       float64 `json:"duration_seconds"`
-	Confidence     float64 `json:"confidence"`
-	Reason         string  `json:"reason"`
+	Position   float64 `json:"position_seconds"`
+	Type       string  `json:"type"`
+	Duration   float64 `json:"duration_seconds"`
+	Confidence float64 `json:"confidence"`
+	Reason     string  `json:"reason"`
 }
 
 // SuggestTransitionsResult is returned by SuggestTransitions.
@@ -840,49 +856,49 @@ type MusicSuggestion struct {
 
 // SuggestMusicResult is returned by SuggestMusic.
 type SuggestMusicResult struct {
-	Suggestions  []*MusicSuggestion `json:"suggestions"`
-	AvgPacing    float64            `json:"avg_pacing_seconds"`
-	OverallMood  string             `json:"overall_mood"`
+	Suggestions []*MusicSuggestion `json:"suggestions"`
+	AvgPacing   float64            `json:"avg_pacing_seconds"`
+	OverallMood string             `json:"overall_mood"`
 }
 
 // ClipAnalysis contains the analysis of a single clip.
 type ClipAnalysis struct {
-	FilePath        string          `json:"file_path"`
-	Duration        float64         `json:"duration_seconds"`
-	PeakAudioDB     float64         `json:"peak_audio_db"`
-	RmsAudioDB      float64         `json:"rms_audio_db"`
-	SceneChanges    []*SceneChange  `json:"scene_changes,omitempty"`
-	SilenceRegions  []*SilenceRegion `json:"silence_regions,omitempty"`
-	HasMotion       bool            `json:"has_motion"`
-	AvgBrightness   float64         `json:"avg_brightness"`
+	FilePath       string           `json:"file_path"`
+	Duration       float64          `json:"duration_seconds"`
+	PeakAudioDB    float64          `json:"peak_audio_db"`
+	RmsAudioDB     float64          `json:"rms_audio_db"`
+	SceneChanges   []*SceneChange   `json:"scene_changes,omitempty"`
+	SilenceRegions []*SilenceRegion `json:"silence_regions,omitempty"`
+	HasMotion      bool             `json:"has_motion"`
+	AvgBrightness  float64          `json:"avg_brightness"`
 }
 
 // SequenceAnalysis contains the analysis of a full sequence.
 type SequenceAnalysis struct {
-	SequenceID       string   `json:"sequence_id"`
-	TotalDuration    float64  `json:"total_duration_seconds"`
-	ClipCount        int      `json:"clip_count"`
-	AvgClipDuration  float64  `json:"avg_clip_duration_seconds"`
-	PacingScore      float64  `json:"pacing_score"`
-	AudioBalance     float64  `json:"audio_balance_score"`
-	GapCount         int      `json:"gap_count"`
-	TransitionCount  int      `json:"transition_count"`
-	Issues           []string `json:"issues,omitempty"`
-	Suggestions      []string `json:"suggestions,omitempty"`
+	SequenceID      string   `json:"sequence_id"`
+	TotalDuration   float64  `json:"total_duration_seconds"`
+	ClipCount       int      `json:"clip_count"`
+	AvgClipDuration float64  `json:"avg_clip_duration_seconds"`
+	PacingScore     float64  `json:"pacing_score"`
+	AudioBalance    float64  `json:"audio_balance_score"`
+	GapCount        int      `json:"gap_count"`
+	TransitionCount int      `json:"transition_count"`
+	Issues          []string `json:"issues,omitempty"`
+	Suggestions     []string `json:"suggestions,omitempty"`
 }
 
 // SequenceStatistics contains summary statistics for a sequence.
 type SequenceStatistics struct {
-	SequenceID        string  `json:"sequence_id"`
-	TotalDuration     float64 `json:"total_duration_seconds"`
-	VideoClipCount    int     `json:"video_clip_count"`
-	AudioClipCount    int     `json:"audio_clip_count"`
-	AvgClipDuration   float64 `json:"avg_clip_duration_seconds"`
-	VideoTrackUsage   int     `json:"video_tracks_used"`
-	AudioTrackUsage   int     `json:"audio_tracks_used"`
-	TransitionCount   int     `json:"transition_count"`
-	EffectsCount      int     `json:"effects_count"`
-	TotalGapDuration  float64 `json:"total_gap_duration_seconds"`
+	SequenceID       string  `json:"sequence_id"`
+	TotalDuration    float64 `json:"total_duration_seconds"`
+	VideoClipCount   int     `json:"video_clip_count"`
+	AudioClipCount   int     `json:"audio_clip_count"`
+	AvgClipDuration  float64 `json:"avg_clip_duration_seconds"`
+	VideoTrackUsage  int     `json:"video_tracks_used"`
+	AudioTrackUsage  int     `json:"audio_tracks_used"`
+	TransitionCount  int     `json:"transition_count"`
+	EffectsCount     int     `json:"effects_count"`
+	TotalGapDuration float64 `json:"total_gap_duration_seconds"`
 }
 
 // JumpCutInfo describes a detected potential jump cut.
@@ -943,12 +959,12 @@ type RefineEditParams struct {
 
 // RefineEditResult is returned by RefineEdit.
 type RefineEditResult struct {
-	SequenceID      string   `json:"sequence_id"`
-	PacingChanges   int      `json:"pacing_changes"`
-	TransitionsAdded int     `json:"transitions_added"`
-	AudioAdjustments int    `json:"audio_adjustments"`
-	Summary         string   `json:"summary"`
-	Suggestions     []string `json:"suggestions,omitempty"`
+	SequenceID       string   `json:"sequence_id"`
+	PacingChanges    int      `json:"pacing_changes"`
+	TransitionsAdded int      `json:"transitions_added"`
+	AudioAdjustments int      `json:"audio_adjustments"`
+	Summary          string   `json:"summary"`
+	Suggestions      []string `json:"suggestions,omitempty"`
 }
 
 // BRollSuggestion represents an AI-suggested B-roll placement.
@@ -968,26 +984,26 @@ type BRollSuggestionsResult struct {
 
 // GenerateTrailerParams configures trailer generation.
 type GenerateTrailerParams struct {
-	SequenceID      string  `json:"sequence_id"`
-	MaxDuration     float64 `json:"max_duration_seconds"`
-	Style           string  `json:"style,omitempty"`
-	IncludeAudio    bool    `json:"include_audio"`
+	SequenceID   string  `json:"sequence_id"`
+	MaxDuration  float64 `json:"max_duration_seconds"`
+	Style        string  `json:"style,omitempty"`
+	IncludeAudio bool    `json:"include_audio"`
 }
 
 // GenerateTrailerResult is returned by GenerateTrailer.
 type GenerateTrailerResult struct {
-	SequenceID    string  `json:"sequence_id"`
-	Duration      float64 `json:"duration_seconds"`
-	HighlightCount int    `json:"highlight_count"`
-	Summary       string  `json:"summary"`
+	SequenceID     string  `json:"sequence_id"`
+	Duration       float64 `json:"duration_seconds"`
+	HighlightCount int     `json:"highlight_count"`
+	Summary        string  `json:"summary"`
 }
 
 // SocialCutParams configures social media cut creation.
 type SocialCutParams struct {
-	SequenceID    string  `json:"sequence_id"`
-	AspectRatio   string  `json:"aspect_ratio"`
-	MaxDuration   float64 `json:"max_duration_seconds"`
-	Platform      string  `json:"platform,omitempty"`
+	SequenceID  string  `json:"sequence_id"`
+	AspectRatio string  `json:"aspect_ratio"`
+	MaxDuration float64 `json:"max_duration_seconds"`
+	Platform    string  `json:"platform,omitempty"`
 }
 
 // SocialCutResult is returned by CreateSocialCuts.
@@ -1006,10 +1022,10 @@ type AutoOrganizeParams struct {
 
 // AutoOrganizeResult is returned by AutoOrganizeProject.
 type AutoOrganizeResult struct {
-	BinsCreated   int      `json:"bins_created"`
-	ItemsMoved    int      `json:"items_moved"`
-	Categories    []string `json:"categories,omitempty"`
-	Summary       string   `json:"summary"`
+	BinsCreated int      `json:"bins_created"`
+	ItemsMoved  int      `json:"items_moved"`
+	Categories  []string `json:"categories,omitempty"`
+	Summary     string   `json:"summary"`
 }
 
 // ClipTag represents an AI-generated tag for a clip.
@@ -1042,11 +1058,11 @@ type FindSimilarResult struct {
 
 // ReplacementSuggestion describes a suggested clip replacement.
 type ReplacementSuggestion struct {
-	CurrentClipID    string  `json:"current_clip_id"`
-	ReplacementPath  string  `json:"replacement_path"`
-	Confidence       float64 `json:"confidence"`
-	Reason           string  `json:"reason"`
-	PositionSeconds  float64 `json:"position_seconds"`
+	CurrentClipID   string  `json:"current_clip_id"`
+	ReplacementPath string  `json:"replacement_path"`
+	Confidence      float64 `json:"confidence"`
+	Reason          string  `json:"reason"`
+	PositionSeconds float64 `json:"position_seconds"`
 }
 
 // SuggestReplacementsResult is returned by SuggestReplacements.
@@ -1071,22 +1087,22 @@ type ReviewMarkersResult struct {
 
 // EditSummaryResult is returned by GenerateEditSummary.
 type EditSummaryResult struct {
-	SequenceID      string   `json:"sequence_id"`
-	Summary         string   `json:"summary"`
-	Duration        float64  `json:"duration_seconds"`
-	ClipCount       int      `json:"clip_count"`
-	KeyMoments      []string `json:"key_moments,omitempty"`
-	EditingStyle    string   `json:"editing_style"`
+	SequenceID   string   `json:"sequence_id"`
+	Summary      string   `json:"summary"`
+	Duration     float64  `json:"duration_seconds"`
+	ClipCount    int      `json:"clip_count"`
+	KeyMoments   []string `json:"key_moments,omitempty"`
+	EditingStyle string   `json:"editing_style"`
 }
 
 // RenderTimeEstimate is returned by EstimateRenderTime.
 type RenderTimeEstimate struct {
-	SequenceID        string  `json:"sequence_id"`
-	EstimatedSeconds  float64 `json:"estimated_seconds"`
-	Complexity        string  `json:"complexity"`
-	EffectsHeavy      bool    `json:"effects_heavy"`
-	ResolutionFactor  float64 `json:"resolution_factor"`
-	Notes             string  `json:"notes,omitempty"`
+	SequenceID       string  `json:"sequence_id"`
+	EstimatedSeconds float64 `json:"estimated_seconds"`
+	Complexity       string  `json:"complexity"`
+	EffectsHeavy     bool    `json:"effects_heavy"`
+	ResolutionFactor float64 `json:"resolution_factor"`
+	Notes            string  `json:"notes,omitempty"`
 }
 
 // DeliverySpec describes a single delivery specification check.
@@ -1102,21 +1118,21 @@ type DeliverySpecCheck struct {
 type DeliverySpecResult struct {
 	SequenceID string               `json:"sequence_id"`
 	Standard   string               `json:"standard"`
-	AllPass    bool                  `json:"all_pass"`
+	AllPass    bool                 `json:"all_pass"`
 	Checks     []*DeliverySpecCheck `json:"checks"`
 }
 
 // ProjectReportResult is returned by CreateProjectReport.
 type ProjectReportResult struct {
-	ProjectName    string            `json:"project_name"`
-	TotalDuration  float64           `json:"total_duration_seconds"`
-	SequenceCount  int               `json:"sequence_count"`
-	TotalClips     int               `json:"total_clips"`
-	UsedClips      int               `json:"used_clips"`
-	UnusedClips    int               `json:"unused_clips"`
-	EffectsUsed    map[string]int    `json:"effects_used,omitempty"`
-	ExportHistory  []string          `json:"export_history,omitempty"`
-	Summary        string            `json:"summary"`
+	ProjectName   string         `json:"project_name"`
+	TotalDuration float64        `json:"total_duration_seconds"`
+	SequenceCount int            `json:"sequence_count"`
+	TotalClips    int            `json:"total_clips"`
+	UsedClips     int            `json:"used_clips"`
+	UnusedClips   int            `json:"unused_clips"`
+	EffectsUsed   map[string]int `json:"effects_used,omitempty"`
+	ExportHistory []string       `json:"export_history,omitempty"`
+	Summary       string         `json:"summary"`
 }
 
 // AutoEditParams is the input to the fully-automated edit workflow.
@@ -1154,11 +1170,11 @@ type AutoEditParams struct {
 
 // StepStatus records the outcome of one stage in the auto-edit pipeline.
 type StepStatus struct {
-	Name      string        `json:"name"`
-	Status    string        `json:"status"` // "pending", "running", "completed", "failed", "skipped"
-	Duration  time.Duration `json:"duration"`
-	Error     string        `json:"error,omitempty"`
-	Detail    string        `json:"detail,omitempty"`
+	Name     string        `json:"name"`
+	Status   string        `json:"status"` // "pending", "running", "completed", "failed", "skipped"
+	Duration time.Duration `json:"duration"`
+	Error    string        `json:"error,omitempty"`
+	Detail   string        `json:"detail,omitempty"`
 }
 
 // AutoEditResult captures the complete outcome of an auto-edit run.

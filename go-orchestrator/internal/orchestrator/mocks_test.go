@@ -9,14 +9,16 @@ import (
 // ---------------------------------------------------------------------------
 
 type mockMediaClient struct {
-	scanResult    *ScanResult
-	scanErr       error
-	probeResult   *AssetInfo
-	probeErr      error
-	waveformResult *WaveformResult
-	waveformErr   error
-	sceneResult   *SceneResult
-	sceneErr      error
+	scanResult      *ScanResult
+	scanErr         error
+	probeResult     *AssetInfo
+	probeErr        error
+	thumbnailResult *ThumbnailResult
+	thumbnailErr    error
+	waveformResult  *WaveformResult
+	waveformErr     error
+	sceneResult     *SceneResult
+	sceneErr        error
 }
 
 func (m *mockMediaClient) ScanAssets(_ context.Context, _ string, _ bool, _ []string) (*ScanResult, error) {
@@ -25,6 +27,10 @@ func (m *mockMediaClient) ScanAssets(_ context.Context, _ string, _ bool, _ []st
 
 func (m *mockMediaClient) ProbeMedia(_ context.Context, _ string) (*AssetInfo, error) {
 	return m.probeResult, m.probeErr
+}
+
+func (m *mockMediaClient) GenerateThumbnail(_ context.Context, _ string, _ *ThumbnailOptions) (*ThumbnailResult, error) {
+	return m.thumbnailResult, m.thumbnailErr
 }
 
 func (m *mockMediaClient) AnalyzeWaveform(_ context.Context, _ string, _ *WaveformOptions) (*WaveformResult, error) {
@@ -71,33 +77,33 @@ func (m *mockIntelClient) AnalyzePacing(_ context.Context, _ *EDL, _ string) (*P
 // ---------------------------------------------------------------------------
 
 type mockPremiereClient struct {
-	pingResult       *PingResult
-	pingErr          error
-	projectState     *ProjectState
-	projectStateErr  error
-	seqResult        *SequenceResult
-	seqErr           error
-	importResult     *ImportResult
-	importErr        error
-	placeResult      *ClipResult
-	placeErr         error
-	removeErr        error
-	transitionErr    error
-	textResult       *ClipResult
-	textErr          error
-	audioErr         error
-	timelineState    *TimelineState
-	timelineErr      error
-	exportResult     *ExportResult
-	exportErr        error
-	edlExecResult    *EDLExecutionResult
-	edlExecErr       error
-	evalResult       string
-	evalErr          error
-	evalAudioResult  map[string]any
-	evalAudioErr     error
-	evalImmResult    map[string]any
-	evalImmErr       error
+	pingResult      *PingResult
+	pingErr         error
+	projectState    *ProjectState
+	projectStateErr error
+	seqResult       *SequenceResult
+	seqErr          error
+	importResult    *ImportResult
+	importErr       error
+	placeResult     *ClipResult
+	placeErr        error
+	removeErr       error
+	transitionErr   error
+	textResult      *ClipResult
+	textErr         error
+	audioErr        error
+	timelineState   *TimelineState
+	timelineErr     error
+	exportResult    *ExportResult
+	exportErr       error
+	edlExecResult   *EDLExecutionResult
+	edlExecErr      error
+	evalResult      string
+	evalErr         error
+	evalAudioResult map[string]any
+	evalAudioErr    error
+	evalImmResult   map[string]any
+	evalImmErr      error
 }
 
 func (m *mockPremiereClient) Ping(_ context.Context) (*PingResult, error) {

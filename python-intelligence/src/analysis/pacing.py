@@ -8,9 +8,11 @@ adjusted freely to hit the target average duration.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from src.models import (
-    EDLEntry,
     EditDecisionList,
+    EDLEntry,
     PacingAdjustment,
     PacingResult,
     SegmentType,
@@ -18,19 +20,23 @@ from src.models import (
 
 # Segment types whose duration should not be shortened because they contain
 # speech that would sound unnatural if truncated.
-_SPEECH_TYPES: frozenset[str] = frozenset({
-    SegmentType.DIALOGUE.name,
-    SegmentType.VOICEOVER.name,
-})
+_SPEECH_TYPES: frozenset[str] = frozenset(
+    {
+        SegmentType.DIALOGUE.name,
+        SegmentType.VOICEOVER.name,
+    }
+)
 
 # Segment types that are most flexible for pacing adjustments.
-_FLEXIBLE_TYPES: frozenset[str] = frozenset({
-    SegmentType.BROLL.name,
-    SegmentType.ACTION.name,
-    SegmentType.TITLE.name,
-    SegmentType.LOWER_THIRD.name,
-    SegmentType.TRANSITION.name,
-})
+_FLEXIBLE_TYPES: frozenset[str] = frozenset(
+    {
+        SegmentType.BROLL.name,
+        SegmentType.ACTION.name,
+        SegmentType.TITLE.name,
+        SegmentType.LOWER_THIRD.name,
+        SegmentType.TRANSITION.name,
+    }
+)
 
 
 class PacingAnalyzer:
@@ -42,13 +48,13 @@ class PacingAnalyzer:
         Target average clip durations (seconds) by mood name.
     """
 
-    MOOD_TARGETS: dict[str, float] = {
-        "energetic": 2.5,     # fast cuts
-        "calm": 8.0,          # long, breathing shots
-        "dramatic": 4.0,      # medium, building tension
-        "comedic": 3.0,       # snappy timing
-        "documentary": 6.0,   # informational pacing
-        "cinematic": 5.0,     # balanced
+    MOOD_TARGETS: ClassVar[dict[str, float]] = {
+        "energetic": 2.5,  # fast cuts
+        "calm": 8.0,  # long, breathing shots
+        "dramatic": 4.0,  # medium, building tension
+        "comedic": 3.0,  # snappy timing
+        "documentary": 6.0,  # informational pacing
+        "cinematic": 5.0,  # balanced
     }
 
     # ── Public API ──────────────────────────────────────────────────────────
@@ -82,26 +88,28 @@ class PacingAnalyzer:
             self.MOOD_TARGETS["cinematic"],
         )
 
-        current_durations = [
-            self._entry_duration(entry) for entry in edl.entries
-        ]
+        current_durations = [self._entry_duration(entry) for entry in edl.entries]
         current_avg = sum(current_durations) / len(current_durations)
 
         adjustments: list[PacingAdjustment] = []
         suggested_durations: list[float] = []
 
-        for entry, current_dur in zip(edl.entries, current_durations):
+        for entry, current_dur in zip(edl.entries, current_durations, strict=True):
             seg_type = self._infer_segment_type(entry)
             suggested_dur, reason = self._suggest_duration(
-                current_dur, target_duration, seg_type,
+                current_dur,
+                target_duration,
+                seg_type,
             )
             suggested_durations.append(suggested_dur)
-            adjustments.append(PacingAdjustment(
-                edl_entry_index=entry.index,
-                current_duration=round(current_dur, 3),
-                suggested_duration=round(suggested_dur, 3),
-                reason=reason,
-            ))
+            adjustments.append(
+                PacingAdjustment(
+                    edl_entry_index=entry.index,
+                    current_duration=round(current_dur, 3),
+                    suggested_duration=round(suggested_dur, 3),
+                    reason=reason,
+                )
+            )
 
         suggested_avg = (
             sum(suggested_durations) / len(suggested_durations)

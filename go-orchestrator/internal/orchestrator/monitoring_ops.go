@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -213,7 +212,7 @@ func (e *Engine) GetTrackHeights(ctx context.Context) (*GenericResult, error) {
 func (e *Engine) SetTrackHeights(ctx context.Context, trackType, heights string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackType": trackType,
-		"heights": heights,
+		"heights":   heights,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setTrackHeights", string(argsJSON))
 	if err != nil {
@@ -259,9 +258,9 @@ func (e *Engine) GetClipUnderPlayhead(ctx context.Context) (*GenericResult, erro
 // GetClipAtTime returns the clip at a specific time on a specific track.
 func (e *Engine) GetClipAtTime(ctx context.Context, trackType string, trackIndex int, seconds float64) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"seconds": seconds,
+		"seconds":    seconds,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "getClipAtTime", string(argsJSON))
 	if err != nil {
@@ -273,9 +272,9 @@ func (e *Engine) GetClipAtTime(ctx context.Context, trackType string, trackIndex
 // GetAdjacentClips returns the previous and next clips relative to a specified clip.
 func (e *Engine) GetAdjacentClips(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "getAdjacentClips", string(argsJSON))
 	if err != nil {
@@ -287,9 +286,9 @@ func (e *Engine) GetAdjacentClips(ctx context.Context, trackType string, trackIn
 // IsClipSelected checks if a specific clip is currently selected.
 func (e *Engine) IsClipSelected(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "isClipSelected", string(argsJSON))
 	if err != nil {
@@ -301,9 +300,9 @@ func (e *Engine) IsClipSelected(ctx context.Context, trackType string, trackInde
 // GetClipProperties returns all properties of a clip as a JSON-compatible result.
 func (e *Engine) GetClipProperties(ctx context.Context, trackType string, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "getClipProperties", string(argsJSON))
 	if err != nil {
@@ -319,7 +318,7 @@ func (e *Engine) GetClipProperties(ctx context.Context, trackType string, trackI
 // ShowNotification displays a notification in the Premiere Pro Events panel.
 func (e *Engine) ShowNotification(ctx context.Context, title, message string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"title": title,
+		"title":   title,
 		"message": message,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "showNotification", string(argsJSON))
@@ -333,7 +332,7 @@ func (e *Engine) ShowNotification(ctx context.Context, title, message string) (*
 func (e *Engine) LogToEventsPanel(ctx context.Context, message, level string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"message": message,
-		"level": level,
+		"level":   level,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "logToEventsPanel", string(argsJSON))
 	if err != nil {
@@ -345,9 +344,9 @@ func (e *Engine) LogToEventsPanel(ctx context.Context, message, level string) (*
 // ShowProgressBar displays a progress bar notification in the Events panel.
 func (e *Engine) ShowProgressBar(ctx context.Context, title string, current, total int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"title": title,
+		"title":   title,
 		"current": current,
-		"total": total,
+		"total":   total,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "showProgressBar", string(argsJSON))
 	if err != nil {
@@ -369,7 +368,7 @@ func (e *Engine) HideProgressBar(ctx context.Context) (*GenericResult, error) {
 // ShowDialog displays a dialog with custom buttons in Premiere Pro.
 func (e *Engine) ShowDialog(ctx context.Context, title, message, buttons string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"title": title,
+		"title":   title,
 		"message": message,
 		"buttons": buttons,
 	})

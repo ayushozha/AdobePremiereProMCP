@@ -113,17 +113,17 @@ func (e *Engine) CreateSequence(ctx context.Context, params *CreateSequenceParam
 
 // GetTimeline retrieves the current state of a sequence's timeline.
 func (e *Engine) GetTimeline(ctx context.Context, sequenceID string) (*TimelineState, error) {
-	if sequenceID == "" {
-		return nil, fmt.Errorf("get_timeline: sequence_id is required — use premiere_get_sequence_list to find available sequences")
-	}
 	e.logger.Debug("get_timeline: retrieving", zap.String("sequence_id", sequenceID))
 	res, err := e.premiere.GetTimelineState(ctx, sequenceID)
 	if err != nil {
 		e.logger.Error("get_timeline: failed", zap.String("sequence_id", sequenceID), zap.Error(err))
-		return nil, fmt.Errorf("could not get timeline for sequence %q — create a sequence first with premiere_create_sequence: %w", sequenceID, err)
+		if sequenceID == "" {
+			return nil, fmt.Errorf("could not get the active timeline — open or create a sequence first: %w", err)
+		}
+		return nil, fmt.Errorf("could not get timeline for sequence %q — verify the sequence ID or create a sequence first: %w", sequenceID, err)
 	}
 	e.logger.Info("get_timeline: success",
-		zap.String("sequence_id", sequenceID),
+		zap.String("sequence_id", res.SequenceID),
 		zap.Int("video_tracks", len(res.VideoTracks)),
 		zap.Int("audio_tracks", len(res.AudioTracks)),
 	)
@@ -395,6 +395,60 @@ func (e *Engine) ScanAssets(ctx context.Context, dir string, recursive bool, ext
 		zap.Uint32("media_found", res.MediaFilesFound),
 		zap.Float64("duration_s", res.ScanDurationSeconds),
 	)
+	return res, nil
+}
+
+// ProbeMedia delegates single-file metadata extraction to the Rust media engine.
+func (e *Engine) ProbeMedia(ctx context.Context, filePath string) (*AssetInfo, error) {
+	if filePath == "" {
+		return nil, fmt.Errorf("probe_media: file path is required")
+	}
+	res, err := e.media.ProbeMedia(ctx, filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to probe %q: %w", filePath, err)
+	}
+	return res, nil
+}
+
+// GenerateThumbnail delegates frame extraction to the Rust media engine.
+func (e *Engine) GenerateThumbnail(ctx context.Context, filePath string, opts *ThumbnailOptions) (*ThumbnailResult, error) {
+	if filePath == "" {
+		return nil, fmt.Errorf("generate_thumbnail: file path is required")
+	}
+	if opts == nil {
+		opts = &ThumbnailOptions{Width: 320, Height: 180, OutputFormat: "png"}
+	}
+	res, err := e.media.GenerateThumbnail(ctx, filePath, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate thumbnail for %q: %w", filePath, err)
+	}
+	return res, nil
+}
+
+// AnalyzeWaveform delegates audio level and silence analysis to the Rust media engine.
+func (e *Engine) AnalyzeWaveform(ctx context.Context, filePath string, opts *WaveformOptions) (*WaveformResult, error) {
+	if filePath == "" {
+		return nil, fmt.Errorf("analyze_waveform: file path is required")
+	}
+	if opts == nil {
+		opts = &WaveformOptions{SilenceThresholdDB: -40, MinSilenceDurationSecs: 0.5}
+	}
+	res, err := e.media.AnalyzeWaveform(ctx, filePath, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to analyze waveform for %q: %w", filePath, err)
+	}
+	return res, nil
+}
+
+// DetectScenes delegates scene-boundary detection to the Rust media engine.
+func (e *Engine) DetectScenes(ctx context.Context, filePath string, threshold float64) (*SceneResult, error) {
+	if filePath == "" {
+		return nil, fmt.Errorf("detect_scenes: file path is required")
+	}
+	res, err := e.media.DetectScenes(ctx, filePath, threshold)
+	if err != nil {
+		return nil, fmt.Errorf("failed to detect scenes in %q: %w", filePath, err)
+	}
 	return res, nil
 }
 

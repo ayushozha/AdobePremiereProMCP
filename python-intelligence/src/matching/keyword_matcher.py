@@ -7,9 +7,12 @@ an exact-match boost.
 
 from __future__ import annotations
 
-from src.models import AssetInfo, ScriptSegment
+from typing import TYPE_CHECKING
 
 from .scoring import ScoredMatch, normalize_text
+
+if TYPE_CHECKING:
+    from src.models import AssetInfo, ScriptSegment
 
 # Bonus applied when a segment hint token exactly matches an asset token.
 _EXACT_MATCH_BOOST = 0.15
@@ -42,11 +45,7 @@ class KeywordMatcher:
             score = self._jaccard(segment_tokens, asset_tokens)
 
             # Boost for exact hint-to-filename token matches.
-            hint_tokens = set(
-                tok
-                for hint in segment.asset_hints
-                for tok in normalize_text(hint)
-            )
+            hint_tokens = set(tok for hint in segment.asset_hints for tok in normalize_text(hint))
             exact_hits = hint_tokens & asset_tokens
             if exact_hits:
                 score = min(1.0, score + _EXACT_MATCH_BOOST * len(exact_hits))

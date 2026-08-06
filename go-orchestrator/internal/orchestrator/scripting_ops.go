@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -71,7 +70,7 @@ func (e *Engine) ListAvailableScripts(ctx context.Context, directory string) (*G
 
 func (e *Engine) SetGlobalVariable(ctx context.Context, name string, value string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"name": name,
+		"name":  name,
 		"value": value,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setGlobalVariable", string(argsJSON))
@@ -114,9 +113,9 @@ func (e *Engine) ClearGlobalVariables(ctx context.Context) (*GenericResult, erro
 
 func (e *Engine) IfClipExists(ctx context.Context, trackType string, trackIndex, clipIndex int, thenScript, elseScript string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
+		"trackType":  trackType,
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 		"thenScript": thenScript,
 		"elseScript": elseScript,
 	})
@@ -154,8 +153,8 @@ func (e *Engine) IfProjectOpen(ctx context.Context, thenScript, elseScript strin
 func (e *Engine) WhileCondition(ctx context.Context, conditionScript, bodyScript string, maxIterations int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"conditionScript": conditionScript,
-		"bodyScript": bodyScript,
-		"maxIterations": maxIterations,
+		"bodyScript":      bodyScript,
+		"maxIterations":   maxIterations,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "whileCondition", string(argsJSON))
 	if err != nil {
@@ -190,9 +189,9 @@ func (e *Engine) ExecuteParallel(ctx context.Context, scriptsJSON string) (*Gene
 
 func (e *Engine) ExecuteWithRetry(ctx context.Context, script string, maxRetries int, delayMs int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"script": script,
+		"script":     script,
 		"maxRetries": maxRetries,
-		"delayMs": delayMs,
+		"delayMs":    delayMs,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "executeWithRetry", string(argsJSON))
 	if err != nil {
@@ -203,7 +202,7 @@ func (e *Engine) ExecuteWithRetry(ctx context.Context, script string, maxRetries
 
 func (e *Engine) ExecuteWithTimeout(ctx context.Context, script string, timeoutMs int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"script": script,
+		"script":    script,
 		"timeoutMs": timeoutMs,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "executeWithTimeout", string(argsJSON))
@@ -217,7 +216,7 @@ func (e *Engine) ExecuteWithTimeout(ctx context.Context, script string, timeoutM
 
 func (e *Engine) ScheduleScript(ctx context.Context, script string, delayMs int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"script": script,
+		"script":  script,
 		"delayMs": delayMs,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "scheduleScript", string(argsJSON))
@@ -229,9 +228,9 @@ func (e *Engine) ScheduleScript(ctx context.Context, script string, delayMs int)
 
 func (e *Engine) ScheduleRepeating(ctx context.Context, script string, intervalMs, count int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"script": script,
+		"script":     script,
 		"intervalMs": intervalMs,
-		"count": count,
+		"count":      count,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "scheduleRepeating", string(argsJSON))
 	if err != nil {
@@ -276,7 +275,7 @@ func (e *Engine) ReadJSONFile(ctx context.Context, filePath string) (*GenericRes
 func (e *Engine) WriteJSONFile(ctx context.Context, filePath, data string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"filePath": filePath,
-		"data": data,
+		"data":     data,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "writeJSONFile", string(argsJSON))
 	if err != nil {
@@ -299,8 +298,8 @@ func (e *Engine) ReadCSVFile(ctx context.Context, filePath string) (*GenericResu
 func (e *Engine) WriteCSVFile(ctx context.Context, filePath, headers, rows string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"filePath": filePath,
-		"headers": headers,
-		"rows": rows,
+		"headers":  headers,
+		"rows":     rows,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "writeCSVFile", string(argsJSON))
 	if err != nil {
@@ -323,7 +322,7 @@ func (e *Engine) ReadTextFile(ctx context.Context, filePath string) (*GenericRes
 func (e *Engine) WriteTextFile(ctx context.Context, filePath, content string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"filePath": filePath,
-		"content": content,
+		"content":  content,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "writeTextFile", string(argsJSON))
 	if err != nil {
@@ -335,7 +334,7 @@ func (e *Engine) WriteTextFile(ctx context.Context, filePath, content string) (*
 func (e *Engine) AppendTextFile(ctx context.Context, filePath, content string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"filePath": filePath,
-		"content": content,
+		"content":  content,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "appendTextFile", string(argsJSON))
 	if err != nil {

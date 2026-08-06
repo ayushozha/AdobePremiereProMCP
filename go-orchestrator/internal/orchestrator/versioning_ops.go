@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -39,7 +38,7 @@ func (e *Engine) CompareTimelineSnapshots(ctx context.Context, snapshot1JSON, sn
 // GetTimelineChanges returns changes to a timeline since a given timestamp.
 func (e *Engine) GetTimelineChanges(ctx context.Context, sequenceIndex int, sinceTimestamp string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"sequenceIndex": sequenceIndex,
+		"sequenceIndex":  sequenceIndex,
 		"sinceTimestamp": sinceTimestamp,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "getTimelineChanges", string(argsJSON))
@@ -52,7 +51,7 @@ func (e *Engine) GetTimelineChanges(ctx context.Context, sequenceIndex int, sinc
 // HighlightChangedClips selects/highlights clips that changed.
 func (e *Engine) HighlightChangedClips(ctx context.Context, sequenceIndex int, changedClipIDs string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"sequenceIndex": sequenceIndex,
+		"sequenceIndex":  sequenceIndex,
 		"changedClipIDs": changedClipIDs,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "highlightChangedClips", string(argsJSON))
@@ -65,9 +64,9 @@ func (e *Engine) HighlightChangedClips(ctx context.Context, sequenceIndex int, c
 // RevertClipToSnapshot reverts a clip to a previous snapshot state.
 func (e *Engine) RevertClipToSnapshot(ctx context.Context, trackType string, trackIndex, clipIndex int, snapshotJSON string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackType": trackType,
-		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"trackType":    trackType,
+		"trackIndex":   trackIndex,
+		"clipIndex":    clipIndex,
 		"snapshotJSON": snapshotJSON,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "revertClipToSnapshot", string(argsJSON))
@@ -85,8 +84,8 @@ func (e *Engine) RevertClipToSnapshot(ctx context.Context, trackType string, tra
 func (e *Engine) SaveSequenceVersion(ctx context.Context, sequenceIndex int, versionName, notes string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"versionName": versionName,
-		"notes": notes,
+		"versionName":   versionName,
+		"notes":         notes,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "saveSequenceVersion", string(argsJSON))
 	if err != nil {
@@ -111,7 +110,7 @@ func (e *Engine) ListSequenceVersions(ctx context.Context, sequenceIndex int) (*
 func (e *Engine) LoadSequenceVersion(ctx context.Context, sequenceIndex int, versionName string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"versionName": versionName,
+		"versionName":   versionName,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "loadSequenceVersion", string(argsJSON))
 	if err != nil {
@@ -124,7 +123,7 @@ func (e *Engine) LoadSequenceVersion(ctx context.Context, sequenceIndex int, ver
 func (e *Engine) DeleteSequenceVersion(ctx context.Context, sequenceIndex int, versionName string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"sequenceIndex": sequenceIndex,
-		"versionName": versionName,
+		"versionName":   versionName,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "deleteSequenceVersion", string(argsJSON))
 	if err != nil {
@@ -136,9 +135,9 @@ func (e *Engine) DeleteSequenceVersion(ctx context.Context, sequenceIndex int, v
 // MergeSequenceVersions merges two sequence versions using a strategy.
 func (e *Engine) MergeSequenceVersions(ctx context.Context, baseVersion, overlayVersion, strategy string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"baseVersion": baseVersion,
+		"baseVersion":    baseVersion,
 		"overlayVersion": overlayVersion,
-		"strategy": strategy,
+		"strategy":       strategy,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "mergeSequenceVersions", string(argsJSON))
 	if err != nil {
@@ -280,7 +279,7 @@ func (e *Engine) RedoMultiple(ctx context.Context, count int) (*GenericResult, e
 // CreateProjectBackup creates a full project backup.
 func (e *Engine) CreateProjectBackup(ctx context.Context, outputPath string, includeMedia bool) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"outputPath": outputPath,
+		"outputPath":   outputPath,
 		"includeMedia": includeMedia,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createProjectBackup", string(argsJSON))
@@ -363,7 +362,7 @@ func (e *Engine) GetProjectVersion(ctx context.Context, projectPath string) (*Ge
 // ExportProjectForOlderVersion saves the project for an older Premiere Pro version.
 func (e *Engine) ExportProjectForOlderVersion(ctx context.Context, outputPath, targetVersion string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"outputPath": outputPath,
+		"outputPath":    outputPath,
 		"targetVersion": targetVersion,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "exportProjectForOlderVersion", string(argsJSON))
@@ -388,7 +387,7 @@ func (e *Engine) CheckProjectCompatibility(ctx context.Context, projectPath stri
 // ImportProjectFromOtherNLE imports a project from another NLE (DaVinci, FCPX, Avid).
 func (e *Engine) ImportProjectFromOtherNLE(ctx context.Context, sourcePath, sourceFormat string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"sourcePath": sourcePath,
+		"sourcePath":   sourcePath,
 		"sourceFormat": sourceFormat,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "importProjectFromOtherNLE", string(argsJSON))

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Premiere Dialogue Cut"
+  short_description: "Remove pauses and tighten spoken edits"
+  default_prompt: "Use $premiere-dialogue-cut to tighten this interview while preserving natural pauses."

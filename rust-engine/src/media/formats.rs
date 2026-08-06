@@ -14,20 +14,19 @@ use anyhow::Result;
 
 /// Video container extensions recognised by the engine.
 pub const SUPPORTED_VIDEO_EXTENSIONS: &[&str] = &[
-    "mp4", "mov", "avi", "mkv", "wmv", "flv", "webm", "m4v", "mpg", "mpeg",
-    "3gp", "ts", "mts", "m2ts", "vob", "ogv", "mxf", "prores",
+    "mp4", "mov", "avi", "mkv", "wmv", "flv", "webm", "m4v", "mpg", "mpeg", "3gp", "ts", "mts",
+    "m2ts", "vob", "ogv", "mxf", "prores",
 ];
 
 /// Audio extensions recognised by the engine.
 pub const SUPPORTED_AUDIO_EXTENSIONS: &[&str] = &[
-    "mp3", "wav", "aac", "flac", "ogg", "wma", "m4a", "aiff", "aif", "opus",
-    "ac3", "dts", "pcm",
+    "mp3", "wav", "aac", "flac", "ogg", "wma", "m4a", "aiff", "aif", "opus", "ac3", "dts", "pcm",
 ];
 
 /// Image extensions recognised by the engine.
 pub const SUPPORTED_IMAGE_EXTENSIONS: &[&str] = &[
-    "jpg", "jpeg", "png", "bmp", "tiff", "tif", "gif", "webp", "exr", "dpx",
-    "tga", "psd", "svg", "ico", "heic", "heif", "avif",
+    "jpg", "jpeg", "png", "bmp", "tiff", "tif", "gif", "webp", "exr", "dpx", "tga", "psd", "svg",
+    "ico", "heic", "heif", "avif",
 ];
 
 // ---------------------------------------------------------------------------
@@ -151,8 +150,7 @@ fn detect_from_magic_bytes(file_path: &str) -> Result<String> {
         return Ok("image/webp".into());
     }
     // TIFF: II (little-endian) or MM (big-endian)
-    if bytes.starts_with(&[0x49, 0x49, 0x2A, 0x00])
-        || bytes.starts_with(&[0x4D, 0x4D, 0x00, 0x2A])
+    if bytes.starts_with(&[0x49, 0x49, 0x2A, 0x00]) || bytes.starts_with(&[0x4D, 0x4D, 0x00, 0x2A])
     {
         return Ok("image/tiff".into());
     }
@@ -197,9 +195,7 @@ fn detect_from_magic_bytes(file_path: &str) -> Result<String> {
         return Ok("audio/ogg".into());
     }
     // MP3: ID3 tag or sync word FF FB / FF F3 / FF F2
-    if bytes.starts_with(b"ID3")
-        || (n >= 2 && bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0)
-    {
+    if bytes.starts_with(b"ID3") || (n >= 2 && bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0) {
         return Ok("audio/mpeg".into());
     }
     // AIFF: FORM....AIFF
@@ -248,6 +244,9 @@ mod tests {
         assert_eq!(detect_from_extension("test.mp4"), "video/mp4");
         assert_eq!(detect_from_extension("test.MP3"), "audio/mpeg");
         assert_eq!(detect_from_extension("test.png"), "image/png");
-        assert_eq!(detect_from_extension("test.xyz"), "application/octet-stream");
+        assert_eq!(
+            detect_from_extension("test.xyz"),
+            "application/octet-stream"
+        );
     }
 }

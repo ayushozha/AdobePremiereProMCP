@@ -1,6 +1,10 @@
 use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Keep clean-checkout builds independent of a system protoc install.
+    let protoc = protoc_bin_vendored::protoc_bin_path()?;
+    std::env::set_var("PROTOC", protoc);
+
     let proto_root = PathBuf::from("../proto/definitions");
 
     let common_proto = proto_root.join("premierpro/common/v1/common.proto");

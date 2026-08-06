@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -273,7 +272,7 @@ func (e *Engine) GetLabelColorNames(ctx context.Context) (*GenericResult, error)
 func (e *Engine) SetLabelColorName(ctx context.Context, index int, name string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"index": index,
-		"name": name,
+		"name":  name,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "setLabelColorName", string(argsJSON))
 	if err != nil {

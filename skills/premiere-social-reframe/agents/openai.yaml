@@ -1,0 +1,4 @@
+interface:
+  display_name: "Premiere Social Reframe"
+  short_description: "Create readback-first vertical and square cuts"
+  default_prompt: "Use $premiere-social-reframe to make readback-first 9:16 and 1:1 versions of this edit."

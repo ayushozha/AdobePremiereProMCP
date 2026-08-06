@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 )
 
 // ---------------------------------------------------------------------------
@@ -13,9 +12,9 @@ import (
 
 func (e *Engine) CreateMulticamSequence(ctx context.Context, name string, clipIndices []int, syncPoint string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"name": name,
+		"name":        name,
 		"clipIndices": clipIndices,
-		"syncPoint": syncPoint,
+		"syncPoint":   syncPoint,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createMulticamSequence", string(argsJSON))
 	if err != nil {
@@ -27,7 +26,7 @@ func (e *Engine) CreateMulticamSequence(ctx context.Context, name string, clipIn
 func (e *Engine) SwitchMulticamAngle(ctx context.Context, trackIndex int, time float64, angleIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"time": time,
+		"time":       time,
 		"angleIndex": angleIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "switchMulticamAngle", string(argsJSON))
@@ -51,7 +50,7 @@ func (e *Engine) FlattenMulticam(ctx context.Context, sequenceIndex int) (*Gener
 func (e *Engine) GetMulticamAngles(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"trackIndex": trackIndex,
-		"clipIndex": clipIndex,
+		"clipIndex":  clipIndex,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "getMulticamAngles", string(argsJSON))
 	if err != nil {
@@ -64,10 +63,11 @@ func (e *Engine) GetMulticamAngles(ctx context.Context, trackIndex, clipIndex in
 // Proxy Workflow Operations
 // ---------------------------------------------------------------------------
 
-func (e *Engine) CreateProxy(ctx context.Context, projectItemIndex int, presetPath string) (*GenericResult, error) {
+func (e *Engine) CreateProxy(ctx context.Context, projectItemIndex int, outputPath, presetPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"presetPath": presetPath,
+		"outputPath":       outputPath,
+		"presetPath":       presetPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createProxy", string(argsJSON))
 	if err != nil {
@@ -79,7 +79,7 @@ func (e *Engine) CreateProxy(ctx context.Context, projectItemIndex int, presetPa
 func (e *Engine) AttachProxy(ctx context.Context, projectItemIndex int, proxyPath string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
 		"projectItemIndex": projectItemIndex,
-		"proxyPath": proxyPath,
+		"proxyPath":        proxyPath,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "attachProxy", string(argsJSON))
 	if err != nil {
@@ -195,7 +195,7 @@ func (e *Engine) Redo(ctx context.Context) (*GenericResult, error) {
 
 func (e *Engine) SortProjectPanel(ctx context.Context, field string, ascending bool) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"field": field,
+		"field":     field,
 		"ascending": ascending,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "sortProjectPanel", string(argsJSON))

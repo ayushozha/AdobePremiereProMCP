@@ -338,17 +338,23 @@ func (e *Engine) CreateNestedSequence(ctx context.Context, trackIndex int, clipI
 	}, nil
 }
 
-// AutoReframeSequence auto-reframes the active sequence to a new aspect ratio.
-func (e *Engine) AutoReframeSequence(ctx context.Context, numerator, denominator int, motionPreset string) (*GenericResult, error) {
+// AutoReframeSequence auto-reframes the expected active sequence to a new aspect ratio.
+func (e *Engine) AutoReframeSequence(ctx context.Context, sourceSequenceID string, numerator, denominator int, motionPreset, newName string, useNestedSequences bool) (*GenericResult, error) {
 	e.logger.Debug("auto_reframe_sequence",
+		zap.String("source_sequence_id", sourceSequenceID),
 		zap.Int("numerator", numerator),
 		zap.Int("denominator", denominator),
 		zap.String("motion_preset", motionPreset),
+		zap.String("new_name", newName),
+		zap.Bool("use_nested_sequences", useNestedSequences),
 	)
 	argsJSON, _ := json.Marshal(map[string]any{
-		"numerator":    numerator,
-		"denominator":  denominator,
-		"motionPreset": motionPreset,
+		"sourceSequenceID":   sourceSequenceID,
+		"numerator":          numerator,
+		"denominator":        denominator,
+		"motionPreset":       motionPreset,
+		"newName":            newName,
+		"useNestedSequences": useNestedSequences,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "autoReframeSequence", string(argsJSON))
 	if err != nil {

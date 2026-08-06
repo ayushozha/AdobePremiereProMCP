@@ -7,10 +7,15 @@
  */
 
 import * as path from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import {
+  getDefaultEnvironment,
+  StdioClientTransport,
+} from "@modelcontextprotocol/sdk/client/stdio.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
+import { parseDotEnv } from "./environment.js";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -23,6 +28,80 @@ export interface MCPTool {
 export interface ToolCallResult {
   content: string;
   isError: boolean;
+}
+
+interface MCPToolPage {
+  tools: Array<{
+    name: string;
+    description?: string;
+    inputSchema: Record<string, unknown>;
+  }>;
+  nextCursor?: string;
+}
+
+export async function collectToolPages(
+  fetchPage: (cursor?: string) => Promise<MCPToolPage>,
+): Promise<MCPTool[]> {
+  const tools: MCPTool[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+
+  do {
+    const result = await fetchPage(cursor);
+    tools.push(...result.tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description ?? "",
+      inputSchema: tool.inputSchema,
+    })));
+
+    cursor = result.nextCursor;
+    if (cursor) {
+      if (seenCursors.has(cursor)) {
+        throw new Error(`MCP server repeated tools/list cursor ${cursor}`);
+      }
+      seenCursors.add(cursor);
+    }
+  } while (cursor);
+
+  return tools;
+}
+
+const SERVER_ENV_PREFIXES = [
+  "MCP_",
+  "RUST_",
+  "PYTHON_",
+  "TS_",
+  "BRIDGE_",
+  "PREMIERE_",
+  "INTEL_",
+  "MEDIA_",
+];
+
+export function buildServerEnvironment(
+  repositoryRoot: string,
+  sourceEnvironment: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const environment = getDefaultEnvironment();
+  const dotenvPath = path.join(repositoryRoot, ".env");
+  if (existsSync(dotenvPath)) {
+    for (const [key, value] of parseDotEnv(readFileSync(dotenvPath, "utf-8"))) {
+      if (isServerEnvironmentKey(key)) environment[key] = value;
+    }
+  }
+  for (const [key, value] of Object.entries(sourceEnvironment)) {
+    if (value !== undefined && isServerEnvironmentKey(key)) {
+      environment[key] = value;
+    }
+  }
+  environment["MCP_TOOL_PROFILE"] ??= "standard";
+  // This client always speaks MCP over the child's stdio pipes. Repository or
+  // shell SSE settings apply to standalone servers, never this subprocess.
+  environment["MCP_TRANSPORT"] = "stdio";
+  return environment;
+}
+
+function isServerEnvironmentKey(key: string): boolean {
+  return SERVER_ENV_PREFIXES.some((prefix) => key.startsWith(prefix));
 }
 
 // ── MCPClient ─────────────────────────────────────────────────────────
@@ -43,10 +122,13 @@ export class MCPClient {
    * Spawn the MCP server binary and establish a connection.
    */
   async connect(): Promise<void> {
-    const serverPath = path.resolve(
+    const repositoryRoot = path.resolve(
       import.meta.dirname,
       "..",
       "..",
+    );
+    const serverPath = path.join(
+      repositoryRoot,
       "go-orchestrator",
       "bin",
       "premierpro-mcp",
@@ -54,7 +136,8 @@ export class MCPClient {
 
     this.transport = new StdioClientTransport({
       command: serverPath,
-      args: ["--log-level", "error"],
+      args: ["--transport", "stdio", "--log-level", "error"],
+      env: buildServerEnvironment(repositoryRoot),
       stderr: "ignore",
     });
 
@@ -65,13 +148,17 @@ export class MCPClient {
    * Fetch all tools from the MCP server and cache them.
    */
   async listTools(): Promise<MCPTool[]> {
-    const result = await this.client.listTools();
-
-    this.tools = result.tools.map((tool) => ({
-      name: tool.name,
-      description: tool.description ?? "",
-      inputSchema: tool.inputSchema as Record<string, unknown>,
-    }));
+    this.tools = await collectToolPages(async (cursor) => {
+      const result = await this.client.listTools(cursor ? { cursor } : undefined);
+      return {
+        tools: result.tools.map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema as Record<string, unknown>,
+        })),
+        nextCursor: result.nextCursor,
+      };
+    });
 
     return this.tools;
   }

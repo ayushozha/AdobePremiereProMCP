@@ -108,7 +108,7 @@ func (e *Engine) BrowseCreativeCloud(ctx context.Context) (*GenericResult, error
 	}
 	data, _ := json.Marshal(map[string]any{
 		"creative_cloud_path": ccPath,
-		"note":               "Creative Cloud Files sync location. Contents depend on user login.",
+		"note":                "Creative Cloud Files sync location. Contents depend on user login.",
 	})
 	return &GenericResult{Status: "success", Message: string(data)}, nil
 }

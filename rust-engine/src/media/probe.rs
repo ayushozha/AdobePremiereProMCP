@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 
 use crate::media::formats;
@@ -137,16 +137,16 @@ impl MediaProber {
         // -----------------------------------------------------------------
         let output = Command::new("ffprobe")
             .args([
-                "-v", "quiet",
-                "-print_format", "json",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
                 "-show_format",
                 "-show_streams",
                 file_path,
             ])
             .output()
-            .context(
-                "failed to execute ffprobe — is FFmpeg installed and on your PATH?",
-            )?;
+            .context("failed to execute ffprobe — is FFmpeg installed and on your PATH?")?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -157,14 +157,14 @@ impl MediaProber {
             );
         }
 
-        let json_str = String::from_utf8(output.stdout)
-            .context("ffprobe produced non-UTF-8 output")?;
+        let json_str =
+            String::from_utf8(output.stdout).context("ffprobe produced non-UTF-8 output")?;
 
         // -----------------------------------------------------------------
         // 3. Parse JSON
         // -----------------------------------------------------------------
-        let raw: FfprobeOutput = serde_json::from_str(&json_str)
-            .context("failed to parse ffprobe JSON output")?;
+        let raw: FfprobeOutput =
+            serde_json::from_str(&json_str).context("failed to parse ffprobe JSON output")?;
 
         // -----------------------------------------------------------------
         // 4. Extract video / audio info from streams

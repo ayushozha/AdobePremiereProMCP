@@ -9,26 +9,23 @@ and converts the result back to a proto response.
 from __future__ import annotations
 
 from concurrent import futures
-from typing import Any
+from typing import TYPE_CHECKING
 
 import grpc
 import structlog
-
 from premierpro.common.v1 import common_pb2
 from premierpro.intelligence.v1 import intelligence_pb2, intelligence_pb2_grpc
 
 from src.analysis import PacingAnalyzer
-from src.config import IntelligenceSettings
 from src.edl import EDLGenerator
 from src.matching import AssetMatcher
 from src.models import (
     AssetInfo,
-    AssetMatch as PydanticAssetMatch,
     AssetType,
     AudioInfo,
+    EditDecisionList,
     EDLEntry,
     EDLSettings,
-    EditDecisionList,
     EffectInfo,
     MatchStrategy,
     PacingPreset,
@@ -42,13 +39,19 @@ from src.models import (
     TransitionInfo,
     VideoInfo,
 )
+from src.models import (
+    AssetMatch as PydanticAssetMatch,
+)
 from src.parser import ScriptParser
+
+if TYPE_CHECKING:
+    from src.config import IntelligenceSettings
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 # ── Proto enum <-> Pydantic enum mapping tables ──────────────────────────────
 
-_PROTO_SEGMENT_TYPE_TO_PYDANTIC: dict[int, SegmentType] = {
+_PROTO_SEGMENT_TYPE_TO_PYDANTIC: dict[intelligence_pb2.SegmentType, SegmentType] = {
     intelligence_pb2.SEGMENT_TYPE_UNSPECIFIED: SegmentType.UNSPECIFIED,
     intelligence_pb2.SEGMENT_TYPE_DIALOGUE: SegmentType.DIALOGUE,
     intelligence_pb2.SEGMENT_TYPE_ACTION: SegmentType.ACTION,
@@ -61,7 +64,7 @@ _PROTO_SEGMENT_TYPE_TO_PYDANTIC: dict[int, SegmentType] = {
     intelligence_pb2.SEGMENT_TYPE_SFX: SegmentType.SFX,
 }
 
-_PYDANTIC_SEGMENT_TYPE_TO_PROTO: dict[SegmentType, int] = {
+_PYDANTIC_SEGMENT_TYPE_TO_PROTO: dict[SegmentType, intelligence_pb2.SegmentType] = {
     v: k for k, v in _PROTO_SEGMENT_TYPE_TO_PYDANTIC.items()
 }
 
@@ -80,7 +83,7 @@ _PROTO_MATCH_STRATEGY_TO_PYDANTIC: dict[int, MatchStrategy] = {
     intelligence_pb2.MATCH_STRATEGY_HYBRID: MatchStrategy.HYBRID,
 }
 
-_PROTO_ASSET_TYPE_TO_PYDANTIC: dict[int, AssetType] = {
+_PROTO_ASSET_TYPE_TO_PYDANTIC: dict[common_pb2.AssetType, AssetType] = {
     common_pb2.ASSET_TYPE_UNSPECIFIED: AssetType.UNSPECIFIED,
     common_pb2.ASSET_TYPE_VIDEO: AssetType.VIDEO,
     common_pb2.ASSET_TYPE_AUDIO: AssetType.AUDIO,
@@ -88,17 +91,17 @@ _PROTO_ASSET_TYPE_TO_PYDANTIC: dict[int, AssetType] = {
     common_pb2.ASSET_TYPE_GRAPHICS: AssetType.GRAPHICS,
 }
 
-_PYDANTIC_ASSET_TYPE_TO_PROTO: dict[AssetType, int] = {
+_PYDANTIC_ASSET_TYPE_TO_PROTO: dict[AssetType, common_pb2.AssetType] = {
     v: k for k, v in _PROTO_ASSET_TYPE_TO_PYDANTIC.items()
 }
 
-_PROTO_TRACK_TYPE_TO_PYDANTIC: dict[int, TrackType] = {
+_PROTO_TRACK_TYPE_TO_PYDANTIC: dict[common_pb2.TrackType, TrackType] = {
     common_pb2.TRACK_TYPE_UNSPECIFIED: TrackType.UNSPECIFIED,
     common_pb2.TRACK_TYPE_VIDEO: TrackType.VIDEO,
     common_pb2.TRACK_TYPE_AUDIO: TrackType.AUDIO,
 }
 
-_PYDANTIC_TRACK_TYPE_TO_PROTO: dict[TrackType, int] = {
+_PYDANTIC_TRACK_TYPE_TO_PROTO: dict[TrackType, common_pb2.TrackType] = {
     v: k for k, v in _PROTO_TRACK_TYPE_TO_PYDANTIC.items()
 }
 
@@ -150,7 +153,9 @@ def _proto_asset_to_pydantic(asset: common_pb2.Asset) -> AssetInfo:
         v = asset.video
         video = VideoInfo(
             codec=v.codec,
-            resolution=_proto_resolution_to_pydantic(v.resolution) if v.HasField("resolution") else Resolution(),
+            resolution=_proto_resolution_to_pydantic(v.resolution)
+            if v.HasField("resolution")
+            else Resolution(),
             frame_rate=v.frame_rate,
             bitrate_bps=v.bitrate_bps,
             pixel_format=v.pixel_format,
@@ -254,7 +259,8 @@ def _proto_edl_to_pydantic(edl: common_pb2.EditDecisionList) -> EditDecisionList
         id=edl.id,
         name=edl.name,
         sequence_resolution=_proto_resolution_to_pydantic(edl.sequence_resolution)
-        if edl.HasField("sequence_resolution") else Resolution(),
+        if edl.HasField("sequence_resolution")
+        else Resolution(),
         sequence_frame_rate=edl.sequence_frame_rate if edl.sequence_frame_rate > 0 else 24.0,
         entries=[_proto_edl_entry_to_pydantic(e) for e in edl.entries],
     )
@@ -408,7 +414,8 @@ class IntelligenceServicer(intelligence_pb2_grpc.IntelligenceServiceServicer):
             if file_path:
                 result = self._script_parser.parse_file(file_path, format_hint=format_hint)
             else:
-                result = self._script_parser.parse(text, format_hint=format_hint)  # type: ignore[arg-type]
+                assert text is not None
+                result = self._script_parser.parse(text, format_hint=format_hint)
         except FileNotFoundError as exc:
             context.abort(grpc.StatusCode.NOT_FOUND, str(exc))
         except ValueError as exc:
@@ -418,10 +425,12 @@ class IntelligenceServicer(intelligence_pb2_grpc.IntelligenceServiceServicer):
             context.abort(grpc.StatusCode.INTERNAL, f"Script parsing failed: {exc}")
 
         # Convert Pydantic result -> proto response.
-        proto_segments = [_pydantic_segment_to_proto(s) for s in result.segments]  # type: ignore[possibly-undefined]
+        proto_segments = [_pydantic_segment_to_proto(s) for s in result.segments]
         proto_metadata = intelligence_pb2.ScriptMetadata(
             title=result.metadata.title,
-            format=result.metadata.format.value if hasattr(result.metadata.format, 'value') else str(result.metadata.format),
+            format=result.metadata.format.value
+            if hasattr(result.metadata.format, "value")
+            else str(result.metadata.format),
             estimated_total_duration_seconds=result.metadata.estimated_total_duration_seconds,
             segment_count=result.metadata.segment_count,
         )
@@ -445,7 +454,11 @@ class IntelligenceServicer(intelligence_pb2_grpc.IntelligenceServiceServicer):
             segments = [_proto_segment_to_pydantic(s) for s in request.segments]
             assets = [_proto_asset_to_pydantic(a) for a in request.available_assets]
             matches = [_proto_asset_match_to_pydantic(m) for m in request.matches]
-            settings = _proto_edl_settings_to_pydantic(request.settings) if request.HasField("settings") else EDLSettings()
+            settings = (
+                _proto_edl_settings_to_pydantic(request.settings)
+                if request.HasField("settings")
+                else EDLSettings()
+            )
         except Exception as exc:
             context.abort(
                 grpc.StatusCode.INVALID_ARGUMENT,
@@ -453,16 +466,19 @@ class IntelligenceServicer(intelligence_pb2_grpc.IntelligenceServiceServicer):
             )
 
         try:
-            edl, warnings = self._edl_generator.generate_with_warnings(  # type: ignore[possibly-undefined]
-                segments, matches, assets, settings,
+            edl, warnings = self._edl_generator.generate_with_warnings(
+                segments,
+                matches,
+                assets,
+                settings,
             )
         except Exception as exc:
             logger.exception("generate_edl.error")
             context.abort(grpc.StatusCode.INTERNAL, f"EDL generation failed: {exc}")
 
         return intelligence_pb2.GenerateEDLResponse(
-            edl=_pydantic_edl_to_proto(edl),  # type: ignore[possibly-undefined]
-            warnings=warnings,  # type: ignore[possibly-undefined]
+            edl=_pydantic_edl_to_proto(edl),
+            warnings=warnings,
         )
 
     # ── MatchAssets ──────────────────────────────────────────────────────
@@ -486,25 +502,21 @@ class IntelligenceServicer(intelligence_pb2_grpc.IntelligenceServiceServicer):
 
         # Map proto strategy enum to Pydantic MatchStrategy.
         strategy = _PROTO_MATCH_STRATEGY_TO_PYDANTIC.get(
-            request.strategy, MatchStrategy.HYBRID,
+            request.strategy,
+            MatchStrategy.HYBRID,
         )
         # Use HYBRID as default if UNSPECIFIED.
         if strategy == MatchStrategy.UNSPECIFIED:
             strategy = MatchStrategy.HYBRID
 
-        # Apply per-request strategy override.
-        original_strategy = self._asset_matcher.strategy
-        self._asset_matcher.strategy = strategy
         try:
-            result = self._asset_matcher.match(segments, assets)  # type: ignore[possibly-undefined]
+            result = self._asset_matcher.match(segments, assets, strategy=strategy)
         except Exception as exc:
             logger.exception("match_assets.error")
             context.abort(grpc.StatusCode.INTERNAL, f"Asset matching failed: {exc}")
-        finally:
-            self._asset_matcher.strategy = original_strategy
 
         # Convert Pydantic result -> proto response.
-        proto_matches = [_pydantic_asset_match_to_proto(m) for m in result.matches]  # type: ignore[possibly-undefined]
+        proto_matches = [_pydantic_asset_match_to_proto(m) for m in result.matches]
         proto_unmatched = [
             intelligence_pb2.UnmatchedSegment(
                 segment_index=u.segment_index,
@@ -540,7 +552,7 @@ class IntelligenceServicer(intelligence_pb2_grpc.IntelligenceServiceServicer):
         target_mood = request.target_mood or "cinematic"
 
         try:
-            result = self._pacing_analyzer.analyze(edl, target_mood=target_mood)  # type: ignore[possibly-undefined]
+            result = self._pacing_analyzer.analyze(edl, target_mood=target_mood)
         except Exception as exc:
             logger.exception("analyze_pacing.error")
             context.abort(grpc.StatusCode.INTERNAL, f"Pacing analysis failed: {exc}")
@@ -553,7 +565,7 @@ class IntelligenceServicer(intelligence_pb2_grpc.IntelligenceServiceServicer):
                 suggested_duration=a.suggested_duration,
                 reason=a.reason,
             )
-            for a in result.adjustments  # type: ignore[possibly-undefined]
+            for a in result.adjustments
         ]
 
         return intelligence_pb2.AnalyzePacingResponse(
@@ -610,9 +622,16 @@ def create_server(settings: IntelligenceSettings) -> grpc.Server:
     server = grpc.server(
         futures.ThreadPoolExecutor(max_workers=10),
     )
-    intelligence_pb2_grpc.add_IntelligenceServiceServicer_to_server(servicer, server)
+    intelligence_pb2_grpc.add_IntelligenceServiceServicer_to_server(  # type: ignore[no-untyped-call]
+        servicer, server
+    )
 
-    listen_addr = f"[::]:{settings.grpc_port}"
-    server.add_insecure_port(listen_addr)
+    host = settings.grpc_host
+    listen_addr = (
+        f"[{host}]:{settings.grpc_port}" if ":" in host else f"{host}:{settings.grpc_port}"
+    )
+    bound_port = server.add_insecure_port(listen_addr)
+    if bound_port == 0:
+        raise RuntimeError(f"Failed to bind intelligence gRPC server at {listen_addr}")
     logger.info("grpc.server_created", listen_addr=listen_addr)
     return server

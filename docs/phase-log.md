@@ -1,5 +1,9 @@
 # PremierPro MCP -- Phase Completion Log
 
+> **Historical implementation log:** counts and "implemented" labels below are
+> archival and do not certify current Premiere behavior. See the README and
+> live `tools/list` response for the supported surface.
+
 **Total registered MCP tools: 907** (across 33 Go source files)
 
 Every phase is listed with its exact features, commit hash, and tool count.
@@ -17,7 +21,7 @@ Every phase is listed with its exact features, commit hash, and tool count.
 5. `premiere_place_clip` -- Place clip on timeline
 6. `premiere_remove_clip` -- Remove clip from timeline
 7. `premiere_add_transition` -- Add transition between clips
-8. `premiere_add_text` -- Add text overlay
+8. `premiere_add_text` -- Removed unsupported legacy schema; current title workflow imports a MOGRT and sets its exposed text property
 9. `premiere_set_audio_level` -- Set audio level on clip
 10. `premiere_get_timeline` -- Get timeline state
 11. `premiere_export` -- Export sequence

@@ -23,6 +23,8 @@
     var WebSocketServer = require("ws").Server;
     var path = require("path");
     var fs = require("fs");
+    var os = require("os");
+    var crypto = require("crypto");
 
     // ---------------------------------------------------------------------------
     // Configuration
@@ -40,6 +42,7 @@
     var activeConnections = new Set();
     var heartbeatTimer = null;
     var serverPort = DEFAULT_PORT;
+    var serverToken = null;
     var autoScroll = true;
 
     // Lazy-loading state for the full premiere.jsx ExtendScript library
@@ -247,7 +250,10 @@
             if (fs.existsSync(configPath)) {
                 var config = JSON.parse(fs.readFileSync(configPath, "utf8"));
                 if (config.port) {
-                    serverPort = parseInt(config.port, 10);
+                    var configPort = parseInt(config.port, 10);
+                    if (!isNaN(configPort) && configPort > 0 && configPort <= 65535) {
+                        serverPort = configPort;
+                    }
                 }
             }
         } catch (e) {
@@ -255,8 +261,12 @@
         }
 
         // Environment variable takes highest priority
-        if (typeof process !== "undefined" && process.env.MCP_CEP_PORT) {
-            serverPort = parseInt(process.env.MCP_CEP_PORT, 10);
+        if (typeof process !== "undefined" && process.env) {
+            var rawPort = process.env.BRIDGE_CEP_WS_PORT || process.env.MCP_CEP_PORT;
+            var envPort = parseInt(rawPort, 10);
+            if (rawPort && !isNaN(envPort) && envPort > 0 && envPort <= 65535) {
+                serverPort = envPort;
+            }
         }
 
         if (portDisplay) portDisplay.textContent = "" + serverPort;
@@ -278,27 +288,28 @@
         addTransition:      function (p)       { return "addTransition(" + (p.trackIndex || 0) + "," + (p.clipIndex || 0) + "," + escapeForEval(p.transitionName || "") + "," + (p.duration || 1) + ")"; },
         addText:            function (p)       { return "addText(" + escapeForEval(p.text || "") + "," + (p.trackIndex || 0) + "," + (p.startTime || 0) + "," + (p.duration || 5) + ")"; },
         setAudioLevel:      function (p)       { return "setAudioLevel(" + (p.trackIndex || 0) + "," + (p.clipIndex || 0) + "," + (p.levelDb || 0) + ")"; },
-        exportSequence:     function (p)       { return "exportSequence(" + escapeForEval(p.outputPath || "") + "," + escapeForEval(p.presetPath || "") + ")"; },
+        exportSequence:     function (p)       { return "exportSequence(" + escapeForEval(p.sequenceId || p.sequence_id || "") + "," + escapeForEval(p.outputPath || p.output_path || "") + "," + escapeForEval(p.presetPath || p.preset_path || "") + ")"; },
         evalCommand:        function (p)       {
             var fn = p.function_name || "";
             var argsJson = p.args_json || "";
 
+            if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(fn)) {
+                throw new Error("Invalid ExtendScript function name: " + fn);
+            }
+
             // Build lazy-load prefix: if the function doesn't exist yet,
-            // load the full premiere.jsx (once) to make it available.
+            // load the full premiere.jsx (once) to make it and mcpDispatch
+            // available.
             var loadScript = "";
             if (!premiereJsxLoaded) {
                 loadScript =
-                    'if (typeof ' + fn + ' !== "function") { ' +
+                    'if (typeof mcpDispatch !== "function" || typeof ' + fn + ' !== "function") { ' +
                     '  try { $.evalFile("' + premiereJsxPath + '"); } catch(loadErr) {} ' +
                     '} ';
             }
 
-            var callScript;
-            if (argsJson && argsJson !== "{}" && argsJson !== "[]") {
-                callScript = fn + "(" + escapeForEval(argsJson) + ")";
-            } else {
-                callScript = fn + "()";
-            }
+            var callScript = "mcpDispatch(" + escapeForEval(fn) + "," +
+                escapeForEval(argsJson || "{}") + ")";
 
             return loadScript + callScript;
         },
@@ -371,6 +382,21 @@
                 result = rawResult;
             }
 
+            // ExtendScript functions return {_ok|_err} envelopes. Treat host
+            // failures as protocol errors and unwrap successful data so the
+            // TypeScript gRPC layer receives the shape it declared.
+            if (result && typeof result === "object" && result.success === false) {
+                log("ExtendScript command failed for " + action + ": " + result.error, "error");
+                stats.errorsCount++;
+                updateStatsUI();
+                sendResponse(ws, requestId, false, null, result.error || "Premiere command failed");
+                return;
+            }
+            if (result && typeof result === "object" && result.success === true &&
+                Object.prototype.hasOwnProperty.call(result, "data")) {
+                result = result.data;
+            }
+
             // If this was a successful evalCommand, premiere.jsx is now loaded
             if (action === "evalCommand" && !premiereJsxLoaded) {
                 premiereJsxLoaded = true;
@@ -413,12 +439,41 @@
     function startServer() {
         var port = loadPort();
 
+        try {
+            serverToken = loadServerToken();
+        } catch (tokenErr) {
+            log("Failed to load CEP authentication token: " + tokenErr.message, "error");
+            statusDot.className = "status-dot";
+            statusLabel.textContent = "Auth failed";
+            return;
+        }
+
         // Show connecting state
         statusDot.className = "status-dot connecting";
         statusLabel.textContent = "Starting...";
 
         try {
-            wss = new WebSocketServer({ port: port });
+            // The bridge can execute arbitrary Premiere host commands, so it
+            // must never be exposed on a LAN interface.
+            wss = new WebSocketServer({
+                port: port,
+                host: "127.0.0.1",
+                maxPayload: 1024 * 1024,
+                verifyClient: function (info, done) {
+                    var origin = info.origin ||
+                        (info.req && info.req.headers && info.req.headers.origin) || "";
+                    if (origin) {
+                        done(false, 403, "Browser origins are not allowed");
+                        return;
+                    }
+
+                    var authorization = (info.req && info.req.headers &&
+                        info.req.headers.authorization) || "";
+                    var match = String(authorization).match(/^Bearer\s+(.+)$/i);
+                    var supplied = match ? match[1] : "";
+                    done(constantTimeTokenEqual(supplied, serverToken), 401, "Unauthorized");
+                },
+            });
         } catch (err) {
             log("Failed to start WebSocket server on port " + port + ": " + err.message, "error");
             statusDot.className = "status-dot";
@@ -456,14 +511,33 @@
                     return;
                 }
 
-                var action = message.action;
-                var params = message.params || {};
-                var requestId = message.requestId || "no-id";
-
-                if (!action) {
+                if (!message || typeof message !== "object" || Array.isArray(message)) {
                     stats.errorsCount++;
                     updateStatsUI();
-                    sendResponse(ws, requestId, false, null, "Missing 'action' field");
+                    sendResponse(ws, null, false, null, "Message must be a JSON object");
+                    return;
+                }
+
+                var action = message.action;
+                var params = message.params === undefined ? {} : message.params;
+                var requestId = message.requestId;
+
+                if (typeof requestId !== "string" || !requestId || requestId.length > 128) {
+                    stats.errorsCount++;
+                    updateStatsUI();
+                    sendResponse(ws, null, false, null, "Invalid 'requestId' field");
+                    return;
+                }
+                if (typeof action !== "string" || !/^[A-Za-z][A-Za-z0-9_]*$/.test(action) || action.length > 128) {
+                    stats.errorsCount++;
+                    updateStatsUI();
+                    sendResponse(ws, requestId, false, null, "Invalid 'action' field");
+                    return;
+                }
+                if (!params || typeof params !== "object" || Array.isArray(params)) {
+                    stats.errorsCount++;
+                    updateStatsUI();
+                    sendResponse(ws, requestId, false, null, "Invalid 'params' field");
                     return;
                 }
 
@@ -494,6 +568,71 @@
 
         // Start heartbeat to detect dead connections
         startHeartbeat();
+    }
+
+    function loadServerToken() {
+        var configured = "";
+        if (typeof process !== "undefined" && process.env) {
+            configured = process.env.BRIDGE_CEP_TOKEN || process.env.MCP_CEP_TOKEN || "";
+        }
+        if (configured) {
+            return validateServerToken(String(configured).replace(/^\s+|\s+$/g, ""), "configured token");
+        }
+
+        var configuredTokenPath = typeof process !== "undefined" && process.env &&
+            process.env.PREMIERE_MCP_TOKEN_FILE;
+        var tokenPath = configuredTokenPath ||
+            path.join(os.homedir(), ".premierpro-mcp", "cep-token");
+        if (fs.existsSync(tokenPath)) {
+            var existing = fs.readFileSync(tokenPath, "utf8").replace(/^\s+|\s+$/g, "");
+            if (existing) {
+                hardenTokenPermissions(tokenPath, false);
+                return validateServerToken(existing, tokenPath);
+            }
+        }
+
+        var tokenDir = path.dirname(tokenPath);
+        var directoryExisted = fs.existsSync(tokenDir);
+        if (!fs.existsSync(tokenDir)) fs.mkdirSync(tokenDir, { recursive: true, mode: 448 });
+        if (!configuredTokenPath || !directoryExisted) hardenTokenPermissions(tokenDir, true);
+        var generated = crypto.randomBytes(32).toString("hex");
+        try {
+            fs.writeFileSync(tokenPath, generated + "\n", {
+                encoding: "utf8",
+                flag: "wx",
+                mode: 384,
+            });
+            return generated;
+        } catch (writeErr) {
+            if (fs.existsSync(tokenPath)) {
+                var raced = fs.readFileSync(tokenPath, "utf8").replace(/^\s+|\s+$/g, "");
+                if (raced) {
+                    hardenTokenPermissions(tokenPath, false);
+                    return validateServerToken(raced, tokenPath);
+                }
+            }
+            throw writeErr;
+        }
+    }
+
+    function validateServerToken(token, source) {
+        if (!token || token.length < 32) {
+            throw new Error(source + " must contain at least 32 characters");
+        }
+        return token;
+    }
+
+    function hardenTokenPermissions(targetPath, isDirectory) {
+        if (typeof process !== "undefined" && process.platform !== "win32") {
+            fs.chmodSync(targetPath, isDirectory ? 448 : 384);
+        }
+    }
+
+    function constantTimeTokenEqual(left, right) {
+        var leftBuffer = Buffer.from(String(left || ""), "utf8");
+        var rightBuffer = Buffer.from(String(right || ""), "utf8");
+        return leftBuffer.length === rightBuffer.length &&
+            crypto.timingSafeEqual(leftBuffer, rightBuffer);
     }
 
     // ---------------------------------------------------------------------------

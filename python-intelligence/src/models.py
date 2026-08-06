@@ -11,7 +11,6 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
-
 # ── Enums ────────────────────────────────────────────────────────────────────────
 
 
@@ -96,8 +95,11 @@ class Timecode(BaseModel):
 
     def to_seconds(self) -> float:
         """Convert to fractional seconds."""
-        return self.hours * 3600.0 + self.minutes * 60.0 + self.seconds + (
-            self.frames / self.frame_rate if self.frame_rate > 0 else 0.0
+        return (
+            self.hours * 3600.0
+            + self.minutes * 60.0
+            + self.seconds
+            + (self.frames / self.frame_rate if self.frame_rate > 0 else 0.0)
         )
 
 

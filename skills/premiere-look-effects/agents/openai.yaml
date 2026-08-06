@@ -1,0 +1,4 @@
+interface:
+  display_name: "Premiere Look Effects"
+  short_description: "Build reusable, reversible effect recipes"
+  default_prompt: "Use $premiere-look-effects to create and verify a consistent visual treatment."

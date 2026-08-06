@@ -1,15 +1,17 @@
 # ─── Go ───
 go-orchestrator/bin/
+go-orchestrator/server
 go-orchestrator/vendor/
 
 # ─── Rust ───
 rust-engine/target/
-rust-engine/Cargo.lock
 
 # ─── Python ───
 python-intelligence/__pycache__/
 python-intelligence/**/__pycache__/
 python-intelligence/*.pyc
+gen/python/**/__pycache__/
+**/*.pyc
 python-intelligence/.venv/
 python-intelligence/venv/
 python-intelligence/*.egg-info/
@@ -31,6 +33,10 @@ cli/dist/
 cep-panel/node_modules/
 cep-panel/dist/
 cep-panel/build/
+
+# ─── Local delivery output ───
+outputs/*
+!outputs/.gitkeep
 
 # ─── Proto generated ───
 **/generated/
@@ -60,6 +66,8 @@ Thumbs.db
 
 # ─── Logs & temp ───
 *.log
+scripts/.pids
+scripts/logs/
 tmp/
 .cache/
 go-orchestrator/cli

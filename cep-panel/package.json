@@ -5,6 +5,13 @@
   "private": true,
   "main": "src/panel.js",
   "scripts": {
+    "build": "node scripts/build.js",
+    "build:dev": "node scripts/build.js --dev",
+    "package": "node scripts/build.js --package",
+    "check:commands": "node scripts/check-command-coverage.js && node scripts/check-proxy-workflow.js && node scripts/check-social-workflow.js && node scripts/check-delivery-workflow.js",
+    "check:proxies": "node scripts/check-proxy-workflow.js",
+    "check:social": "node scripts/check-social-workflow.js",
+    "check:delivery": "node scripts/check-delivery-workflow.js",
     "install-deps": "npm install",
     "setup-csinterface": "node scripts/setup-csinterface.js",
     "link-panel:mac": "ln -sf \"$(pwd)\" \"$HOME/Library/Application Support/Adobe/CEP/extensions/com.premierpro.mcp.bridge\"",

@@ -1,37 +1,46 @@
-version: '3.8'
 services:
-  orchestrator:
-    build: .
-    command: premierpro-mcp --transport sse --port 8080
-    ports:
-      - "8080:8080"
-    depends_on:
-      - rust-engine
-      - python-intel
-      - ts-bridge
-
+  # Premiere and its authenticated CEP socket live on the host. Compose only
+  # runs the portable analysis backends; run the Go orchestrator and
+  # TypeScript bridge on the host for live editing.
   rust-engine:
     build:
       context: .
       dockerfile: Dockerfile
+      target: rust-runtime
     command: premierpro-media-engine --port 50052
     ports:
-      - "50052:50052"
+      - "127.0.0.1:50052:50052"
+    environment:
+      MEDIA_ENGINE_HOST: 0.0.0.0
+      MEDIA_ENGINE_LOG_LEVEL: ${MEDIA_ENGINE_LOG_LEVEL:-info}
+      MEDIA_ENGINE_LOG_JSON: ${MEDIA_ENGINE_LOG_JSON:-false}
+    volumes:
+      - type: bind
+        source: ${PREMIERE_MEDIA_ROOT:-${PWD}}
+        target: ${PREMIERE_MEDIA_ROOT:-${PWD}}
+        read_only: true
+      - type: bind
+        source: ${PREMIERE_OUTPUT_ROOT:-${PWD}/outputs}
+        target: ${PREMIERE_OUTPUT_ROOT:-${PWD}/outputs}
 
   python-intel:
     build:
       context: .
       dockerfile: Dockerfile
-    command: python /app/python-intelligence/src/main.py --port 50053
+      target: python-runtime
+    command: python -m src.main --port 50053
+    working_dir: /app/python-intelligence
     ports:
-      - "50053:50053"
+      - "127.0.0.1:50053:50053"
     environment:
-      - PYTHONPATH=/app/gen/python:/app/python-intelligence
-
-  ts-bridge:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: npx tsx /app/ts-bridge/src/index.ts
-    ports:
-      - "50054:50054"
+      PYTHONPATH: /app/gen/python:/app/python-intelligence
+      INTEL_GRPC_HOST: 0.0.0.0
+      INTEL_LOG_LEVEL: ${INTEL_LOG_LEVEL:-INFO}
+    volumes:
+      - type: bind
+        source: ${PREMIERE_MEDIA_ROOT:-${PWD}}
+        target: ${PREMIERE_MEDIA_ROOT:-${PWD}}
+        read_only: true
+      - type: bind
+        source: ${PREMIERE_OUTPUT_ROOT:-${PWD}/outputs}
+        target: ${PREMIERE_OUTPUT_ROOT:-${PWD}/outputs}

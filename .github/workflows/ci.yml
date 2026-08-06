@@ -4,6 +4,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_call:
 
 jobs:
   go-build:
@@ -12,23 +13,48 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version-file: go-orchestrator/go.mod
+          cache-dependency-path: |
+            go-orchestrator/go.sum
+            gen/go/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: bufbuild/buf-action@v1
+        with:
+          version: '1.72.0'
+          setup_only: true
+      - name: Generate protobuf clients
+        run: bash scripts/generate-proto.sh
       - name: Build Go orchestrator
-        run: cd go-orchestrator && go build ./...
+        run: |
+          cd go-orchestrator
+          go build ./...
+          mkdir -p bin
+          go build -o bin/premierpro-mcp ./cmd/server
+      - name: Test Go code
+        run: cd go-orchestrator && go test ./...
       - name: Vet Go code
         run: cd go-orchestrator && go vet ./...
+      - name: Smoke MCP profiles over stdio
+        run: |
+          MCP_SERVER_BIN="$PWD/go-orchestrator/bin/premierpro-mcp" MCP_TOOL_PROFILE=standard node scripts/smoke-mcp.js
+          MCP_SERVER_BIN="$PWD/go-orchestrator/bin/premierpro-mcp" MCP_TOOL_PROFILE=all,unsafe node scripts/smoke-mcp.js
 
   rust-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install protoc
-        run: sudo apt-get install -y protobuf-compiler
+      # Test the declared MSRV; the Docker build uses the current stable line.
+      - uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          components: clippy
       - name: Build Rust engine
-        run: cd rust-engine && cargo build
+        run: cd rust-engine && cargo build --locked --all-targets
+      - name: Lint Rust engine
+        run: cd rust-engine && cargo clippy --locked --all-targets -- -D warnings
       - name: Run Rust tests
-        run: cd rust-engine && cargo test
+        run: cd rust-engine && cargo test --locked --all-targets
 
   python-test:
     runs-on: ubuntu-latest
@@ -37,12 +63,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install dependencies
-        run: |
-          pip install grpcio protobuf pydantic structlog numpy scikit-learn pypdf python-docx "protobuf>=7.34.0"
-          pip install pytest
+          cache: pip
+          cache-dependency-path: |
+            python-intelligence/pyproject.toml
+            python-intelligence/constraints.txt
+      - uses: bufbuild/buf-action@v1
+        with:
+          version: '1.72.0'
+          setup_only: true
+      - name: Generate protobuf clients
+        run: bash scripts/generate-proto.sh
+      - name: Install Python service and test dependencies
+        run: python -m pip install --constraint python-intelligence/constraints.txt -e "./python-intelligence[dev]"
+      - name: Lint Python service
+        run: cd python-intelligence && python -m ruff check src/
+      - name: Type-check Python service
+        run: cd python-intelligence && python -m mypy src/
       - name: Run Python tests
-        run: cd python-intelligence && PYTHONPATH=../gen/python:. pytest tests/ -v
+        run: cd python-intelligence && PYTHONPATH=../gen/python:. python -m pytest tests/ -v
 
   typescript-build:
     runs-on: ubuntu-latest
@@ -51,15 +89,69 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            ts-bridge/package-lock.json
+            cli/package-lock.json
+            cep-panel/package-lock.json
       - name: Install and build ts-bridge
-        run: cd ts-bridge && npm install && npx tsc --noEmit
+        run: cd ts-bridge && npm ci && npm run build && npm test
       - name: Install and build CLI
-        run: cd cli && npm install && npx tsc --noEmit
+        run: cd cli && npm ci && npm run typecheck && npm test
+      - name: Validate and build CEP panel
+        run: cd cep-panel && npm ci && npm run check:commands && npm run build
 
   proto-lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: bufbuild/buf-setup-action@v1
+      - uses: bufbuild/buf-action@v1
+        with:
+          version: '1.72.0'
+          setup_only: true
       - name: Lint protos
         run: buf lint
+
+  windows-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go-orchestrator/go.mod
+          cache-dependency-path: |
+            go-orchestrator/go.sum
+            gen/go/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            ts-bridge/package-lock.json
+            cli/package-lock.json
+      - uses: bufbuild/buf-action@v1
+        with:
+          version: '1.72.0'
+          setup_only: true
+      - name: Generate protobuf clients
+        run: buf generate
+      - name: Build Windows Go server
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force go-orchestrator/bin | Out-Null
+          Push-Location go-orchestrator
+          go build -o bin/premierpro-mcp.exe ./cmd/server
+          Pop-Location
+      - name: Build and test TypeScript bridge
+        run: cd ts-bridge && npm ci && npm test
+      - name: Build and test CLI
+        run: cd cli && npm ci && npm test
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Rust analysis image
+        run: docker build --target rust-runtime -t premierpro-rust:test .
+      - name: Build Python analysis image
+        run: docker build --target python-runtime -t premierpro-python:test .

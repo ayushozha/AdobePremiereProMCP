@@ -512,7 +512,7 @@ func registerDeliveryTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 
 	// 25. premiere_validate_closed_captions
 	s.AddTool(gomcp.NewTool("premiere_validate_closed_captions",
-		gomcp.WithDescription("Validate closed captions for FCC compliance. Checks for caption track presence, coverage, and format."),
+		gomcp.WithDescription("Run structural caption QA: track presence, empty text, duration, overlap, line-count, and line-length checks. This does not certify FCC compliance."),
 		gomcp.WithNumber("sequence_index", gomcp.Description("Zero-based sequence index (default: 0)")),
 	), dlvH(logger, "validate_closed_captions", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
 		result, err := orch.ValidateClosedCaptions(ctx, gomcp.ParseInt(req, "sequence_index", 0))
