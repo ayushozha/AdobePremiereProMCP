@@ -494,7 +494,41 @@ func (c *PremiereBridgeClient) EvalCommand(ctx context.Context, functionName, ar
 		return "", fmt.Errorf("EvalCommand(%s): %s", functionName, resp.GetErrorMessage())
 	}
 
-	return resp.GetResultJson(), nil
+	return unwrapEvalEnvelope(functionName, resp.GetResultJson())
+}
+
+// evalEnvelope mirrors the {success, data, error} JSON envelope that every
+// ExtendScript function in core.jsx/premiere.jsx returns via its _ok()/_err()
+// helpers.
+type evalEnvelope struct {
+	Success *bool           `json:"success"`
+	Data    json.RawMessage `json:"data"`
+	Error   string          `json:"error"`
+}
+
+// unwrapEvalEnvelope strips the {success, data} envelope so callers can
+// unmarshal the result directly into their flat result structs. Without
+// this, every orchestrator method that unmarshals EvalCommand's result
+// silently gets a zero-valued struct, because none of them declare
+// "success"/"data" fields to match the envelope's shape.
+func unwrapEvalEnvelope(functionName, raw string) (string, error) {
+	var env evalEnvelope
+	if err := json.Unmarshal([]byte(raw), &env); err != nil || env.Success == nil {
+		// Not an enveloped response (e.g. a bare value) -- pass it through
+		// unchanged rather than fail calls that don't use the envelope.
+		return raw, nil
+	}
+	if !*env.Success {
+		msg := env.Error
+		if msg == "" {
+			msg = "ExtendScript reported failure with no error message"
+		}
+		return "", fmt.Errorf("EvalCommand(%s): %s", functionName, msg)
+	}
+	if len(env.Data) == 0 {
+		return "{}", nil
+	}
+	return string(env.Data), nil
 }
 
 // ---------------------------------------------------------------------------

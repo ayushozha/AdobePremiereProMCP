@@ -45,9 +45,27 @@
     var serverToken = null;
     var autoScroll = true;
 
+    // Resolve an ExtendScript file under host/. CEP's __dirname is the
+    // extension root, not src/, so probe both layouts instead of assuming
+    // one -- a hardcoded path.join(__dirname, "host", ...) silently fails
+    // $.evalFile() with a bare "EvalScript error." when it's wrong.
+    function resolveHostPath(filename) {
+        var candidates = [
+            path.join(__dirname, "src", "host", filename),
+            path.join(__dirname, "host", filename),
+            path.join(__dirname, "..", "src", "host", filename),
+        ];
+        for (var i = 0; i < candidates.length; i++) {
+            if (fs.existsSync(candidates[i])) {
+                return candidates[i].replace(/\\/g, "/");
+            }
+        }
+        return candidates[0].replace(/\\/g, "/");
+    }
+
     // Lazy-loading state for the full premiere.jsx ExtendScript library
     var premiereJsxLoaded = false;
-    var premiereJsxPath = path.join(__dirname, "host", "premiere.jsx").replace(/\\/g, "/");
+    var premiereJsxPath = resolveHostPath("premiere.jsx");
 
     // Stats tracking
     var stats = {
@@ -685,7 +703,7 @@
     // Load ExtendScript host functions
     // ---------------------------------------------------------------------------
     function loadHostScript() {
-        var corePath = path.join(__dirname, "host", "core.jsx").replace(/\\/g, "/");
+        var corePath = resolveHostPath("core.jsx");
         log("Loading core ExtendScript: " + corePath);
         csInterface.evalScript('$.evalFile("' + corePath + '")', function (result) {
             if (result === "EvalScript error.") {

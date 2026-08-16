@@ -24109,7 +24109,7 @@ function createApprovalPackage(sequenceIndex, outputDir) {
         var rpt = "=== APPROVAL PACKAGE ===\nSequence: "+seq.name+"\nDate: "+new Date().toISOString()+"\nDuration: "+dur.toFixed(2)+"s\nClips: "+tc+"\n";
         var folder = new Folder(pkgDir); folder.create();
         var rf = new File(pkg.reportPath); rf.open("w"); rf.write(rpt); rf.close();
-        return _ok({ sequence: seq.name, package: pkg, duration: dur, clipCount: tc });
+        return _ok({ sequence: seq.name, "package": pkg, duration: dur, clipCount: tc });
     } catch (e) { return _err("createApprovalPackage failed: " + e.message); }
 }
 
