@@ -79,6 +79,42 @@ test("normalizes host project state into the bridge contract", async () => {
   });
 });
 
+test("unwraps the {success, data} envelope every ExtendScript function returns", async () => {
+  // core.jsx/premiere.jsx never return bare payloads -- every function
+  // returns JSON.stringify({ success: true, data }) via the _ok() helper.
+  // invokeHost must strip that envelope before the typed bridge methods
+  // read fields off the result, or every field read comes back undefined.
+  const { bridge } = bridgeWithHostResult({
+    success: true,
+    data: {
+      name: "Demo Project",
+      path: "/tmp/demo.prproj",
+      binCount: 4,
+      sequences: [],
+    },
+  });
+
+  const state = await bridge.getProjectState();
+
+  assert.equal(state.projectName, "Demo Project");
+  assert.equal(state.projectPath, "/tmp/demo.prproj");
+  assert.equal(state.binCount, 4);
+});
+
+test("surfaces {success: false, error} envelopes as CepCommandError", async () => {
+  const { bridge } = bridgeWithHostResult({
+    success: false,
+    error: "No project is open",
+  });
+
+  await assert.rejects(
+    bridge.getProjectState(),
+    (error: unknown) =>
+      error instanceof CepCommandError &&
+      error.message.includes("No project is open"),
+  );
+});
+
 test("adapts core sequence and clip calls to explicit host commands", async () => {
   const { bridge, calls } = bridgeWithHostResult({
     sequenceID: "created-1",

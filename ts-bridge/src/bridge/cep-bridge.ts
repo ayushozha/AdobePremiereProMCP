@@ -90,6 +90,24 @@ interface PendingRequest {
   timer: ReturnType<typeof setTimeout>;
 }
 
+/**
+ * Shape of the {success, data, error} JSON envelope every ExtendScript
+ * function in core.jsx/premiere.jsx returns via its _ok()/_err() helpers.
+ */
+interface EvalEnvelope {
+  success: boolean;
+  data?: unknown;
+  error?: string;
+}
+
+function isEvalEnvelope(value: unknown): value is EvalEnvelope {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as Record<string, unknown>)["success"] === "boolean"
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -546,11 +564,28 @@ export class CepBridge implements PremiereBridge {
       throw new CepCommandError(functionName, response.errorMessage);
     }
     if (response.resultJson === "") return undefined as T;
+
+    let parsed: unknown;
     try {
-      return JSON.parse(response.resultJson) as T;
+      parsed = JSON.parse(response.resultJson);
     } catch {
       return response.resultJson as T;
     }
+
+    // Every ExtendScript function returns {success, data}/{success, error}
+    // via _ok()/_err(); unwrap it so callers see the actual payload instead
+    // of the envelope itself.
+    if (isEvalEnvelope(parsed)) {
+      if (!parsed.success) {
+        throw new CepCommandError(
+          functionName,
+          parsed.error ?? "ExtendScript reported failure with no error message",
+        );
+      }
+      return (parsed.data ?? {}) as T;
+    }
+
+    return parsed as T;
   }
 
   /**
