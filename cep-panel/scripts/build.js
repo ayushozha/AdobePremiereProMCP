@@ -18,6 +18,7 @@ var requiredPaths = [
     "CSXS/manifest.xml",
     "src/index.html",
     "src/panel.js",
+    "src/host-loader.js",
     "src/CSInterface.js",
     "src/host/core.jsx",
     "src/host/premiere.jsx",

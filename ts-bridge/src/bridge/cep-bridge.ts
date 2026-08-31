@@ -160,14 +160,15 @@ export class CepBridge implements PremiereBridge {
     }
 
     this.intentionalClose = false;
+    this.cancelReconnect();
 
     return new Promise<void>((resolve) => {
       this.log.info(`Connecting to CEP panel at ${this.wsEndpoint}...`);
 
       const ws = new WebSocket(this.wsEndpoint, { headers: this.wsHeaders });
+      // Track the socket while it is connecting so disconnect() can cancel it.
+      this.ws = ws;
       let settled = false;
-      // Track whether the socket ever successfully opened so we only
-      // auto-reconnect on connections that were previously established.
       let wasOpen = false;
 
       const connectionTimeout = setTimeout(() => {
@@ -183,7 +184,10 @@ export class CepBridge implements PremiereBridge {
       }, this.commandTimeoutMs);
 
       ws.on("open", () => {
-        if (settled) return;
+        if (settled || this.intentionalClose || this.ws !== ws) {
+          ws.terminate();
+          return;
+        }
         settled = true;
         wasOpen = true;
         clearTimeout(connectionTimeout);
@@ -210,22 +214,27 @@ export class CepBridge implements PremiereBridge {
       });
 
       ws.on("close", (code: number, reason: Buffer) => {
+        clearTimeout(connectionTimeout);
+        if (!settled) {
+          settled = true;
+          resolve();
+        }
+        // A cancelled or superseded socket must not affect a newer connection.
+        if (this.ws !== ws) return;
+        this.ws = null;
         this._isConnected = false;
         this.stopHeartbeat();
 
         if (wasOpen) {
-          // Only log and reconnect if the socket was previously established
           this.log.warn(
             `WebSocket closed: code=${code} reason=${reason.toString("utf-8")}`,
           );
           this.rejectAllPending("WebSocket connection closed");
-
-          if (!this.intentionalClose) {
-            this.scheduleReconnect();
-          }
         }
-        // If the socket was never opened (initial connection failure),
-        // the error handler already resolved the promise.
+        // Failed handshakes also close. Keep retrying when Premiere starts later.
+        if (!this.intentionalClose) {
+          this.scheduleReconnect();
+        }
       });
 
       ws.on("error", (err: Error) => {
@@ -251,8 +260,9 @@ export class CepBridge implements PremiereBridge {
     this.rejectAllPending("Bridge disconnecting");
 
     if (this.ws) {
-      this.ws.close(1000, "Client disconnect");
+      const ws = this.ws;
       this.ws = null;
+      ws.close(1000, "Client disconnect");
     }
 
     this._isConnected = false;
@@ -657,7 +667,8 @@ export class CepBridge implements PremiereBridge {
    * unexpectedly (not a clean/intentional shutdown).
    */
   private scheduleReconnect(): void {
-    if (this.intentionalClose) return;
+    if (this.intentionalClose || this.reconnectTimer || this.isConnected() ||
+        this.ws?.readyState === WebSocket.CONNECTING) return;
 
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       this.log.error(
@@ -690,11 +701,8 @@ export class CepBridge implements PremiereBridge {
             );
             // Reset attempt counter on successful connection -- already
             // done inside connect()'s "open" handler.
-          } else {
-            // connect() resolved but we are not connected (timeout/error path).
-            // Schedule another attempt.
-            this.scheduleReconnect();
           }
+          // The socket's close handler schedules retries after failed attempts.
         })
         .catch((err: unknown) => {
           const detail = err instanceof Error ? err.message : String(err);

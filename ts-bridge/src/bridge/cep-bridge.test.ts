@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
+import { createServer, type AddressInfo, type Socket } from "node:net";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
+import { WebSocketServer } from "ws";
 
 import { loadConfig, type BridgeConfig } from "../config.js";
 import { CepBridge, CepCommandError } from "./cep-bridge.js";
@@ -19,6 +23,144 @@ interface RecordedCall {
   functionName: string;
   args: Record<string, unknown>;
 }
+
+async function unusedPort(): Promise<number> {
+  const server = createServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const port = (server.address() as AddressInfo).port;
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  });
+  return port;
+}
+
+function reconnectingBridge(port: number): {
+  bridge: CepBridge;
+  lifecycle: {
+    reconnectAttempts: number;
+    reconnectTimer: ReturnType<typeof setTimeout> | null;
+  };
+} {
+  const bridge = new CepBridge({ ...config, cepWsPort: port });
+  const lifecycle = bridge as unknown as {
+    reconnectBaseMs: number;
+    reconnectMaxMs: number;
+    reconnectAttempts: number;
+    reconnectTimer: ReturnType<typeof setTimeout> | null;
+  };
+  lifecycle.reconnectBaseMs = 20;
+  lifecycle.reconnectMaxMs = 20;
+  return { bridge, lifecycle };
+}
+
+async function waitFor(condition: () => boolean): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (!condition()) {
+    assert.ok(Date.now() < deadline, "Timed out waiting for bridge state");
+    await delay(5);
+  }
+}
+
+test("retries an initially offline CEP panel and sends commands when it starts", async (t) => {
+  const port = await unusedPort();
+  const { bridge, lifecycle } = reconnectingBridge(port);
+  let server: WebSocketServer | undefined;
+  t.after(async () => {
+    await bridge.disconnect();
+    if (server) {
+      for (const client of server.clients) client.terminate();
+      await new Promise<void>((resolve) => server!.close(() => resolve()));
+    }
+  });
+
+  await bridge.connect();
+  assert.equal(bridge.isConnected(), false);
+  // Stay offline for multiple attempts to exercise retries after initial failure.
+  await waitFor(() => lifecycle.reconnectAttempts >= 3);
+
+  let connections = 0;
+  server = new WebSocketServer({ port, host: "127.0.0.1" });
+  server.on("connection", (socket) => {
+    connections++;
+    socket.on("message", (data) => {
+      const request = JSON.parse(data.toString()) as { requestId: string };
+      socket.send(JSON.stringify({
+        requestId: request.requestId,
+        result: { premiereRunning: true, premiereVersion: "test", projectOpen: false },
+      }));
+    });
+  });
+  await once(server, "listening");
+  await waitFor(() => bridge.isConnected());
+
+  assert.deepEqual(await bridge.ping(), {
+    premiereRunning: true,
+    premiereVersion: "test",
+    projectOpen: false,
+    bridgeMode: "cep",
+  });
+  await delay(80);
+  assert.equal(connections, 1, "A failed retry must not leave duplicate retry timers");
+  assert.equal(lifecycle.reconnectTimer, null);
+});
+
+test("disconnect cancels retrying an offline CEP panel", async (t) => {
+  const port = await unusedPort();
+  const { bridge, lifecycle } = reconnectingBridge(port);
+  t.after(() => bridge.disconnect());
+
+  await bridge.connect();
+  await waitFor(() => lifecycle.reconnectTimer !== null);
+  await bridge.disconnect();
+
+  const server = new WebSocketServer({ port, host: "127.0.0.1" });
+  t.after(async () => {
+    for (const client of server.clients) client.terminate();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+  let connections = 0;
+  server.on("connection", () => connections++);
+  await once(server, "listening");
+  await delay(80);
+
+  assert.equal(connections, 0);
+  assert.equal(bridge.isConnected(), false);
+  assert.equal(lifecycle.reconnectTimer, null);
+});
+
+test("disconnect cancels an in-flight CEP handshake without reconnecting", async (t) => {
+  const sockets = new Set<Socket>();
+  let connections = 0;
+  // Accept TCP but never finish the WebSocket handshake.
+  const server = createServer((socket) => {
+    connections++;
+    sockets.add(socket);
+    socket.resume();
+    socket.on("close", () => sockets.delete(socket));
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { bridge, lifecycle } = reconnectingBridge((server.address() as AddressInfo).port);
+  t.after(async () => {
+    await bridge.disconnect();
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  const connecting = bridge.connect();
+  await once(server, "connection");
+  await bridge.disconnect();
+  await Promise.race([
+    connecting,
+    delay(500).then(() => assert.fail("Disconnect did not settle the pending connection")),
+  ]);
+  await delay(80);
+
+  assert.equal(connections, 1);
+  assert.equal(bridge.isConnected(), false);
+  assert.equal(lifecycle.reconnectTimer, null);
+});
 
 function bridgeWithHostResult(
   result: unknown,

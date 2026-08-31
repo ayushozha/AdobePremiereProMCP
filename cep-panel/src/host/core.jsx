@@ -12,7 +12,8 @@ if (typeof JSON === "undefined") {
             if (obj === null) return "null";
             if (typeof obj === "undefined") return undefined;
             if (typeof obj === "string") return '"' + obj.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t") + '"';
-            if (typeof obj === "number" || typeof obj === "boolean") return String(obj);
+            if (typeof obj === "number") return isFinite(obj) ? String(obj) : "null";
+            if (typeof obj === "boolean") return String(obj);
             if (obj instanceof Array) {
                 var a = [];
                 for (var i = 0; i < obj.length; i++) a.push(JSON.stringify(obj[i]));

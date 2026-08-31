@@ -25,6 +25,26 @@ function _err(message) {
     return JSON.stringify({ success: false, error: String(message) });
 }
 
+// ExtendScript does not provide ES5's Date.toISOString. Health checks and
+// timestamped exports use it, so supply the standard UTC representation.
+if (typeof Date.prototype.toISOString !== "function") {
+    Date.prototype.toISOString = function () {
+        if (!isFinite(this.getTime())) throw new RangeError("Invalid time value");
+        function pad(number, width) {
+            var text = String(Math.abs(number));
+            while (text.length < width) text = "0" + text;
+            return text;
+        }
+        var year = this.getUTCFullYear();
+        var yearText = year >= 0 && year <= 9999 ? pad(year, 4) :
+            (year < 0 ? "-" : "+") + pad(year, 6);
+        return yearText + "-" + pad(this.getUTCMonth() + 1, 2) + "-" +
+            pad(this.getUTCDate(), 2) + "T" + pad(this.getUTCHours(), 2) + ":" +
+            pad(this.getUTCMinutes(), 2) + ":" + pad(this.getUTCSeconds(), 2) + "." +
+            pad(this.getUTCMilliseconds(), 3) + "Z";
+    };
+}
+
 /**
  * Safe JSON serializer that handles ExtendScript quirks.
  * ExtendScript's native JSON may not exist in older versions.
@@ -42,7 +62,8 @@ if (typeof JSON === "undefined") {
             function _str(val, depth) {
                 if (val === null) return "null";
                 if (val === undefined) return "undefined";
-                if (typeof val === "number" || typeof val === "boolean") return String(val);
+                if (typeof val === "number") return isFinite(val) ? String(val) : "null";
+                if (typeof val === "boolean") return String(val);
                 if (typeof val === "string") {
                     return '"' + val.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
                                     .replace(/\n/g, "\\n").replace(/\r/g, "\\r")
@@ -287,11 +308,29 @@ function mcpDispatch(functionName, argsJson) {
 // ---------------------------------------------------------------------------
 
 /**
- * Convert a Time object to seconds (float).
+ * Convert a Time object or a seconds value (such as getInPoint()) to seconds.
+ * Sequence.end and Sequence.zeroPoint are tick strings; use _ticksToSeconds.
  */
 function _timeToSeconds(timeObj) {
-    if (!timeObj) return 0;
-    return parseFloat(timeObj.seconds);
+    if (timeObj === undefined || timeObj === null || timeObj === "") return 0;
+    var seconds;
+    if (typeof timeObj === "number" || typeof timeObj === "string") {
+        seconds = parseFloat(timeObj);
+    } else if (timeObj.seconds !== undefined) {
+        seconds = parseFloat(timeObj.seconds);
+    } else {
+        seconds = parseFloat(timeObj.ticks) / 254016000000;
+    }
+    if (!isFinite(seconds)) throw new Error("Invalid Premiere time value");
+    return seconds;
+}
+
+function _ticksToSeconds(ticks) {
+    if (ticks === undefined || ticks === null || ticks === "") return 0;
+    if (typeof ticks === "object") return _timeToSeconds(ticks);
+    var seconds = parseFloat(ticks) / 254016000000;
+    if (!isFinite(seconds)) throw new Error("Invalid Premiere tick value");
+    return seconds;
 }
 
 /**
@@ -550,6 +589,7 @@ function getProjectState() {
                 audioTrackCount: seq.audioTracks ? seq.audioTracks.numTracks : 0,
                 inPoint: _timeToSeconds(seq.getInPoint()),
                 outPoint: _timeToSeconds(seq.getOutPoint()),
+                durationSeconds: _ticksToSeconds(seq.end),
                 timebase: seq.timebase || "",
                 fps: _mcpSequenceFPS(seq),
                 frameSizeHorizontal: seq.frameSizeHorizontal || 0,
@@ -686,7 +726,7 @@ function getTimelineState(sequenceIndex) {
             sequenceID: seq.sequenceID || "",
             inPoint: _timeToSeconds(seq.getInPoint()),
             outPoint: _timeToSeconds(seq.getOutPoint()),
-            endSeconds: _timeToSeconds(seq.end),
+            endSeconds: _ticksToSeconds(seq.end),
             frameSizeHorizontal: seq.frameSizeHorizontal || 0,
             frameSizeVertical: seq.frameSizeVertical || 0,
             timebase: seq.timebase || "",
@@ -2308,7 +2348,7 @@ function getSequenceSettings(sequenceIndex) {
             audioTrackCount: seq.audioTracks ? seq.audioTracks.numTracks : 0,
             inPoint: _timeToSeconds(seq.getInPoint()),
             outPoint: _timeToSeconds(seq.getOutPoint()),
-            endSeconds: _timeToSeconds(seq.end)
+            endSeconds: _ticksToSeconds(seq.end)
         };
 
         // Try to get extended settings via getSettings()
@@ -2424,7 +2464,7 @@ function getActiveSequence() {
             audioTrackCount: seq.audioTracks ? seq.audioTracks.numTracks : 0,
             inPoint: _timeToSeconds(seq.getInPoint()),
             outPoint: _timeToSeconds(seq.getOutPoint()),
-            endSeconds: _timeToSeconds(seq.end)
+            endSeconds: _ticksToSeconds(seq.end)
         });
     } catch (e) {
         return _err("getActiveSequence failed: " + e.message);
@@ -2664,12 +2704,12 @@ function clearInOutPoints() {
             return _err("No active sequence");
         }
 
-        seq.setInPoint(seq.zeroPoint ? _timeToSeconds(seq.zeroPoint) : 0);
-        seq.setOutPoint(_timeToSeconds(seq.end));
+        seq.setInPoint(seq.zeroPoint ? _ticksToSeconds(seq.zeroPoint) : 0);
+        seq.setOutPoint(_ticksToSeconds(seq.end));
 
         return _ok({
-            inPoint: seq.zeroPoint ? _timeToSeconds(seq.zeroPoint) : 0,
-            outPoint: _timeToSeconds(seq.end),
+            inPoint: seq.zeroPoint ? _ticksToSeconds(seq.zeroPoint) : 0,
+            outPoint: _ticksToSeconds(seq.end),
             sequenceName: seq.name || "",
             sequenceID: seq.sequenceID || ""
         });
@@ -8784,7 +8824,7 @@ function goToSequenceEnd() {
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
         var prevPos = _timeToSeconds(seq.getPlayerPosition());
-        var endTime = _timeToSeconds(seq.end);
+        var endTime = _ticksToSeconds(seq.end);
         seq.setPlayerPosition(_secondsToTime(endTime).ticks);
         return _ok({ previousPosition: prevPos, newPosition: endTime });
     } catch (e) { return _err("goToSequenceEnd failed: " + e.message); }
@@ -9071,7 +9111,7 @@ function getFrameAtPlayhead() {
         var posSec = _timeToSeconds(pos);
         var fps = parseFloat(seq.timebase) || 24;
         var frameNumber = Math.floor(posSec * fps);
-        var totalFrames = Math.floor(_timeToSeconds(seq.end) * fps);
+        var totalFrames = Math.floor(_ticksToSeconds(seq.end) * fps);
         return _ok({
             positionSeconds: posSec,
             frameNumber: frameNumber,
@@ -9126,7 +9166,7 @@ function getSequenceDuration() {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
-        var endSec = _timeToSeconds(seq.end);
+        var endSec = _ticksToSeconds(seq.end);
         var fps = parseFloat(seq.timebase) || 24;
         var totalFrames = Math.floor(endSec * fps);
         var h = Math.floor(endSec / 3600);
@@ -9143,7 +9183,7 @@ function getFrameCount() {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
-        var endSec = _timeToSeconds(seq.end);
+        var endSec = _ticksToSeconds(seq.end);
         var fps = parseFloat(seq.timebase) || 24;
         var totalFrames = Math.floor(endSec * fps);
         return _ok({ totalFrames: totalFrames, durationSeconds: endSec, frameRate: fps });
@@ -9329,7 +9369,7 @@ function getRenderStatus() {
         app.enableQE();
         var qeSeq = qe.project.getActiveSequence();
         if (!qeSeq) return _err("QE sequence unavailable");
-        var endSec = _timeToSeconds(seq.end);
+        var endSec = _ticksToSeconds(seq.end);
         var fps = parseFloat(seq.timebase) || 24;
         return _ok({
             sequenceName: seq.name || "",
@@ -11334,7 +11374,7 @@ function getSequenceLoudness() {
         var seq = app.project.activeSequence; if (!seq) return _err("No active sequence");
         var trackInfo = [];
         for (var i = 0; i < seq.audioTracks.numTracks; i++) { var t = seq.audioTracks[i]; var tInfo = { index: i, name: t.name || ("Audio " + (i + 1)), clipCount: t.clips ? t.clips.numItems : 0, muted: false }; try { tInfo.muted = t.isMuted() ? true : false; } catch (me) {} trackInfo.push(tInfo); }
-        var seqDuration = 0; try { seqDuration = _timeToSeconds(seq.end); } catch (de) {}
+        var seqDuration = 0; try { seqDuration = _ticksToSeconds(seq.end); } catch (de) {}
         return _ok({ sequenceName: seq.name || "", duration: seqDuration, audioTrackCount: seq.audioTracks.numTracks, tracks: trackInfo, note: "Precise sequence loudness (LUFS) requires full audio mixdown analysis via the media engine." });
     } catch (e) { return _err("getSequenceLoudness failed: " + e.message); }
 }
@@ -15314,7 +15354,7 @@ function checkDuration(minSeconds, maxSeconds) {
     try {
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
-        var duration = _timeToSeconds(seq.end);
+        var duration = _ticksToSeconds(seq.end);
         var minS = parseFloat(minSeconds) || 0;
         var maxS = parseFloat(maxSeconds) || Infinity;
         var pass = (duration >= minS && duration <= maxS);
@@ -15675,7 +15715,7 @@ function getTimelineRenderStatus(sequenceIndex) {
             totalVideoClips: totalVideoClips,
             totalEffects: totalEffects,
             renderSegments: segments,
-            duration: _timeToSeconds(seq.end)
+            duration: _ticksToSeconds(seq.end)
         });
     } catch (e) { return _err("getTimelineRenderStatus failed: " + e.message); }
 }
@@ -15697,7 +15737,7 @@ function getEstimatedRenderTime(sequenceIndex) {
         }
         if (!seq) return _err("No sequence found at index " + seqIdx);
 
-        var duration = _timeToSeconds(seq.end);
+        var duration = _ticksToSeconds(seq.end);
         var totalEffects = 0;
         var totalClips = 0;
         var videoTrackCount = seq.videoTracks.numTracks;
@@ -15796,7 +15836,7 @@ function getSequenceComplexity(sequenceIndex) {
                 totalAudioClips: totalAudioClips,
                 totalEffects: totalEffects,
                 totalTransitions: totalTransitions,
-                durationSeconds: _timeToSeconds(seq.end)
+                durationSeconds: _ticksToSeconds(seq.end)
             }
         });
     } catch (e) { return _err("getSequenceComplexity failed: " + e.message); }
@@ -16171,7 +16211,7 @@ function dumpProjectState() {
                     name: seq.name || "",
                     videoTracks: seq.videoTracks.numTracks,
                     audioTracks: seq.audioTracks.numTracks,
-                    duration: _timeToSeconds(seq.end)
+                    duration: _ticksToSeconds(seq.end)
                 });
             }
         } catch (ignore) {}
@@ -16248,7 +16288,7 @@ function dumpSequenceState(sequenceIndex) {
         return _ok({
             sequenceName: seq.name,
             sequenceIndex: seqIdx,
-            duration: _timeToSeconds(seq.end),
+            duration: _ticksToSeconds(seq.end),
             videoTracks: videoTracks,
             audioTracks: audioTracks,
             videoTrackCount: seq.videoTracks.numTracks,
@@ -17202,7 +17242,7 @@ function addEndCredits(creditsJSON, trackIndex, scrollDuration, style) {
         var ti = parseInt(trackIndex) || 0;
         var dur = parseFloat(scrollDuration) || 10;
         var st = style || "simple";
-        var seqEnd = _timeToSeconds(seq.end);
+        var seqEnd = _ticksToSeconds(seq.end);
         var creditLines = [];
         for (var i = 0; i < credits.length; i++) {
             var entry = credits[i];
@@ -17362,7 +17402,7 @@ function exportForTikTok(outputPath) {
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
         if (!outputPath || outputPath === "") return _err("Output path is required");
-        var seqDur = _timeToSeconds(seq.end);
+        var seqDur = _ticksToSeconds(seq.end);
         return _ok({
             outputPath: outputPath,
             width: 1080, height: 1920,
@@ -17385,7 +17425,7 @@ function exportForTwitter(outputPath) {
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
         if (!outputPath || outputPath === "") return _err("Output path is required");
-        var seqDur = _timeToSeconds(seq.end);
+        var seqDur = _ticksToSeconds(seq.end);
         return _ok({
             outputPath: outputPath,
             width: 1920, height: 1080,
@@ -17546,7 +17586,7 @@ function prepareForDelivery(specsJSON) {
         if (!seq) return _err("No active sequence");
         var specs = JSON.parse(specsJSON);
         var checks = [];
-        var seqDur = _timeToSeconds(seq.end);
+        var seqDur = _ticksToSeconds(seq.end);
         if (specs.maxDuration && seqDur > specs.maxDuration) {
             checks.push({check: "duration", pass: false, value: seqDur, expected: specs.maxDuration});
         } else {
@@ -17989,7 +18029,7 @@ function getProjectDuration() {
         for (var i = 0; i < numSeq; i++) {
             var seq = app.project.sequences[i];
             if (!seq) continue;
-            var dur = _timeToSeconds(seq.end);
+            var dur = _ticksToSeconds(seq.end);
             totalSeconds += dur;
             seqDurations.push({ name: seq.name || "Sequence " + i, duration: dur, index: i });
         }
@@ -18211,7 +18251,7 @@ function getSequenceHash() {
         var parts = [
             "name=" + (seq.name || ""),
             "id=" + (seq.sequenceID || ""),
-            "end=" + _timeToSeconds(seq.end)
+            "end=" + _ticksToSeconds(seq.end)
         ];
         try { parts.push("in=" + _timeToSeconds(seq.getInPointAsTime())); } catch (ignoreSeqIn) {}
         try { parts.push("out=" + _timeToSeconds(seq.getOutPointAsTime())); } catch (ignoreSeqOut) {}
@@ -22925,7 +22965,7 @@ function getProjectSummary() {
         for (var s = 0; s < summary.sequenceCount; s++) {
             var seq = proj.sequences[s];
             if (!seq) continue;
-            sequences.push({ index: s, name: seq.name || "", duration: _timeToSeconds(seq.end) });
+            sequences.push({ index: s, name: seq.name || "", duration: _ticksToSeconds(seq.end) });
         }
         summary.sequences = sequences;
         try { summary.diskUsage = (new File(proj.path)).length || 0; } catch (_) { summary.diskUsage = 0; }
@@ -23160,7 +23200,7 @@ function getSequenceSummary(sequenceIndex) {
         if (idx < 0 || idx >= numSeq) return _err("Sequence index " + idx + " out of range (0-" + (numSeq - 1) + ")");
         var seq = app.project.sequences[idx];
         if (!seq) return _err("Sequence not found");
-        var summary = { name: seq.name || "", index: idx, duration: _timeToSeconds(seq.end), videoTrackCount: seq.videoTracks ? seq.videoTracks.numTracks : 0, audioTrackCount: seq.audioTracks ? seq.audioTracks.numTracks : 0, totalVideoClips: 0, totalAudioClips: 0, totalEffects: 0, videoTracks: [], audioTracks: [] };
+        var summary = { name: seq.name || "", index: idx, duration: _ticksToSeconds(seq.end), videoTrackCount: seq.videoTracks ? seq.videoTracks.numTracks : 0, audioTrackCount: seq.audioTracks ? seq.audioTracks.numTracks : 0, totalVideoClips: 0, totalAudioClips: 0, totalEffects: 0, videoTracks: [], audioTracks: [] };
         if (seq.videoTracks) { for (var v = 0; v < seq.videoTracks.numTracks; v++) { var vt = seq.videoTracks[v]; var cc = vt.clips ? vt.clips.numItems : 0; summary.totalVideoClips += cc; var efx = 0; if (vt.clips) { for (var vc = 0; vc < cc; vc++) { try { efx += vt.clips[vc].components ? vt.clips[vc].components.numItems : 0; } catch (_) {} } } summary.totalEffects += efx; summary.videoTracks.push({ index: v, name: vt.name || ("V" + (v + 1)), clipCount: cc, effectCount: efx }); } }
         if (seq.audioTracks) { for (var a = 0; a < seq.audioTracks.numTracks; a++) { var at2 = seq.audioTracks[a]; var ac = at2.clips ? at2.clips.numItems : 0; summary.totalAudioClips += ac; summary.audioTracks.push({ index: a, name: at2.name || ("A" + (a + 1)), clipCount: ac }); } }
         try { summary.frameSizeH = seq.frameSizeHorizontal; summary.frameSizeV = seq.frameSizeVertical; } catch (_) {}
@@ -23208,7 +23248,7 @@ function getTrackUtilizationReport(sequenceIndex) {
         var idx = parseInt(sequenceIndex, 10) || 0;
         var seq = app.project.sequences[idx];
         if (!seq) return _err("Sequence not found at index " + idx);
-        var seqDur = _timeToSeconds(seq.end);
+        var seqDur = _ticksToSeconds(seq.end);
         if (seqDur <= 0) return _ok({ sequenceName: seq.name || "", duration: 0, tracks: [], note: "Sequence has zero duration" });
         var tracks = [];
         function at(track, tt, ti) { var ut = 0; var cc = track.clips ? track.clips.numItems : 0; if (track.clips) { for (var c = 0; c < cc; c++) { try { ut += _timeToSeconds(track.clips[c].end) - _timeToSeconds(track.clips[c].start); } catch (_) {} } } tracks.push({ trackType: tt, trackIndex: ti, name: track.name || (tt === "video" ? "V" : "A") + (ti + 1), clipCount: cc, usedTime: ut, utilization: Math.round((ut / seqDur) * 10000) / 100 }); }
@@ -23225,7 +23265,7 @@ function getEditPointDensity(sequenceIndex) {
         var idx = parseInt(sequenceIndex, 10) || 0;
         var seq = app.project.sequences[idx];
         if (!seq) return _err("Sequence not found at index " + idx);
-        var seqDur = _timeToSeconds(seq.end);
+        var seqDur = _ticksToSeconds(seq.end);
         var ep = 0;
         function ce(tracks) { if (!tracks) return; for (var t = 0; t < tracks.numTracks; t++) { var track = tracks[t]; if (!track.clips) continue; ep += track.clips.numItems * 2; } }
         ce(seq.videoTracks); ce(seq.audioTracks);
@@ -23241,7 +23281,7 @@ function getPacingReport(sequenceIndex) {
         var idx = parseInt(sequenceIndex, 10) || 0;
         var seq = app.project.sequences[idx];
         if (!seq) return _err("Sequence not found at index " + idx);
-        var seqDur = _timeToSeconds(seq.end);
+        var seqDur = _ticksToSeconds(seq.end);
         var cd = [];
         if (seq.videoTracks) { for (var v = 0; v < seq.videoTracks.numTracks; v++) { var vt = seq.videoTracks[v]; if (!vt.clips) continue; for (var vc = 0; vc < vt.clips.numItems; vc++) { try { var d = _timeToSeconds(vt.clips[vc].end) - _timeToSeconds(vt.clips[vc].start); if (d > 0) cd.push(d); } catch (_) {} } } }
         var tc = cd.length; var avg = 0, mn = 0, mx = 0, cpm = 0;
@@ -23292,7 +23332,7 @@ function getTimelineStructureReport(sequenceIndex) {
         var idx = parseInt(sequenceIndex, 10) || 0;
         var seq = app.project.sequences[idx];
         if (!seq) return _err("Sequence not found at index " + idx);
-        var seqDur = _timeToSeconds(seq.end);
+        var seqDur = _ticksToSeconds(seq.end);
         var markers = [];
         if (seq.markers) { for (var m = 0; m < seq.markers.numMarkers; m++) { try { var mk = seq.markers[m]; markers.push({ name: mk.name || "", comment: mk.comments || "", time: _timeToSeconds(mk.start), end: _timeToSeconds(mk.end) }); } catch (_) {} } }
         var ns = 10; var sd = seqDur > 0 ? seqDur / ns : 1; var sections = [];
@@ -23308,7 +23348,7 @@ function getGapAnalysisReport(sequenceIndex) {
         var idx = parseInt(sequenceIndex, 10) || 0;
         var seq = app.project.sequences[idx];
         if (!seq) return _err("Sequence not found at index " + idx);
-        var seqDur = _timeToSeconds(seq.end);
+        var seqDur = _ticksToSeconds(seq.end);
         var trackGaps = [];
         function fg(tracks, tt) { if (!tracks) return; for (var t = 0; t < tracks.numTracks; t++) { var track = tracks[t]; if (!track.clips || track.clips.numItems === 0) continue; var gaps = []; var ce = []; for (var c = 0; c < track.clips.numItems; c++) { try { ce.push({ start: _timeToSeconds(track.clips[c].start), end: _timeToSeconds(track.clips[c].end) }); } catch (_) {} } ce.sort(function (a, b) { return a.start - b.start; }); if (ce.length > 0 && ce[0].start > 0.01) gaps.push({ start: 0, end: ce[0].start, duration: ce[0].start }); for (var g = 1; g < ce.length; g++) { var gs = ce[g - 1].end; var ge = ce[g].start; if (ge - gs > 0.01) gaps.push({ start: gs, end: ge, duration: ge - gs }); } var tgd = 0; for (var gi = 0; gi < gaps.length; gi++) tgd += gaps[gi].duration; trackGaps.push({ trackType: tt, trackIndex: t, name: track.name || "", gapCount: gaps.length, totalGapDuration: tgd, gaps: gaps }); } }
         fg(seq.videoTracks, "video"); fg(seq.audioTracks, "audio");
@@ -23360,7 +23400,7 @@ function exportProjectReport(outputPath, format) {
         var proj = app.project;
         var report = { projectName: proj.name || "", projectPath: proj.path || "", generatedAt: new Date().toISOString(), sequenceCount: proj.sequences ? proj.sequences.numSequences : 0, sequences: [] };
         if (proj.rootItem) { var counts = _countBinItemsAnalytics(proj.rootItem); report.clipCount = counts.clips; report.binCount = counts.bins; }
-        for (var s = 0; s < report.sequenceCount; s++) { var seq = proj.sequences[s]; if (!seq) continue; var vc = 0, ac = 0; if (seq.videoTracks) { for (var v = 0; v < seq.videoTracks.numTracks; v++) vc += seq.videoTracks[v].clips ? seq.videoTracks[v].clips.numItems : 0; } if (seq.audioTracks) { for (var a = 0; a < seq.audioTracks.numTracks; a++) ac += seq.audioTracks[a].clips ? seq.audioTracks[a].clips.numItems : 0; } report.sequences.push({ index: s, name: seq.name || "", duration: _timeToSeconds(seq.end), videoTracks: seq.videoTracks ? seq.videoTracks.numTracks : 0, audioTracks: seq.audioTracks ? seq.audioTracks.numTracks : 0, videoClips: vc, audioClips: ac }); }
+        for (var s = 0; s < report.sequenceCount; s++) { var seq = proj.sequences[s]; if (!seq) continue; var vc = 0, ac = 0; if (seq.videoTracks) { for (var v = 0; v < seq.videoTracks.numTracks; v++) vc += seq.videoTracks[v].clips ? seq.videoTracks[v].clips.numItems : 0; } if (seq.audioTracks) { for (var a = 0; a < seq.audioTracks.numTracks; a++) ac += seq.audioTracks[a].clips ? seq.audioTracks[a].clips.numItems : 0; } report.sequences.push({ index: s, name: seq.name || "", duration: _ticksToSeconds(seq.end), videoTracks: seq.videoTracks ? seq.videoTracks.numTracks : 0, audioTracks: seq.audioTracks ? seq.audioTracks.numTracks : 0, videoClips: vc, audioClips: ac }); }
         var content;
         if (fmt === "html") { content = "<html><head><title>Project Report - " + report.projectName + "</title><style>body{font-family:sans-serif;margin:20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;text-align:left}th{background:#f5f5f5}</style></head><body>"; content += "<h1>Project Report: " + report.projectName + "</h1><p>Generated: " + report.generatedAt + "</p><p>Path: " + report.projectPath + "</p><p>Clips: " + (report.clipCount || 0) + " | Bins: " + (report.binCount || 0) + " | Sequences: " + report.sequenceCount + "</p>"; content += "<h2>Sequences</h2><table><tr><th>Index</th><th>Name</th><th>Duration</th><th>V Tracks</th><th>A Tracks</th><th>V Clips</th><th>A Clips</th></tr>"; for (var si = 0; si < report.sequences.length; si++) { var sq = report.sequences[si]; content += "<tr><td>" + sq.index + "</td><td>" + sq.name + "</td><td>" + sq.duration.toFixed(2) + "s</td><td>" + sq.videoTracks + "</td><td>" + sq.audioTracks + "</td><td>" + sq.videoClips + "</td><td>" + sq.audioClips + "</td></tr>"; } content += "</table></body></html>"; }
         else { content = JSON.stringify(report, null, 2); }
@@ -23377,7 +23417,7 @@ function exportTimelineAsText(sequenceIndex, outputPath) {
         var idx = parseInt(sequenceIndex, 10) || 0;
         var seq = app.project.sequences[idx];
         if (!seq) return _err("Sequence not found at index " + idx);
-        var lines = ["Timeline Report: " + (seq.name || "Untitled"), "Duration: " + _timeToSeconds(seq.end).toFixed(2) + " seconds", "Generated: " + new Date().toISOString(), "========================================"];
+        var lines = ["Timeline Report: " + (seq.name || "Untitled"), "Duration: " + _ticksToSeconds(seq.end).toFixed(2) + " seconds", "Generated: " + new Date().toISOString(), "========================================"];
         if (seq.videoTracks) { for (var v = 0; v < seq.videoTracks.numTracks; v++) { var vt = seq.videoTracks[v]; lines.push("\n[Video Track " + (v + 1) + "] " + (vt.name || "")); if (!vt.clips || vt.clips.numItems === 0) { lines.push("  (empty)"); continue; } for (var vc = 0; vc < vt.clips.numItems; vc++) { try { var clip = vt.clips[vc]; lines.push("  " + vc + ". " + (clip.name || "Untitled") + "  [" + _timeToSeconds(clip.start).toFixed(2) + "s - " + _timeToSeconds(clip.end).toFixed(2) + "s]  dur=" + (_timeToSeconds(clip.end) - _timeToSeconds(clip.start)).toFixed(2) + "s"); } catch (_) {} } } }
         if (seq.audioTracks) { for (var a = 0; a < seq.audioTracks.numTracks; a++) { var at2 = seq.audioTracks[a]; lines.push("\n[Audio Track " + (a + 1) + "] " + (at2.name || "")); if (!at2.clips || at2.clips.numItems === 0) { lines.push("  (empty)"); continue; } for (var ac = 0; ac < at2.clips.numItems; ac++) { try { var aclip = at2.clips[ac]; lines.push("  " + ac + ". " + (aclip.name || "Untitled") + "  [" + _timeToSeconds(aclip.start).toFixed(2) + "s - " + _timeToSeconds(aclip.end).toFixed(2) + "s]  dur=" + (_timeToSeconds(aclip.end) - _timeToSeconds(aclip.start)).toFixed(2) + "s"); } catch (_) {} } } }
         var f = new File(outputPath); f.open("w"); f.write(lines.join("\n")); f.close();
@@ -23453,7 +23493,7 @@ function compareSequences(seqIndex1, seqIndex2) {
         if (i2 < 0 || i2 >= ns) return _err("Sequence index 2 (" + i2 + ") out of range");
         var s1 = app.project.sequences[i1]; var s2 = app.project.sequences[i2];
         if (!s1 || !s2) return _err("One or both sequences not found");
-        function ss(seq) { var vc = 0, ac = 0, ef = 0; if (seq.videoTracks) { for (var v = 0; v < seq.videoTracks.numTracks; v++) { var vt = seq.videoTracks[v]; vc += vt.clips ? vt.clips.numItems : 0; if (vt.clips) { for (var vi = 0; vi < vt.clips.numItems; vi++) { try { ef += vt.clips[vi].components ? vt.clips[vi].components.numItems : 0; } catch (_) {} } } } } if (seq.audioTracks) { for (var a = 0; a < seq.audioTracks.numTracks; a++) { ac += seq.audioTracks[a].clips ? seq.audioTracks[a].clips.numItems : 0; } } return { name: seq.name || "", duration: _timeToSeconds(seq.end), videoTrackCount: seq.videoTracks ? seq.videoTracks.numTracks : 0, audioTrackCount: seq.audioTracks ? seq.audioTracks.numTracks : 0, videoClipCount: vc, audioClipCount: ac, effectCount: ef }; }
+        function ss(seq) { var vc = 0, ac = 0, ef = 0; if (seq.videoTracks) { for (var v = 0; v < seq.videoTracks.numTracks; v++) { var vt = seq.videoTracks[v]; vc += vt.clips ? vt.clips.numItems : 0; if (vt.clips) { for (var vi = 0; vi < vt.clips.numItems; vi++) { try { ef += vt.clips[vi].components ? vt.clips[vi].components.numItems : 0; } catch (_) {} } } } } if (seq.audioTracks) { for (var a = 0; a < seq.audioTracks.numTracks; a++) { ac += seq.audioTracks[a].clips ? seq.audioTracks[a].clips.numItems : 0; } } return { name: seq.name || "", duration: _ticksToSeconds(seq.end), videoTrackCount: seq.videoTracks ? seq.videoTracks.numTracks : 0, audioTrackCount: seq.audioTracks ? seq.audioTracks.numTracks : 0, videoClipCount: vc, audioClipCount: ac, effectCount: ef }; }
         var st1 = ss(s1); var st2 = ss(s2);
         return _ok({ sequence1: st1, sequence2: st2, differences: { durationDiff: st1.duration - st2.duration, videoClipDiff: st1.videoClipCount - st2.videoClipCount, audioClipDiff: st1.audioClipCount - st2.audioClipCount, effectDiff: st1.effectCount - st2.effectCount, videoTrackDiff: st1.videoTrackCount - st2.videoTrackCount, audioTrackDiff: st1.audioTrackCount - st2.audioTrackCount } });
     } catch (e) { return _err("compareSequences failed: " + e.message); }
@@ -23485,7 +23525,7 @@ function getEditingSessionStats() {
     try {
         if (!app.project) return _err("No project open");
         var stats = { projectName: app.project.name || "", projectPath: app.project.path || "", sequenceCount: app.project.sequences ? app.project.sequences.numSequences : 0, activeSequence: null, appVersion: app.version || "unknown", appBuild: app.build || "unknown" };
-        if (app.project.activeSequence) { stats.activeSequence = { name: app.project.activeSequence.name || "", duration: _timeToSeconds(app.project.activeSequence.end) }; }
+        if (app.project.activeSequence) { stats.activeSequence = { name: app.project.activeSequence.name || "", duration: _ticksToSeconds(app.project.activeSequence.end) }; }
         try { stats.os = $.os || "unknown"; } catch (_) {}
         try { stats.memoryAvailable = $.memCache || 0; } catch (_) {}
         return _ok(stats);
@@ -23525,7 +23565,7 @@ function getAnalyticsPerformanceReport() {
         if (!app.project) return _err("No project open");
         var report = { projectName: app.project.name || "", renderer: "unknown", gpuAcceleration: false, sequenceCount: app.project.sequences ? app.project.sequences.numSequences : 0, sequences: [] };
         try { if (app.project.gpuAccelRendererInfo) { report.renderer = String(app.project.gpuAccelRendererInfo()); report.gpuAcceleration = true; } } catch (_) {}
-        for (var s = 0; s < report.sequenceCount; s++) { var seq = app.project.sequences[s]; if (!seq) continue; var vc = 0, ac = 0, ef = 0; if (seq.videoTracks) { for (var v = 0; v < seq.videoTracks.numTracks; v++) { var vt = seq.videoTracks[v]; vc += vt.clips ? vt.clips.numItems : 0; if (vt.clips) { for (var vi = 0; vi < vt.clips.numItems; vi++) { try { ef += vt.clips[vi].components ? vt.clips[vi].components.numItems : 0; } catch (_) {} } } } } if (seq.audioTracks) { for (var a = 0; a < seq.audioTracks.numTracks; a++) { ac += seq.audioTracks[a].clips ? seq.audioTracks[a].clips.numItems : 0; } } report.sequences.push({ index: s, name: seq.name || "", duration: _timeToSeconds(seq.end), videoClips: vc, audioClips: ac, effectCount: ef, complexityScore: Math.min(100, Math.round((vc + ac + ef) / 3)) }); }
+        for (var s = 0; s < report.sequenceCount; s++) { var seq = app.project.sequences[s]; if (!seq) continue; var vc = 0, ac = 0, ef = 0; if (seq.videoTracks) { for (var v = 0; v < seq.videoTracks.numTracks; v++) { var vt = seq.videoTracks[v]; vc += vt.clips ? vt.clips.numItems : 0; if (vt.clips) { for (var vi = 0; vi < vt.clips.numItems; vi++) { try { ef += vt.clips[vi].components ? vt.clips[vi].components.numItems : 0; } catch (_) {} } } } } if (seq.audioTracks) { for (var a = 0; a < seq.audioTracks.numTracks; a++) { ac += seq.audioTracks[a].clips ? seq.audioTracks[a].clips.numItems : 0; } } report.sequences.push({ index: s, name: seq.name || "", duration: _ticksToSeconds(seq.end), videoClips: vc, audioClips: ac, effectCount: ef, complexityScore: Math.min(100, Math.round((vc + ac + ef) / 3)) }); }
         try { report.os = $.os || "unknown"; } catch (_) {}
         try { report.engineVersion = app.version || "unknown"; } catch (_) {}
         return _ok(report);
@@ -23709,7 +23749,7 @@ function splitIntoSegments(sequenceIndex, maxDurationSeconds) {
         var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
         if (idx >= seqs.numSequences) return _err("Sequence index out of range");
         var seq = seqs[idx]; var maxDur = (maxDurationSeconds && maxDurationSeconds > 0) ? maxDurationSeconds : 600;
-        var totalDuration = _timeToSeconds(seq.end) - _timeToSeconds(seq.zeroPoint);
+        var totalDuration = _ticksToSeconds(seq.end) - _ticksToSeconds(seq.zeroPoint);
         if (totalDuration <= 0) return _err("Sequence has no duration");
         var numSegments = Math.ceil(totalDuration / maxDur);
         var segments = [];
@@ -23883,7 +23923,7 @@ function getDistributionMetadata(sequenceIndex) {
         var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
         if (idx >= seqs.numSequences) return _err("Sequence index out of range");
         var seq = seqs[idx];
-        var md = { title: seq.name, description: "", tags: "", category: "", duration: _timeToSeconds(seq.end) - _timeToSeconds(seq.zeroPoint) };
+        var md = { title: seq.name, description: "", tags: "", category: "", duration: _ticksToSeconds(seq.end) - _ticksToSeconds(seq.zeroPoint) };
         try { if (app.project.rootItem) { var items = app.project.rootItem.children; for (var i = 0; i < items.numItems; i++) { if (items[i].name === seq.name) { var xb = items[i].getXMPMetadata(); if (xb) { var xmp = new XMPMeta(xb); try { md.title = xmp.getProperty("http://purl.org/dc/elements/1.1/", "title").toString() || seq.name; } catch (e2) {} try { md.description = xmp.getProperty("http://purl.org/dc/elements/1.1/", "description").toString() || ""; } catch (e2) {} } break; } } } } catch (ie) {}
         return _ok({ sequence: seq.name, metadata: md });
     } catch (e) { return _err("getDistributionMetadata failed: " + e.message); }
@@ -23940,7 +23980,7 @@ function runQAChecklist(sequenceIndex, specs) {
         var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
         if (idx >= seqs.numSequences) return _err("Sequence index out of range");
         var seq = seqs[idx]; var ts = specs ? JSON.parse(specs) : {};
-        var dur = _timeToSeconds(seq.end) - _timeToSeconds(seq.zeroPoint);
+        var dur = _ticksToSeconds(seq.end) - _ticksToSeconds(seq.zeroPoint);
         var checks = [];
         if (ts.maxDuration) { checks.push({ check: "Duration", status: dur <= ts.maxDuration ? "PASS" : "FAIL", expected: "<="+ts.maxDuration+"s", actual: dur+"s" }); }
         checks.push({ check: "Video Tracks", status: "INFO", actual: (seq.videoTracks ? seq.videoTracks.numTracks : 0) + " tracks" });
@@ -24104,12 +24144,12 @@ function createApprovalPackage(sequenceIndex, outputDir) {
         var ts = new Date().toISOString().replace(/[:.]/g, "-");
         var pkgDir = outputDir + "/" + sn + "_approval_" + ts;
         var pkg = { packageDir: pkgDir, videoPath: pkgDir+"/"+sn+"_review.mp4", thumbnailPath: pkgDir+"/"+sn+"_thumbnail.png", reportPath: pkgDir+"/"+sn+"_report.txt" };
-        var dur = _timeToSeconds(seq.end) - _timeToSeconds(seq.zeroPoint);
+        var dur = _ticksToSeconds(seq.end) - _ticksToSeconds(seq.zeroPoint);
         var tc = 0; if (seq.videoTracks) { for (var t=0;t<seq.videoTracks.numTracks;t++) tc+=seq.videoTracks[t].clips.numItems; }
         var rpt = "=== APPROVAL PACKAGE ===\nSequence: "+seq.name+"\nDate: "+new Date().toISOString()+"\nDuration: "+dur.toFixed(2)+"s\nClips: "+tc+"\n";
         var folder = new Folder(pkgDir); folder.create();
         var rf = new File(pkg.reportPath); rf.open("w"); rf.write(rpt); rf.close();
-        return _ok({ sequence: seq.name, package: pkg, duration: dur, clipCount: tc });
+        return _ok({ sequence: seq.name, "package": pkg, duration: dur, clipCount: tc });
     } catch (e) { return _err("createApprovalPackage failed: " + e.message); }
 }
 
@@ -24693,7 +24733,7 @@ function setZoomLevel(level) {
             } catch (_) {}
         }
         // Fallback: compute view extents from zoom level
-        var duration = _timeToSeconds(seq.end);
+        var duration = _ticksToSeconds(seq.end);
         var visibleDuration = duration * (1.0 - level / 100.0);
         if (visibleDuration < 0.1) visibleDuration = 0.1;
         var currentPos = _timeToSeconds(seq.getPlayerPosition());
@@ -24897,8 +24937,8 @@ function getTimelineViewExtents() {
                     var outPoint = qeSeq.getOutPoint();
                     return _ok({
                         startSeconds: parseFloat(inPoint) || 0,
-                        endSeconds: parseFloat(outPoint) || _timeToSeconds(seq.end),
-                        sequenceDuration: _timeToSeconds(seq.end),
+                        endSeconds: parseFloat(outPoint) || _ticksToSeconds(seq.end),
+                        sequenceDuration: _ticksToSeconds(seq.end),
                         method: "qe"
                     });
                 }
@@ -24906,7 +24946,7 @@ function getTimelineViewExtents() {
         }
         // Fallback: return playhead position and total duration
         var playerPos = _timeToSeconds(seq.getPlayerPosition());
-        var totalDuration = _timeToSeconds(seq.end);
+        var totalDuration = _ticksToSeconds(seq.end);
         return _ok({
             startSeconds: 0,
             endSeconds: totalDuration,
@@ -27377,7 +27417,7 @@ function mcpGetTimelineState(argsJson) {
             sequenceId: String(seq.sequenceID || ""),
             videoTracks: buildTracks(seq.videoTracks, "video"),
             audioTracks: buildTracks(seq.audioTracks, "audio"),
-            totalDurationSeconds: _timeToSeconds(seq.end)
+            totalDurationSeconds: _ticksToSeconds(seq.end)
         });
     } catch (e) { return _err("mcpGetTimelineState failed: " + e.message); }
 }
@@ -28305,7 +28345,7 @@ function aITagClips(filePath) { return _err("unsupported aITagClips: semantic me
 function _aiCollectSequenceStats(seq) {
     var stats = {
         sequence_id: String(seq.sequenceID || ""),
-        total_duration_seconds: _timeToSeconds(seq.end),
+        total_duration_seconds: _ticksToSeconds(seq.end),
         video_clip_count: 0,
         audio_clip_count: 0,
         avg_clip_duration_seconds: 0,
@@ -28716,7 +28756,7 @@ function checkDeliverySpecs(sequenceID, standard) {
         else return _err("unsupported checkDeliverySpecs standard: " + standard + "; supported: hd, uhd, vertical, square, youtube, tiktok, instagram_reels");
         var resolutionPass = target.minWidth ? (width >= target.minWidth && height >= target.minHeight) : (width === target.width && height === target.height);
         var fpsPass = fps > 0 && fps <= 120;
-        var duration = _timeToSeconds(seq.end);
+        var duration = _ticksToSeconds(seq.end);
         var checks = [
             { spec: "resolution", status: resolutionPass ? "pass" : "fail", current_value: width + "x" + height, target_value: target.label, pass: resolutionPass },
             { spec: "frame_rate", status: fpsPass ? "pass" : "fail", current_value: String(Math.round(fps * 1000) / 1000), target_value: "valid sequence frame rate (0-120 fps)", pass: fpsPass },
@@ -28734,7 +28774,7 @@ function createProjectReport() {
         var totalDuration = 0;
         for (var s = 0; s < app.project.sequences.numSequences; s++) {
             var seq = app.project.sequences[s];
-            totalDuration += _timeToSeconds(seq.end);
+            totalDuration += _ticksToSeconds(seq.end);
             function inspectTracks(tracks, countEffects) {
                 for (var t = 0; t < tracks.numTracks; t++) {
                     var track = tracks[t];
