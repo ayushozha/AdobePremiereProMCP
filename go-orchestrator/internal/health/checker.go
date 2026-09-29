@@ -78,6 +78,9 @@ type Checker struct {
 // NewChecker creates a Checker pre-populated with entries for the three
 // default services. Probes can be registered afterwards via RegisterProbe.
 func NewChecker(logger *zap.Logger) *Checker {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	services := make(map[string]*ServiceHealth, len(defaultServices))
 	for _, name := range defaultServices {
 		services[name] = &ServiceHealth{
@@ -189,7 +192,8 @@ func (c *Checker) Check(ctx context.Context, serviceName string) *ServiceHealth 
 			sh.Status = StatusHealthy
 		}
 	}
-	return sh
+	cp := *sh
+	return &cp
 }
 
 // CheckAll probes every registered service in parallel and updates all cached
@@ -240,13 +244,21 @@ func (c *Checker) GetAllStatuses() map[string]*ServiceHealth {
 }
 
 // IsReady reports whether the orchestrator is ready to serve requests. The
-// minimum requirement is that the premiere-bridge service is healthy.
+// requirement is that every tracked dependency has completed a successful,
+// recent probe. A slow but successful probe is still ready; a failed probe is
+// not ready immediately, even before the unhealthy threshold is reached.
 func (c *Checker) IsReady() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	sh, ok := c.services["premiere-bridge"]
-	if !ok {
-		return false
+	for _, sh := range c.services {
+		if !serviceReady(sh) {
+			return false
+		}
 	}
-	return sh.Status == StatusHealthy
+	return len(c.services) > 0
+}
+
+func serviceReady(sh *ServiceHealth) bool {
+	return sh != nil && !sh.LastCheck.IsZero() && time.Since(sh.LastCheck) <= time.Minute &&
+		sh.LastError == nil && sh.Status != StatusUnhealthy
 }

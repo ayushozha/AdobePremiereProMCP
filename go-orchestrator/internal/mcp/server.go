@@ -17,14 +17,12 @@ const defaultMCPPageSize = 100
 //
 // The orchestrator parameter provides the concrete implementation that
 // each tool handler delegates to for performing actual editing operations.
-func NewMCPServer(orchestrator Orchestrator, version string, logger *zap.Logger) *server.MCPServer {
+func NewMCPServer(orchestrator Orchestrator, version string, logger *zap.Logger, options ...server.ServerOption) *server.MCPServer {
 	if version == "" {
 		version = "dev"
 	}
 
-	s := server.NewMCPServer(
-		"premierpro-mcp",
-		version,
+	options = append(options,
 		server.WithToolCapabilities(true),
 		server.WithResourceCapabilities(false, true),
 		server.WithPromptCapabilities(true),
@@ -37,6 +35,8 @@ func NewMCPServer(orchestrator Orchestrator, version string, logger *zap.Logger)
 			"script-to-edit pipeline, and export. "+
 			"Read config://premiere-instructions for detailed usage guidance."),
 	)
+
+	s := server.NewMCPServer("premierpro-mcp", version, options...)
 
 	registerTools(s, orchestrator, logger)
 	applyToolProfiles(s, logger)

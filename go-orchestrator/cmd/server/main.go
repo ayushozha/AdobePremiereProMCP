@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	"go.uber.org/zap"
@@ -18,7 +19,9 @@ import (
 
 	"github.com/ayushozha/AdobePremiereProMCP/go-orchestrator/internal/config"
 	grpcclients "github.com/ayushozha/AdobePremiereProMCP/go-orchestrator/internal/grpc"
+	"github.com/ayushozha/AdobePremiereProMCP/go-orchestrator/internal/health"
 	"github.com/ayushozha/AdobePremiereProMCP/go-orchestrator/internal/mcp"
+	"github.com/ayushozha/AdobePremiereProMCP/go-orchestrator/internal/observability"
 	"github.com/ayushozha/AdobePremiereProMCP/go-orchestrator/internal/orchestrator"
 )
 
@@ -109,18 +112,56 @@ func run() error {
 	)
 
 	// ── MCP Server ────────────────────────────────────────────────────
-	mcpSrv := mcp.NewMCPServer(engine, version, logger)
+	var metrics *observability.Metrics
+	var options []mcpserver.ServerOption
+	if cfg.ObservabilityAddr != "" {
+		metrics = observability.NewMetrics(logger)
+		options = append(options, mcpserver.WithToolHandlerMiddleware(metrics.Middleware))
+	}
+	mcpSrv := mcp.NewMCPServer(engine, version, logger, options...)
 
 	// ── Serve ─────────────────────────────────────────────────────────
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	switch cfg.Transport {
-	case config.TransportSSE:
-		return serveSSE(ctx, mcpSrv, cfg, logger)
-	default:
-		return serveStdio(ctx, mcpSrv, logger)
+	serveMCP := func(ctx context.Context) error {
+		switch cfg.Transport {
+		case config.TransportSSE:
+			return serveSSE(ctx, mcpSrv, cfg, logger)
+		default:
+			return serveStdio(ctx, mcpSrv, logger)
+		}
 	}
+	if metrics == nil {
+		return serveMCP(ctx)
+	}
+	names := make([]string, 0, len(mcpSrv.ListTools()))
+	for name := range mcpSrv.ListTools() {
+		names = append(names, name)
+	}
+	metrics.SetTools(names)
+	checker := health.NewChecker(logger)
+	checker.RegisterProbe("media-engine", health.GRPCTransportProbe(cfg.RustEngineAddr))
+	checker.RegisterProbe("intelligence", health.GRPCTransportProbe(cfg.PythonIntelAddr))
+	checker.RegisterProbe("premiere-bridge", health.PremiereReadinessProbe(func(ctx context.Context) (bool, error) {
+		result, err := clients.Premiere.Ping(ctx)
+		return result != nil && result.PremiereRunning, err
+	}))
+	observer, err := observability.NewServer(cfg.ObservabilityAddr, metrics, checker)
+	if err != nil {
+		return fmt.Errorf("starting observability listener: %w", err)
+	}
+	defer observer.Close()
+	logger.Info("serving local metrics and health", zap.String("addr", cfg.ObservabilityAddr))
+	g, groupCtx := errgroup.WithContext(ctx)
+	go checker.Start(groupCtx, 10*time.Second)
+	g.Go(func() error { return observer.Serve(groupCtx) })
+	g.Go(func() error {
+		// EOF on stdio also closes the HTTP listener and stops health probes.
+		defer cancel()
+		return serveMCP(groupCtx)
+	})
+	return g.Wait()
 }
 
 // serveStdio runs the MCP server over stdin/stdout.

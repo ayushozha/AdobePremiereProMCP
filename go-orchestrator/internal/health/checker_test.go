@@ -27,10 +27,10 @@ func TestCheckerInitialState(t *testing.T) {
 func TestCheckerIsReady(t *testing.T) {
 	c := NewChecker(zap.NewNop())
 
-	// Register a probe that succeeds for premiere-bridge.
-	c.RegisterProbe("premiere-bridge", func(_ context.Context) error {
-		return nil
-	})
+	// Readiness requires all dependencies, including premiere-bridge.
+	for _, name := range defaultServices {
+		c.RegisterProbe(name, func(context.Context) error { return nil })
+	}
 
 	// Before any check, premiere-bridge is unhealthy -- not ready.
 	if c.IsReady() {
@@ -38,7 +38,7 @@ func TestCheckerIsReady(t *testing.T) {
 	}
 
 	// Run the check.
-	c.Check(context.Background(), "premiere-bridge")
+	c.CheckAll(context.Background())
 
 	if !c.IsReady() {
 		t.Fatal("should be ready after successful premiere-bridge check")
@@ -117,6 +117,11 @@ func TestCheckerGetStatusUnknown(t *testing.T) {
 func TestCheckerRecovery(t *testing.T) {
 	c := NewChecker(zap.NewNop())
 
+	for _, name := range []string{"media-engine", "intelligence"} {
+		c.RegisterProbe(name, func(context.Context) error { return nil })
+		c.Check(context.Background(), name)
+	}
+
 	callCount := 0
 	c.RegisterProbe("premiere-bridge", func(_ context.Context) error {
 		callCount++
@@ -135,7 +140,7 @@ func TestCheckerRecovery(t *testing.T) {
 	}
 
 	// Now the probe succeeds -- should recover to healthy.
-	c.Check(context.Background(), "premiere-bridge")
+	c.CheckAll(context.Background())
 
 	if !c.IsReady() {
 		t.Fatal("should be ready after recovery")
