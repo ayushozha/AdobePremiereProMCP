@@ -1,3 +1,5 @@
+
+
 # PremierPro MCP Server -- AI-Powered Video Editing for Adobe Premiere Pro
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -101,7 +103,7 @@ Full architecture diagram: [`docs/architecture.md`](docs/architecture.md)
 ## Project Structure
 
 ```
-PremierProMCP/
+AdobePremiereProMCP/
 +-- go-orchestrator/          # Go -- MCP server & task orchestrator
 |   +-- cmd/server/           #   Entry point
 |   +-- internal/             #   Core packages
@@ -198,7 +200,7 @@ Add to your MCP client configuration:
 ```json
 {
   "mcpServers": {
-    "premiere-pro": {
+    "premier-pro": {
       "command": "./go-orchestrator/bin/premierpro-mcp",
       "args": ["--transport", "stdio"]
     }
