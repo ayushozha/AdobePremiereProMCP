@@ -60,6 +60,8 @@ Media and intelligence currently have no application health RPC, so their probes
 
 Health responses use generic errors for the production probes, without returning raw authentication or RPC error contents. The listener has no remote authentication or TLS and deliberately accepts only local binds. Do not publicly proxy it without access controls.
 
+Use the matching TypeScript bridge from this branch. Its standalone ping checks the configured application process before AppleScript, and checks again in AppleScript before sending a command. Older standalone bridges may launch a stopped application when pinged. CEP mode does not launch Premiere during ping. The standalone guard has automated process-boundary tests; native AppleScript execution still needs a macOS/Premiere validation session.
+
 ## Prometheus and Grafana
 
 Use [`monitoring/prometheus.yml`](../monitoring/prometheus.yml) with Prometheus on the same host/network namespace as the MCP server. The example scrapes `127.0.0.1:9091` every 15 seconds. A container's loopback is its own network namespace; the sample does not automatically reach a host MCP process.

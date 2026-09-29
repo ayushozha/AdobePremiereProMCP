@@ -8,7 +8,7 @@ The default is a read-only preflight. Editing requires `--mutate`, a prepared fi
 
 - Node 20+, the CLI SDK dependencies (`npm ci --prefix cli`), and a built Go binary (`just go-build`). `--server` can point to a separately built binary; `--sdk-root` can point to another checkout's `cli` directory with its dependencies installed.
 - Existing Rust, Python, and TypeScript backend services, configured to use the intended Premiere/CEP installation. The runner only spawns its own stdio Go process and closes that child afterward. It does not restart shared services.
-- Premiere Pro running with the CEP panel connected for native tests. Prefer the CEP bridge. The runner checks `premiere_is_running` before pinging because the standalone bridge's AppleScript ping can otherwise launch a stopped application. The current process-check tool uses `pgrep`; unsupported platforms, including a Windows host without it, conservatively block. This is not Windows compatibility proof.
+- Premiere Pro running with the CEP panel connected for native tests. Prefer the CEP bridge. The runner checks `premiere_is_running` before pinging to remain safe with older standalone bridges whose AppleScript ping can launch a stopped application. This branch also guards standalone ping itself. The current process-check tool uses `pgrep`; unsupported platforms, including a Windows host without it, conservatively block. This is not Windows compatibility proof.
 - FFmpeg and FFprobe on `PATH` for fixture generation, export inspection, and full media decoding. `FFMPEG` and `FFPROBE` may specify absolute executable paths.
 - For export: a real Adobe H.264 `.epr` preset with audio enabled. A preset name or queued job is not evidence of an export.
 
