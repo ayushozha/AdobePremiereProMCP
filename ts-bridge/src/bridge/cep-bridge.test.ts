@@ -105,6 +105,54 @@ test("retries an initially offline CEP panel and sends commands when it starts",
   assert.equal(lifecycle.reconnectTimer, null);
 });
 
+test("keeps retrying past the legacy 100-attempt cap until the CEP panel starts", async (t) => {
+  const port = await unusedPort();
+  const { bridge, lifecycle } = reconnectingBridge(port);
+  const legacyAttemptCap = 100;
+  lifecycle.reconnectAttempts = legacyAttemptCap - 1;
+  const infoMessages: string[] = [];
+  const warnMessages: string[] = [];
+  const logger = (bridge as unknown as {
+    log: {
+      info: (message: string) => void;
+      warn: (message: string) => void;
+    };
+  }).log;
+  logger.info = (message: string) => {
+    infoMessages.push(message);
+  };
+  logger.warn = (message: string) => {
+    warnMessages.push(message);
+  };
+  let server: WebSocketServer | undefined;
+  t.after(async () => {
+    await bridge.disconnect();
+    if (server) {
+      for (const client of server.clients) client.terminate();
+      await new Promise<void>((resolve) => server!.close(() => resolve()));
+    }
+  });
+
+  await bridge.connect();
+  await waitFor(() => lifecycle.reconnectAttempts > legacyAttemptCap);
+
+  server = new WebSocketServer({ port, host: "127.0.0.1" });
+  await once(server, "listening");
+  await waitFor(() => bridge.isConnected());
+
+  const recoveryMessage = infoMessages.find((message) =>
+    message.startsWith("Reconnected to CEP panel"));
+  assert.ok(recoveryMessage);
+  const recoveredAfter = Number(/after (\d+) attempt/.exec(recoveryMessage)?.[1]);
+  assert.ok(recoveredAfter > legacyAttemptCap);
+  assert.equal(
+    infoMessages.filter((message) => message.startsWith("Reconnecting in")).length,
+    1,
+    "Routine retries must stay below the default log level",
+  );
+  assert.deepEqual(warnMessages, [], "Routine retries must not emit warnings");
+});
+
 test("disconnect cancels retrying an offline CEP panel", async (t) => {
   const port = await unusedPort();
   const { bridge, lifecycle } = reconnectingBridge(port);
