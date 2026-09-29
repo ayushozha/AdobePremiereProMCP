@@ -1,0 +1,23 @@
+{
+  "name": "@premierpro/mcp-server",
+  "version": "0.1.0",
+  "description": "Prebuilt Go MCP server for Adobe Premiere Pro",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ayushozha/AdobePremiereProMCP.git",
+    "directory": "npm-package"
+  },
+  "homepage": "https://github.com/ayushozha/AdobePremiereProMCP/blob/main/docs/npm-distribution.md",
+  "bugs": "https://github.com/ayushozha/AdobePremiereProMCP/issues",
+  "engines": { "node": ">=20" },
+  "bin": { "premierpro-mcp": "bin/premierpro-mcp.cjs" },
+  "files": ["bin/", "lib/", "scripts/install.cjs", "scripts/check-release.cjs", "release-manifest.json", "LICENSE"],
+  "scripts": {
+    "postinstall": "node scripts/install.cjs",
+    "prepack": "node scripts/check-release.cjs",
+    "test": "node --test test/distribution.test.cjs"
+  },
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
+  "keywords": ["mcp", "premiere-pro", "adobe", "video-editing"]
+}
