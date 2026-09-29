@@ -107,6 +107,20 @@ cli-install:
 cli-build:
     cd cli && npm run build
 
+# Test the CLI independently of its build.
+cli-test:
+    cd cli && npm test
+
+# Offline distribution and application-test safeguards; no Premiere mutations.
+npm-package-test:
+    npm test --prefix npm-package
+
+e2e-runner-test:
+    node --test scripts/e2e-premiere.test.mjs
+
+uxp-test:
+    node --test uxp-panel/test/inspect.test.js
+
 # ─── All ───
 
 # Install all dependencies
@@ -118,7 +132,7 @@ build: proto go-build rust-build ts-build cep-build cli-build
     @echo "All components built."
 
 # Run all tests
-test: go-test rust-test py-test ts-test cep-test
+test: go-test rust-test py-test ts-test cep-test cli-test npm-package-test e2e-runner-test uxp-test
     @echo "All tests passed."
 
 # Lint everything

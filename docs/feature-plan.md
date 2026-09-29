@@ -4,6 +4,8 @@
 > original roadmap, not current live verification. Use `tools/list`, the
 > default curated profile, and host readback as the current authority.
 
+For the September 2026 issue audit and acceptance gaps, see [issue status](issue-status-2026-09-29.md). Current implementation guides cover [npm distribution](npm-distribution.md), [observability](observability.md), [live Premiere tests](live-premiere-testing.md), and [UXP migration](uxp-migration.md).
+
 Master plan for every MCP tool the PremierPro MCP Server will expose. Each tool maps to one or more Adobe Premiere Pro ExtendScript/QE DOM operations, orchestrated through the four-language stack (Go orchestration, Rust media processing, Python intelligence, TypeScript ExtendScript bridge).
 
 **Current state:** 16 tools implemented (Phase 0). This plan adds ~230 additional tools across 7 phases.
