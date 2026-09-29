@@ -1,0 +1,179 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync, mkdirSync, symlinkSync, rmSync, realpathSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { parseArgs, runSuite, exitCode, decodeResult, verifyTimeline, verifyPNG, validateFixture, prepareFixtures } from './e2e-premiere.mjs';
+
+const textResult = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }] });
+const tc = seconds => ({ hours: 0, minutes: 0, seconds, frames: 0, frame_rate: 24 });
+const clip = (source, start, end) => ({ clip_id: source, source_path: source, timeline_range: { in_point: tc(start), out_point: tc(end) }, source_range: source.endsWith('.wav') ? { in_point: tc(0), out_point: tc(4) } : { in_point: tc(start + 1), out_point: tc(end + 1) } });
+const fakeClient = (ping, extra = {}) => ({
+  async listTools() { return { tools: [{ name: 'premiere_is_running' }, { name: 'premiere_ping' }, { name: 'premiere_get_project' }] }; },
+  async callTool({ name }) {
+    if (name === 'premiere_is_running') return textResult({ running: true });
+    if (name === 'premiere_ping') return textResult(ping);
+    if (name === 'premiere_get_project') return textResult({ project_path: '/unrelated.prproj', sequences: [] });
+    throw new Error(`Unexpected mutation: ${name}`);
+  }, ...extra,
+});
+
+test('default preflight never edits or claims the eight native checks passed', async () => {
+  const report = await runSuite(fakeClient({ premiere_running: true, project_open: true, premiere_version: '26.0' }), parseArgs([]));
+  assert.equal(report.mode, 'preflight');
+  assert.equal(report.preflight.status, 'pass');
+  assert.equal(report.checks.length, 8);
+  assert.deepEqual(report.summary, { pass: 0, fail: 0, blocked: 8 });
+  assert.equal(exitCode(report), 0);
+});
+
+test('unreachable Premiere blocks every native check and exits 2', async () => {
+  const report = await runSuite(fakeClient({ premiere_running: false, premiere_version: 'unknown', project_open: false }), parseArgs([]));
+  assert.equal(report.preflight.status, 'blocked');
+  assert.equal(report.checks.filter(c => c.status === 'blocked').length, 8);
+  assert.equal(exitCode(report), 2);
+});
+
+test('transport loss produces complete failure accounting', async () => {
+  const report = await runSuite(fakeClient({}, { async listTools() { throw new Error('connection lost'); } }), parseArgs([]));
+  assert.equal(report.checks.length, 8);
+  assert.equal(report.preflight.status, 'blocked');
+  assert.match(report.preflight.reason, /connection lost/);
+});
+
+test('mutation requires all disposable acknowledgements before connecting', () => {
+  assert.throws(() => parseArgs(['--mutate']), /fixture-dir/);
+  assert.throws(() => parseArgs(['--mutate', '--fixture-dir', '/tmp/a', '--project', '/tmp/a/x.prproj']), /confirm-disposable/);
+  assert.throws(() => parseArgs(['--prepare', '/tmp/a', '--mutate']), /combined/);
+  assert.throws(() => parseArgs(['--unknown']), /Unknown/);
+});
+
+test('nested native errors cannot be hidden by a success wrapper', () => {
+  assert.throws(() => decodeResult(textResult({ status: 'ok', message: JSON.stringify({ success: false, error: 'readback mismatch' }) })), /readback mismatch/);
+  assert.throws(() => decodeResult({ isError: true, content: [{ type: 'text', text: 'bridge rejected call' }] }), /bridge rejected/);
+  assert.deepEqual(decodeResult(textResult({ status: 'success', message: '{"properties":{"Exposure":0.5}}' })), { properties: { Exposure: 0.5 } });
+});
+
+test('timeline evidence rejects missing clips, wrong source and wrong time', () => {
+  const timeline = { sequence_id: 'seq', total_duration_seconds: 4, video_tracks: [{ index: 0, clips: [clip('/video.mp4', 0, 2), clip('/video.mp4', 2, 4)] }], audio_tracks: [{ index: 0, clips: [clip('/audio.wav', 0, 4)] }] };
+  verifyTimeline(timeline, 'seq', '/video.mp4', '/audio.wav');
+  assert.throws(() => verifyTimeline({ ...timeline, sequence_id: 'other' }, 'seq', '/video.mp4', '/audio.wav'), /sequence/);
+  assert.throws(() => verifyTimeline(timeline, 'seq', '/wrong.mp4', '/audio.wav'), /source/);
+  timeline.video_tracks[0].clips[1].timeline_range.in_point = tc(3);
+  assert.throws(() => verifyTimeline(timeline, 'seq', '/video.mp4', '/audio.wav'), /position/);
+});
+
+test('base64 image evidence rejects empty, truncated or wrong-size PNGs', () => {
+  assert.throws(() => verifyPNG('not-an-image', 320, 180), /PNG/);
+  const header = Buffer.alloc(33);
+  Buffer.from('89504e470d0a1a0a', 'hex').copy(header);
+  header.write('IHDR', 12); header.writeUInt32BE(320, 16); header.writeUInt32BE(180, 20);
+  assert.throws(() => verifyPNG(header.toString('base64'), 320, 180), /PNG/);
+});
+
+test('failed native checks win over blocked checks in the process exit code', () => {
+  assert.equal(exitCode({ mode: 'mutate', preflight: { status: 'pass' }, summary: { pass: 5, fail: 1, blocked: 1 } }), 1);
+  assert.equal(exitCode({ mode: 'mutate', preflight: { status: 'pass' }, summary: { pass: 6, fail: 0, blocked: 1 } }), 2);
+});
+
+test('fixture guard rejects unrelated project and symlinked fixture assets', () => {
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'premiere-e2e-test-')));
+  try {
+    mkdirSync(join(directory, 'media'));
+    writeFileSync(join(directory, 'manifest.json'), JSON.stringify({ schema: 1, purpose: 'premiere-mcp-disposable-e2e', project: join(directory, 'MCP-E2E-disposable.prproj'), sequence: 'MCP-E2E-fixture', files: {} }));
+    assert.throws(() => validateFixture(directory, '/unrelated.prproj'), /project/);
+    symlinkSync('/tmp', join(directory, 'MCP-E2E-disposable.prproj'));
+    assert.throws(() => validateFixture(directory, join(directory, 'MCP-E2E-disposable.prproj')), /symlink|regular file/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('source trims must match the requested source range, not only timeline timing', () => {
+  const first = clip('/video.mp4', 0, 2);
+  const second = clip('/video.mp4', 2, 4);
+  second.source_range = { in_point: tc(3), out_point: tc(5) };
+  const audio = clip('/audio.wav', 0, 4);
+  audio.source_range = { in_point: tc(0), out_point: tc(4) };
+  const timeline = { sequence_id: 'seq', total_duration_seconds: 4, video_tracks: [{ index: 0, clips: [first, second] }], audio_tracks: [{ index: 0, clips: [audio] }] };
+  verifyTimeline(timeline, 'seq', '/video.mp4', '/audio.wav');
+  first.source_range.in_point = tc(0);
+  assert.throws(() => verifyTimeline(timeline, 'seq', '/video.mp4', '/audio.wav'), /source in/);
+});
+
+test('project switch between imports blocks the next write and every dependent test', async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'premiere-e2e-guard-')));
+  try {
+    const fixture = { project: join(root, 'MCP-E2E-disposable.prproj'), artifacts: join(root, 'artifacts'), sequence: 'MCP-E2E-fixture', video: '/fixture/video.mp4', audio: '/fixture/audio.wav' };
+    const options = { ...parseArgs([]), mutate: true };
+    let reads = 0;
+    const writes = [];
+    const client = {
+      async listTools() { return { tools: ['premiere_is_running', 'premiere_ping', 'premiere_get_project', 'premiere_get_project_items', 'premiere_import_media'].map(name => ({ name })) }; },
+      async callTool({ name, arguments: args }) {
+        if (name === 'premiere_is_running') return textResult({ running: true });
+    if (name === 'premiere_ping') return textResult({ premiere_running: true, project_open: true });
+        if (name === 'premiere_get_project') return textResult({ project_path: ++reads <= 2 ? fixture.project : '/another-project.prproj', sequences: [] });
+        if (name === 'premiere_get_project_items') return textResult({ items: [] });
+        writes.push(args.file_path);
+        return textResult({ project_item_id: 'fixture-video' });
+      },
+    };
+    const report = await runSuite(client, options, fixture);
+    assert.deepEqual(writes, ['/fixture/video.mp4']);
+    assert.equal(report.checks[0].status, 'blocked');
+    assert.match(report.checks[0].reason, /ownership changed/);
+    assert.deepEqual(report.summary, { pass: 0, fail: 0, blocked: 8 });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('fake successful import without native readback fails import and blocks dependent checks', async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'premiere-e2e-readback-')));
+  try {
+    const fixture = { project: join(root, 'MCP-E2E-disposable.prproj'), artifacts: join(root, 'artifacts'), sequence: 'MCP-E2E-fixture', video: '/fixture/video.mp4', audio: '/fixture/audio.wav' };
+    const client = {
+      async listTools() { return { tools: ['premiere_is_running', 'premiere_ping', 'premiere_get_project', 'premiere_get_project_items', 'premiere_import_media'].map(name => ({ name })) }; },
+      async callTool({ name }) {
+        if (name === 'premiere_is_running') return textResult({ running: true });
+    if (name === 'premiere_ping') return textResult({ premiere_running: true, project_open: true });
+        if (name === 'premiere_get_project') return textResult({ project_path: fixture.project, sequences: [] });
+        if (name === 'premiere_get_project_items') return textResult({ items: [] });
+        return textResult({ project_item_id: 'alleged-success' });
+      },
+    };
+    const report = await runSuite(client, { ...parseArgs([]), mutate: true }, fixture);
+    assert.deepEqual(report.summary, { pass: 0, fail: 1, blocked: 7 });
+    assert.equal(exitCode(report), 1);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+
+test('real generated fixtures decode, repeat exactly, resist overwrite and detect tampering', { skip: spawnSync(process.env.FFMPEG || 'ffmpeg', ['-version']).status !== 0 || spawnSync(process.env.FFPROBE || 'ffprobe', ['-version']).status !== 0 }, () => {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'premiere-e2e-media-')));
+  try {
+    const first = prepareFixtures(join(base, 'first'));
+    const second = prepareFixtures(join(base, 'second'));
+    assert.equal(first.files['media/e2e_test_pattern.mp4'].probe.streams[0].codec_name, 'h264');
+    assert.equal(first.files['media/e2e_tone.wav'].probe.streams[0].codec_name, 'pcm_s16le');
+    assert.equal(Number(first.files['media/e2e_test_pattern.mp4'].probe.format.duration), 8);
+    for (const name of ['media/e2e_test_pattern.mp4', 'media/e2e_tone.wav', 'script.txt']) assert.equal(first.files[name].sha256, second.files[name].sha256);
+    assert.throws(() => prepareFixtures(join(base, 'first')), /EEXIST/);
+    writeFileSync(first.project, 'test-only placeholder; never opened in Premiere');
+    assert.equal(validateFixture(join(base, 'first'), first.project).sequence, 'MCP-E2E-fixture');
+    writeFileSync(join(base, 'first', 'media/e2e_tone.wav'), 'tampered');
+    assert.throws(() => validateFixture(join(base, 'first'), first.project), /hash mismatch/);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test('preflight checks the OS process before ping so a stopped standalone host cannot be launched', async () => {
+  const client = {
+    async listTools() { return { tools: [{ name: 'premiere_is_running' }, { name: 'premiere_ping' }] }; },
+    async callTool({ name }) {
+      assert.equal(name, 'premiere_is_running', 'must not ping a stopped application');
+      return textResult({ running: false });
+    },
+  };
+  const report = await runSuite(client, parseArgs([]));
+  assert.equal(report.preflight.status, 'blocked');
+  assert.match(report.preflight.reason, /process/);
+  assert.deepEqual(report.summary, { pass: 0, fail: 0, blocked: 8 });
+});
