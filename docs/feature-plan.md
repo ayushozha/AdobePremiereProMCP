@@ -512,7 +512,7 @@ The Go orchestrator wraps all downstream errors with context and applies circuit
 | No undo grouping | Each scripted operation is a separate undo step | Document this limitation; consider batching in single evalScript calls |
 | Sync execution blocks Premiere UI | Long scripts freeze the app | Split into small atomic operations with `$.sleep()` between them |
 | No caption API in ExtendScript | Caption creation/editing not in standard DOM | Import .srt files; use UI automation as last resort |
-| ExtendScript EOL September 2026 | API will eventually be replaced by UXP | Architecture supports future UXP bridge module swap |
+| UXP migration is incomplete | Production MCP commands currently require CEP/ExtendScript | [UXP inspection prototype and migration plan](uxp-migration.md); native transport and editing parity remain unverified |
 
 ---
 

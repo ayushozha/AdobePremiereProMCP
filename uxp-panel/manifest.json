@@ -1,0 +1,15 @@
+{
+  "manifestVersion": 5,
+  "id": "premierpro-mcp-inspection-dev",
+  "name": "Premiere MCP UXP Inspection Prototype",
+  "version": "0.1.0",
+  "main": "index.html",
+  "host": { "app": "premierepro", "minVersion": "25.6.0" },
+  "entrypoints": [{
+    "type": "panel",
+    "id": "mcpInspection",
+    "label": { "default": "MCP UXP Inspection" },
+    "minimumSize": { "width": 320, "height": 240 },
+    "preferredDockedSize": { "width": 400, "height": 480 }
+  }]
+}
