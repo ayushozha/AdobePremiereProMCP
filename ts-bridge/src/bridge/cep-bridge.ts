@@ -567,11 +567,27 @@ export class CepBridge implements PremiereBridge {
       throw new CepCommandError(functionName, response.errorMessage);
     }
     if (response.resultJson === "") return undefined as T;
+    let result: unknown;
     try {
-      return JSON.parse(response.resultJson) as T;
+      result = JSON.parse(response.resultJson);
     } catch {
       return response.resultJson as T;
     }
+    // Current panels unwrap the host envelope. Older panels return it intact.
+    // Reserve only the exact helper shape so flat successes retain their data.
+    if (typeof result === "object" && result !== null && !Array.isArray(result)) {
+      const fields = result as Record<string, unknown>;
+      if (Object.keys(fields).length === 2) {
+        if (fields["success"] === true && Object.hasOwn(fields, "data")) {
+          return fields["data"] as T;
+        }
+        if (fields["success"] === false && typeof fields["error"] === "string") {
+          throw new CepCommandError(functionName,
+            fields["error"] || "ExtendScript reported failure without an error message");
+        }
+      }
+    }
+    return result as T;
   }
 
   /**

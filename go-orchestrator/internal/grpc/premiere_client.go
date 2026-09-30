@@ -494,7 +494,37 @@ func (c *PremiereBridgeClient) EvalCommand(ctx context.Context, functionName, ar
 		return "", fmt.Errorf("EvalCommand(%s): %s", functionName, resp.GetErrorMessage())
 	}
 
-	return resp.GetResultJson(), nil
+	return normalizeEvalResult(functionName, resp.GetResultJson())
+}
+
+// Standalone and older CEP panels can return the host's _ok/_err envelope.
+// Only its exact shape is reserved: a flat payload may legitimately contain
+// a success flag, and must not lose its other fields.
+func normalizeEvalResult(functionName, raw string) (string, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal([]byte(raw), &fields) != nil || len(fields) != 2 {
+		return raw, nil
+	}
+	var success *bool
+	flag, present := fields["success"]
+	if !present || json.Unmarshal(flag, &success) != nil || success == nil {
+		return raw, nil
+	}
+	if *success {
+		if data, exists := fields["data"]; exists {
+			return string(data), nil
+		}
+	} else if value, exists := fields["error"]; exists {
+		var message string
+		if json.Unmarshal(value, &message) != nil {
+			return raw, nil
+		}
+		if message == "" {
+			message = "ExtendScript reported failure without an error message"
+		}
+		return "", fmt.Errorf("EvalCommand(%s): %s", functionName, message)
+	}
+	return raw, nil
 }
 
 // ---------------------------------------------------------------------------

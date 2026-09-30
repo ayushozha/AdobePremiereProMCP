@@ -314,6 +314,46 @@ test("adapts core sequence and clip calls to explicit host commands", async () =
   assert.equal(calls[1]?.args["speed"], 1.25);
 });
 
+test("reads typed project data from canonical older-panel envelopes", async () => {
+  const { bridge } = bridgeWithHostResult({
+    success: true,
+    data: { name: "Legacy Panel Project", path: "/tmp/legacy.prproj", binCount: 3, sequences: [] },
+  });
+  const project = await bridge.getProjectState();
+  assert.equal(project.projectName, "Legacy Panel Project");
+  assert.equal(project.projectPath, "/tmp/legacy.prproj");
+  assert.equal(project.binCount, 3);
+});
+
+test("rejects canonical older-panel failures with the native error", async () => {
+  const { bridge } = bridgeWithHostResult({ success: false, error: "No project is open" });
+  await assert.rejects(bridge.getProjectState(), (error: unknown) =>
+    error instanceof CepCommandError && error.message.includes("No project is open"));
+});
+
+test("older-panel ping envelopes preserve the actual Premiere connection", async () => {
+  const { bridge } = bridgeWithHostResult({
+    success: true,
+    data: { premiereRunning: true, premiereVersion: "26.3.2", projectOpen: true },
+  });
+  assert.deepEqual(await bridge.ping(), {
+    premiereRunning: true, premiereVersion: "26.3.2", projectOpen: true, bridgeMode: "cep",
+  });
+});
+
+test("preserves flat success payloads with business fields", async () => {
+  for (const payload of [
+    { success: true, name: "Flat result", path: "/tmp/flat.prproj", binCount: 2 },
+    { success: true, data: { name: "Nested business value" }, name: "Flat result", path: "/tmp/flat.prproj", binCount: 2 },
+  ]) {
+    const { bridge } = bridgeWithHostResult(payload);
+    const project = await bridge.getProjectState();
+    assert.equal(project.projectName, "Flat result");
+    assert.equal(project.projectPath, "/tmp/flat.prproj");
+    assert.equal(project.binCount, 2);
+  }
+});
+
 test("turns host command failures into typed bridge errors", async () => {
   const bridge = new CepBridge(config);
   bridge.evalCommand = async (): Promise<EvalCommandResult> => ({
