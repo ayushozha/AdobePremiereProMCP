@@ -94,7 +94,7 @@ Failures may leave partial edits in the disposable project. The runner deliberat
 | Audio levels | Fixture audio clip set to −6 dB and independently read back within 0.1 dB. |
 | H.264 export | New output file from direct Adobe export, H.264 video and audio streams, duration within 0.25 seconds of 4, full FFmpeg decode, file and preset hashes. |
 | Base64 frame | MCP PNG image block, valid PNG header/end marker, 320 × 180 dimensions, playhead time of 1 second, saved image hash, full FFmpeg decode. |
-| Script → EDL → timeline | Non-empty parsed segments and edit decision list, completed execution step without errors, a new native sequence, matching EDL/execution/timeline clip counts, fixture-only source paths. |
+| Script → EDL → timeline | Non-empty parsed segments and edit decision list, completed execution step without errors, a new native sequence at the EDL frame rate, matching EDL/execution/timeline clip counts, and a distinct native clip for every EDL entry matching its fixture source, video/audio track target, source trims, and timeline positions within one sequence frame plus 1 ms. Asset IDs resolve through the returned scan's ID/path mapping. Repeated source clips and unordered tracks are matched individually; unmatched or duplicate replacement clips fail. |
 
 The JSON contains timestamps, runner-host OS/architecture/Node (remote backend hosts may differ), reported Premiere version and bridge mode, tool count/profile, local fixture metadata, each actual MCP call/result, verification evidence, and summary counts. Image bytes are saved under `artifacts/frame.png`; reports contain their hash and byte count instead of duplicating base64. Export is saved under `artifacts/export.mp4`. Review paths/project names before sharing reports.
 

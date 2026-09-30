@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, symlinkSync, rmSync, realpathSyn
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseArgs, runSuite, exitCode, decodeResult, verifyTimeline, verifyPNG, validateFixture, prepareFixtures } from './e2e-premiere.mjs';
+import { parseArgs, runSuite, exitCode, decodeResult, verifyTimeline, verifyEDLTimeline, verifyPNG, validateFixture, prepareFixtures } from './e2e-premiere.mjs';
 
 const textResult = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }] });
 const tc = seconds => ({ hours: 0, minutes: 0, seconds, frames: 0, frame_rate: 24 });
@@ -98,6 +98,84 @@ test('source trims must match the requested source range, not only timeline timi
   verifyTimeline(timeline, 'seq', '/video.mp4', '/audio.wav');
   first.source_range.in_point = tc(0);
   assert.throws(() => verifyTimeline(timeline, 'seq', '/video.mp4', '/audio.wav'), /source in/);
+});
+
+const edlFixture = () => {
+  const first = clip('/video.mp4', 0, 2);
+  const second = clip('/video.mp4', 2, 4);
+  const audio = clip('/audio.wav', 0, 4);
+  const entry = (native, type, index, asset) => ({ source_asset_id: asset, track: { type, track_index: index }, source_range: structuredClone(native.source_range), timeline_range: structuredClone(native.timeline_range) });
+  return {
+    edl: { sequence_frame_rate: 24, entries: [entry(second, 1, 0, 'video-id'), entry(audio, 2, 1, 'audio-id'), entry(first, 1, 0, 'video-id')] },
+    assets: [{ id: 'video-id', file_path: '/video.mp4' }, { id: 'audio-id', file_path: '/audio.wav' }],
+    sources: ['/video.mp4', '/audio.wav'],
+    timeline: { sequence_id: 'auto', frame_rate: 24, video_tracks: [{ index: 2, clips: [] }, { index: 0, clips: [first, second] }], audio_tracks: [{ index: 1, clips: [audio] }, { index: 0, clips: [] }] },
+  };
+};
+
+test('EDL readback matches scanned asset IDs, repeated sources, and unordered tracks and entries', () => {
+  const { timeline, edl, assets, sources } = edlFixture();
+  verifyEDLTimeline(timeline, 'auto', edl, assets, sources);
+  // Within-one-frame candidates may overlap. A complete distinct assignment
+  // exists here, but a greedy match of the first entry to the first clip fails.
+  const ranged = frame => ({ in_point: { ...tc(0), frames: frame }, out_point: { ...tc(2), frames: frame } });
+  edl.entries = [1, 0].map(frame => ({ source_asset_id: 'video-id', track: { type: 1, track_index: 0 }, source_range: ranged(frame), timeline_range: ranged(frame) }));
+  timeline.video_tracks = [{ index: 0, clips: [0, 2].map(frame => ({ source_path: '/video.mp4', source_range: ranged(frame), timeline_range: ranged(frame) })) }];
+  timeline.audio_tracks = [];
+  verifyEDLTimeline(timeline, 'auto', edl, assets, sources);
+});
+
+test('EDL readback rejects equal-count edits with wrong positions, source trims, targets, or duplicate clips', () => {
+  for (const alter of [
+    f => { f.timeline.video_tracks[1].clips[1].timeline_range = { in_point: tc(99), out_point: tc(120) }; },
+    f => { f.timeline.video_tracks[1].clips[1].source_range = { in_point: tc(6), out_point: tc(7) }; },
+    f => { f.timeline.video_tracks[1].index = 99; },
+    f => { f.timeline.video_tracks[1].clips[1].source_path = '/audio.wav'; },
+    f => { f.timeline.video_tracks[1].clips[1] = structuredClone(f.timeline.video_tracks[1].clips[0]); },
+    f => { f.edl.entries[0].source_asset_id = 'unmapped-id'; },
+    f => { f.timeline.frame_rate = 30; },
+  ]) {
+    const f = edlFixture();
+    alter(f);
+    assert.throws(() => verifyEDLTimeline(f.timeline, 'auto', f.edl, f.assets, f.sources), /matching|mapping|frame rate/);
+  }
+});
+
+test('script workflow cannot pass when native clip count matches but EDL timing and track are wrong', async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'premiere-e2e-edl-')));
+  try {
+    const fixture = { root, project: join(root, 'MCP-E2E-disposable.prproj'), artifacts: join(root, 'artifacts'), sequence: 'MCP-E2E-fixture', video: '/video.mp4', audio: '/audio.wav', script: '/script.txt' };
+    const tools = ['premiere_is_running', 'premiere_ping', 'premiere_get_project', 'premiere_get_project_items', 'premiere_import_media', 'premiere_create_sequence', 'premiere_place_clip', 'premiere_get_timeline', 'premiere_parse_script', 'premiere_auto_edit'];
+    let imported = 0;
+    let created = false;
+    let auto = false;
+    const client = {
+      async listTools() { return { tools: tools.map(name => ({ name })) }; },
+      async callTool({ name, arguments: args }) {
+        if (name === 'premiere_is_running') return textResult({ running: true });
+        if (name === 'premiere_ping') return textResult({ premiere_running: true, project_open: true });
+        if (name === 'premiere_get_project') return textResult({ project_path: fixture.project, sequences: created ? [{ id: 'seq', name: fixture.sequence, resolution: { width: 320, height: 180 }, frame_rate: 24 }, ...(auto ? [{ id: 'auto' }] : [])] : [] });
+        if (name === 'premiere_get_project_items') return textResult({ items: imported === 2 ? [{ media_path: fixture.video }, { media_path: fixture.audio }] : [] });
+        if (name === 'premiere_import_media') { imported++; return textResult({ imported: true }); }
+        if (name === 'premiere_create_sequence') { created = true; return textResult({ sequence_id: 'seq' }); }
+        if (name === 'premiere_place_clip') return textResult({ placed: true });
+        if (name === 'premiere_get_timeline') return textResult(args.sequence_id === 'auto'
+          ? { sequence_id: 'auto', frame_rate: 24, video_tracks: [{ index: 99, clips: [clip(fixture.video, 99, 120)] }], audio_tracks: [] }
+          : { sequence_id: 'seq', total_duration_seconds: 4, video_tracks: [{ index: 0, clips: [clip(fixture.video, 0, 2), clip(fixture.video, 2, 4)] }], audio_tracks: [{ index: 0, clips: [clip(fixture.audio, 0, 4)] }] });
+        if (name === 'premiere_parse_script') return textResult({ segments: [{ text: 'show clip' }] });
+        if (name === 'premiere_auto_edit') {
+          auto = true;
+          return textResult({ edl: { sequence_frame_rate: 24, entries: [{ source_asset_id: fixture.video, track: { type: 1, track_index: 0 }, source_range: { in_point: tc(0), out_point: tc(4) }, timeline_range: { in_point: tc(0), out_point: tc(4) } }] }, execution_result: { sequence_id: 'auto', clips_placed: 1, errors: [] }, steps: [{ name: 'execute_edl', status: 'completed' }] });
+        }
+        throw new Error(`Unexpected tool: ${name}`);
+      },
+    };
+    const report = await runSuite(client, { ...parseArgs([]), mutate: true }, fixture);
+    assert.equal(report.checks.find(c => c.id === 'script_edl_timeline').status, 'fail');
+    assert.match(report.checks.find(c => c.id === 'script_edl_timeline').reason, /no distinct native clip/);
+    assert.deepEqual(report.summary, { pass: 2, fail: 1, blocked: 5 });
+    assert.equal(exitCode(report), 1);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('project switch between imports blocks the next write and every dependent test', async () => {

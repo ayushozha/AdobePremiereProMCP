@@ -147,6 +147,67 @@ export function verifyTimeline(timeline, sequence, video, audio) {
   near(seconds(audios[0].source_range?.out_point), 4, 'Audio source out');
   near(timeline.total_duration_seconds, 4, 'Sequence duration');
 }
+
+export function verifyEDLTimeline(timeline, sequence, edl, assets, fixtureSources) {
+  requireThat(timeline.sequence_id === sequence, 'EDL sequence ID differs from timeline readback');
+  requireThat(Array.isArray(edl?.entries) && edl.entries.length > 0, 'Missing EDL entries');
+  requireThat(Number.isFinite(edl.sequence_frame_rate) && edl.sequence_frame_rate > 0, 'Missing EDL frame rate');
+  near(timeline.frame_rate, edl.sequence_frame_rate, 'EDL sequence frame rate', 0.001);
+  const tolerance = 1 / edl.sequence_frame_rate + 0.001;
+  const sourcePaths = new Map();
+  for (const asset of assets || []) {
+    if (!asset.id || !asset.file_path) continue;
+    requireThat(!sourcePaths.has(asset.id) || sourcePaths.get(asset.id) === asset.file_path, `Ambiguous scanned asset ID: ${asset.id}`);
+    sourcePaths.set(asset.id, asset.file_path);
+  }
+  const range = (value, label) => {
+    const start = seconds(value?.in_point);
+    const end = seconds(value?.out_point);
+    requireThat(Number.isFinite(start) && start >= 0 && Number.isFinite(end) && end > start, `Invalid ${label}`);
+    return [start, end];
+  };
+  const actual = [];
+  for (const [type, tracks] of [[1, timeline.video_tracks], [2, timeline.audio_tracks]]) {
+    requireThat(Array.isArray(tracks), 'Missing EDL timeline tracks');
+    const indexes = new Set();
+    for (const track of tracks) {
+      requireThat(Number.isInteger(track.index) && track.index >= 0 && !indexes.has(track.index), 'Invalid or duplicate EDL timeline track index');
+      indexes.add(track.index);
+      requireThat(track.clips == null || Array.isArray(track.clips), 'Invalid EDL timeline clip list');
+      for (const clip of track.clips || []) {
+        requireThat(fixtureSources.includes(clip.source_path), 'EDL referenced media outside disposable fixtures');
+        actual.push({ type, track: track.index, source: clip.source_path, times: [...range(clip.source_range, 'native source range'), ...range(clip.timeline_range, 'native timeline range')] });
+      }
+    }
+  }
+  requireThat(actual.length === edl.entries.length, 'EDL clip count differs from timeline readback');
+  const expected = edl.entries.map((entry, index) => {
+    const source = fixtureSources.includes(entry.source_asset_id) ? entry.source_asset_id : sourcePaths.get(entry.source_asset_id);
+    requireThat(fixtureSources.includes(source), `EDL entry ${index} has no verified fixture source mapping`);
+    requireThat([1, 2].includes(entry.track?.type) && Number.isInteger(entry.track?.track_index) && entry.track.track_index >= 0, `EDL entry ${index} has an invalid track target`);
+    return { type: entry.track.type, track: entry.track.track_index, source, times: [...range(entry.source_range, 'EDL source range'), ...range(entry.timeline_range, 'EDL timeline range')] };
+  });
+  const candidates = expected.map(entry => actual.flatMap((clip, index) =>
+    entry.type === clip.type && entry.track === clip.track && entry.source === clip.source &&
+    entry.times.every((time, i) => Math.abs(time - clip.times[i]) <= tolerance) ? [index] : []));
+  // A clip can satisfy only one entry. Reassign earlier matches when frame
+  // tolerance creates overlapping candidates, so ordering cannot decide a pass.
+  const matched = Array(actual.length).fill(-1);
+  function assign(entryIndex, seen) {
+    for (const clipIndex of candidates[entryIndex]) {
+      if (seen.has(clipIndex)) continue;
+      seen.add(clipIndex);
+      if (matched[clipIndex] === -1 || assign(matched[clipIndex], seen)) {
+        matched[clipIndex] = entryIndex;
+        return true;
+      }
+    }
+    return false;
+  }
+  for (let index = 0; index < expected.length; index++) {
+    requireThat(assign(index, new Set()), `EDL entry ${index} has no distinct native clip matching its source, track, source trims, and timeline positions`);
+  }
+}
 export function verifyPNG(base64, width, height) {
   requireThat(typeof base64 === 'string' && /^[A-Za-z0-9+/]+={0,2}$/.test(base64) && base64.length % 4 === 0, 'Invalid PNG base64');
   const bytes = Buffer.from(base64, 'base64');
@@ -375,9 +436,8 @@ export async function runSuite(client, options, fixture) {
     const project = await data('premiere_get_project');
     requireThat(project.project_path === fixture.project && project.sequences?.some(s => s.id === execution.sequence_id), 'EDL sequence absent from disposable project');
     const timeline = await data('premiere_get_timeline', { sequence_id: execution.sequence_id });
-    const clips = [...(timeline.video_tracks || []), ...(timeline.audio_tracks || [])].flatMap(t => t.clips || []);
-    requireThat(timeline.sequence_id === execution.sequence_id && clips.length === execution.clips_placed && clips.length === result.edl.entries.length, 'EDL clip count differs from timeline readback');
-    for (const clip of clips) requireThat([fixture.video, fixture.audio].includes(clip.source_path), 'EDL referenced media outside disposable fixtures');
+    requireThat(execution.clips_placed === result.edl.entries.length, 'EDL clip count differs from execution result');
+    verifyEDLTimeline(timeline, execution.sequence_id, result.edl, result.scan_result?.assets, [fixture.video, fixture.audio]);
     return [{ parsed, result, timeline }];
   });
   return finish(report);
