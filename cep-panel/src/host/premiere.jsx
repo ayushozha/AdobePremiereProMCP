@@ -4600,8 +4600,10 @@ function closeProject(saveFirst) {
         var projectName = app.project.name || "";
 
         if (saveFirst === true || saveFirst === "true") {
-            var closeSaveResult = app.project.save();
-            if (closeSaveResult !== 0) return _err("Project save before close failed with status " + closeSaveResult);
+            var savedBeforeClose = JSON.parse(saveProject());
+            if (savedBeforeClose.success !== true) {
+                return _err("Project save before close failed: " + (savedBeforeClose.error || "unverified save"));
+            }
         }
 
         app.project.closeDocument();

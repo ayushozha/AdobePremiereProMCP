@@ -30,6 +30,7 @@ function fixture(status, options = {}) {
             }
             return status;
         },
+        closeDocument() { calls.push("closeDocument"); return true; },
     };
     // The ExtendScript Project API has no portable dirty-state readback.
     // Tests fail if save verification starts depending on a guessed property.
@@ -135,4 +136,40 @@ test("saveProjectAs validates its path before mutating the project", () => {
         assert.equal(dispatch("saveProjectAs", { path: requestedPath }).success, false);
     }
     assert.deepEqual(calls, []);
+});
+
+for (const status of [0, true]) {
+    test("closeProject saves and verifies before closing for status " + status, () => {
+        const { dispatch, calls } = fixture(status);
+        const result = dispatch("closeProject", { saveFirst: true });
+        assert.equal(result.success, true);
+        assert.equal(result.data.savedFirst, true);
+        assert.deepEqual(calls, ["save", "closeDocument"]);
+    });
+}
+
+for (const status of [false, 1, undefined]) {
+    test("closeProject never closes after failed save status " + String(status), () => {
+        const { dispatch, calls } = fixture(status);
+        const result = dispatch("closeProject", { saveFirst: "true" });
+        assert.equal(result.success, false);
+        assert.match(result.error, /save before close failed/);
+        assert.deepEqual(calls, ["save"]);
+    });
+}
+
+test("closeProject never closes after a successful status with missing file readback", () => {
+    const { dispatch, calls } = fixture(true, { save: (_project, files) => files.delete(originalPath) });
+    const result = dispatch("closeProject", { saveFirst: true });
+    assert.equal(result.success, false);
+    assert.match(result.error, /file is missing or empty/);
+    assert.deepEqual(calls, ["save"]);
+});
+
+test("closeProject without saveFirst retains the direct close behavior", () => {
+    const { dispatch, calls } = fixture(false, { unsaved: true });
+    const result = dispatch("closeProject", { saveFirst: false });
+    assert.equal(result.success, true);
+    assert.equal(result.data.savedFirst, false);
+    assert.deepEqual(calls, ["closeDocument"]);
 });
