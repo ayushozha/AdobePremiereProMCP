@@ -1,10 +1,12 @@
 # UXP migration and inspection prototype
 
-Status: partial implementation of [issue #8](https://github.com/ayushozha/AdobePremiereProMCP/issues/8), checked 2026-09-29. The production MCP bridge still uses CEP or standalone ExtendScript. The UXP prototype is separate and has not been loaded in Premiere during this validation run.
+Status: partial implementation of [issue #8](https://github.com/ayushozha/AdobePremiereProMCP/issues/8), checked 2026-09-30. The production MCP bridge still uses CEP or standalone ExtendScript. The UXP prototype is separate and has not been loaded in Premiere during this validation run.
 
 ## Current Adobe support
 
-Adobe documents UXP support in Premiere 25.6. It is no longer accurate to describe all Premiere UXP support as beta-only, or to divide CEP and UXP support solely by calendar year. Use the installed version and available APIs to select a bridge. This repository does not establish a verified CEP removal date.
+Adobe documents UXP support in Premiere 25.6. It is no longer accurate to describe all Premiere UXP support as beta-only, or to divide CEP and UXP support solely by calendar year. Use the installed version and available APIs to select a bridge.
+
+Adobe's [September 24, 2026 transition announcement](https://blog.developer.adobe.com/en/publish/2026/09/investing-in-the-future-of-creative-cloud-extensibility-uxp-comes-to-our-flagship-applications) specifies that Premiere stops accepting new CEP Marketplace submissions in December 2027, disables CEP by default in December 2028, and removes CEP from new flagship-app versions starting December 2029. ExtendScript itself is unaffected. These are different milestones; issue #8's original approximate 2027 deprecation claim should not be used as a removal deadline. Future Adobe changes should be checked before release planning.
 
 - [Adobe introduction and host support](https://developer.adobe.com/premiere-pro/uxp/introduction/)
 - [Manifest requirements](https://developer.adobe.com/premiere-pro/uxp/plugins/concepts/manifest/)
