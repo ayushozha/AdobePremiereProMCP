@@ -19448,15 +19448,17 @@ function setHighContrastMode(enabled) {
  * assembleFromEDL — Assemble timeline from EDL JSON.
  * edlJson: JSON string with {clips:[{file,inPoint,outPoint,trackIndex,position,transitionName,transitionDuration},...]}
  */
-function _mcpReadProjectItemRange(projectItem) {
+function _mcpReadProjectItemRange(projectItem, trackType) {
     if (!projectItem || !projectItem.getInPoint || !projectItem.getOutPoint) {
         return { error: "Premiere does not expose source marks for this project item" };
     }
     try {
-        var inPoint;
-        var outPoint;
-        try { inPoint = projectItem.getInPoint(4); } catch (ignoreTypedIn) { inPoint = projectItem.getInPoint(); }
-        try { outPoint = projectItem.getOutPoint(4); } catch (ignoreTypedOut) { outPoint = projectItem.getOutPoint(); }
+        // Getter selectors are 1=video and 2=audio. The setter's 4=all value
+        // is not a getter selector and can return unchanged video/default
+        // marks for an audio-only source instead of the requested audio range.
+        var mediaType = trackType === "audio" ? 2 : 1;
+        var inPoint = projectItem.getInPoint(mediaType);
+        var outPoint = projectItem.getOutPoint(mediaType);
         var inSeconds = _timeToSeconds(inPoint);
         var outSeconds = _timeToSeconds(outPoint);
         if (isNaN(inSeconds) || isNaN(outSeconds) || outSeconds <= inSeconds) {
@@ -19468,7 +19470,7 @@ function _mcpReadProjectItemRange(projectItem) {
     }
 }
 
-function _mcpSetProjectItemRange(projectItem, inSeconds, outSeconds) {
+function _mcpSetProjectItemRange(projectItem, inSeconds, outSeconds, trackType) {
     if (!projectItem || !projectItem.setInPoint || !projectItem.setOutPoint) {
         return { error: "Premiere cannot set source marks for this project item" };
     }
@@ -19476,13 +19478,14 @@ function _mcpSetProjectItemRange(projectItem, inSeconds, outSeconds) {
         return { error: "Invalid project item source range" };
     }
     try {
-        var current = _mcpReadProjectItemRange(projectItem);
+        var mediaType = trackType === "audio" ? 2 : 1;
+        var current = _mcpReadProjectItemRange(projectItem, trackType);
         if (current.error) return current;
         function setIn(value) {
-            try { return projectItem.setInPoint(value, 4); } catch (ignoreTypedIn) { return projectItem.setInPoint(value); }
+            return projectItem.setInPoint(value, mediaType);
         }
         function setOut(value) {
-            try { return projectItem.setOutPoint(value, 4); } catch (ignoreTypedOut) { return projectItem.setOutPoint(value); }
+            return projectItem.setOutPoint(value, mediaType);
         }
         function restoreCurrent() {
             try {
@@ -19504,7 +19507,7 @@ function _mcpSetProjectItemRange(projectItem, inSeconds, outSeconds) {
             if (setIn(inSeconds) === false) return { error: "Premiere rejected the source in point" };
             if (setOut(outSeconds) === false) { restoreCurrent(); return { error: "Premiere rejected the source out point; original marks were restored" }; }
         }
-        var actual = _mcpReadProjectItemRange(projectItem);
+        var actual = _mcpReadProjectItemRange(projectItem, trackType);
         if (actual.error) { restoreCurrent(); return { error: actual.error + "; original marks were restored" }; }
         if (Math.abs(actual.inPoint - inSeconds) > 0.02 || Math.abs(actual.outPoint - outSeconds) > 0.02) {
             restoreCurrent();
@@ -19612,7 +19615,7 @@ function assembleFromEDL(edlJson) {
                 }
             }
             if (!plan.item) { errors.push("Entry " + plan.entryIndex + ": imported source could not be resolved: " + plan.filePath); continue; }
-            var originalRange = _mcpReadProjectItemRange(plan.item);
+            var originalRange = _mcpReadProjectItemRange(plan.item, plan.trackType);
             if (originalRange.error) {
                 errors.push("Entry " + plan.entryIndex + ": " + originalRange.error);
                 continue;
@@ -19641,7 +19644,7 @@ function assembleFromEDL(edlJson) {
             var inserted = null;
             var sourceMarksChanged = current.hasIn || current.hasOut;
             if (sourceMarksChanged) {
-                var marked = _mcpSetProjectItemRange(current.item, current.effectiveIn, current.effectiveOut);
+                var marked = _mcpSetProjectItemRange(current.item, current.effectiveIn, current.effectiveOut, current.trackType);
                 if (marked.error) { errors.push("Entry " + current.entryIndex + ": " + marked.error); continue; }
             }
 
@@ -19653,7 +19656,7 @@ function assembleFromEDL(edlJson) {
                 errors.push("Entry " + current.entryIndex + ": overwrite failed: " + overwriteErr.message);
             } finally {
                 if (sourceMarksChanged) {
-                    var restored = _mcpSetProjectItemRange(current.item, current.originalRange.inPoint, current.originalRange.outPoint);
+                    var restored = _mcpSetProjectItemRange(current.item, current.originalRange.inPoint, current.originalRange.outPoint, current.trackType);
                     if (restored.error) errors.push("Entry " + current.entryIndex + ": source marks were not restored: " + restored.error);
                 }
             }
@@ -27678,14 +27681,14 @@ function mcpPlaceClip(argsJson) {
             var rawOutPoint = range.outPoint !== undefined ? range.outPoint : range.out_point;
             var inSeconds = _mcpTimecodeToSeconds(rawInPoint);
             var outSeconds = _mcpTimecodeToSeconds(rawOutPoint);
-            originalRange = _mcpReadProjectItemRange(projectItem);
+            originalRange = _mcpReadProjectItemRange(projectItem, trackType);
             if (originalRange.error) return _err(originalRange.error);
             var hasIn = _mcpTimecodeWasProvided(rawInPoint);
             var hasOut = _mcpTimecodeWasProvided(rawOutPoint);
             var effectiveIn = hasIn ? inSeconds : originalRange.inPoint;
             var effectiveOut = hasOut ? outSeconds : originalRange.outPoint;
             if (effectiveIn < 0 || effectiveOut <= effectiveIn) return _err("Invalid sourceRange: effective outPoint must follow inPoint");
-            var marked = _mcpSetProjectItemRange(projectItem, effectiveIn, effectiveOut);
+            var marked = _mcpSetProjectItemRange(projectItem, effectiveIn, effectiveOut, trackType);
             if (marked.error) return _err(marked.error);
             sourceMarksChanged = true;
         }
@@ -27698,7 +27701,7 @@ function mcpPlaceClip(argsJson) {
             overwriteError = placeErr;
         } finally {
             if (sourceMarksChanged) {
-                var restored = _mcpSetProjectItemRange(projectItem, originalRange.inPoint, originalRange.outPoint);
+                var restored = _mcpSetProjectItemRange(projectItem, originalRange.inPoint, originalRange.outPoint, trackType);
                 if (restored.error) {
                     if (placed && placed.clip) { try { placed.clip.remove(false, true); } catch (ignoreRestoreRollback) {} }
                     return _err("Source marks were not restored: " + restored.error);
