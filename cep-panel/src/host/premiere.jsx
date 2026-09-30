@@ -4518,17 +4518,44 @@ function openProject(path) {
 // ---------------------------------------------------------------------------
 // 3. saveProject() - Save current project
 // ---------------------------------------------------------------------------
+function _mcpSavedProjectReadback(expectedPath) {
+    if (!app.project || !app.project.path) return { error: "Saved project path is unavailable" };
+    var savedFile = new File(String(app.project.path));
+    var actualPath = String(savedFile.fsName);
+    var requestedPath = String((new File(String(expectedPath))).fsName);
+    // Windows paths are case insensitive; preserve exact case on other file
+    // systems so two differently named files cannot satisfy the same request.
+    var windows = typeof Folder !== "undefined" && Folder.fs === "Windows";
+    if ((windows ? actualPath.toLowerCase() : actualPath) !==
+        (windows ? requestedPath.toLowerCase() : requestedPath)) {
+        return { error: "Project save path readback mismatch: " + actualPath };
+    }
+    var fileSize = Number(savedFile.length);
+    if (!savedFile.exists || !isFinite(fileSize) || fileSize <= 0) {
+        return { error: "Saved project file is missing or empty: " + actualPath };
+    }
+    return { path: actualPath, fileSize: fileSize };
+}
+
 function saveProject() {
     try {
         if (!app.project) {
             return _err("No project is open");
         }
+        var expectedPath = String(app.project.path || "");
+        if (!expectedPath) return _err("Project has no saved path; use saveProjectAs before saving");
         var saveResult = app.project.save();
-        if (saveResult !== 0) return _err("Project save failed with status " + saveResult);
+        // API versions report numeric zero or boolean true on success. Do not
+        // accept false/undefined merely because an older file already exists.
+        if (saveResult !== 0 && saveResult !== true) return _err("Project save failed with status " + saveResult);
+        var saved = _mcpSavedProjectReadback(expectedPath);
+        if (saved.error) return _err(saved.error);
         return _ok({
             saved: true,
             projectName: app.project.name || "",
-            projectPath: app.project.path || ""
+            projectPath: saved.path,
+            fileSize: saved.fileSize,
+            saveStatus: saveResult
         });
     } catch (e) {
         return _err("saveProject failed: " + e.message);
@@ -4543,20 +4570,19 @@ function saveProjectAs(path) {
         if (!app.project) {
             return _err("No project is open");
         }
-        if (!path || path === "") {
+        if (typeof path !== "string" || path === "") {
             return _err("path is required");
         }
         var saveAsResult = app.project.saveAs(path);
-        if (saveAsResult !== 0) return _err("Project save-as failed with status " + saveAsResult);
-        var expectedProjectPath = (new File(String(path))).fsName;
-        var actualProjectPath = (new File(String(app.project.path || ""))).fsName;
-        if (String(actualProjectPath).toLowerCase() !== String(expectedProjectPath).toLowerCase()) {
-            return _err("Project save-as path readback mismatch: " + actualProjectPath);
-        }
+        if (saveAsResult !== 0 && saveAsResult !== true) return _err("Project save-as failed with status " + saveAsResult);
+        var saved = _mcpSavedProjectReadback(path);
+        if (saved.error) return _err(saved.error);
         return _ok({
             saved: true,
-            newPath: path,
-            projectName: app.project.name || ""
+            newPath: saved.path,
+            projectName: app.project.name || "",
+            fileSize: saved.fileSize,
+            saveStatus: saveAsResult
         });
     } catch (e) {
         return _err("saveProjectAs failed: " + e.message);
