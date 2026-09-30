@@ -482,7 +482,8 @@ function _mcpConfigureAndVerifySequence(sequence, requested) {
         } catch (ignoreQEFrameSize) {}
     }
 
-    if (requested.videoTracks !== undefined || requested.audioTracks !== undefined) {
+    if ((requested.videoTracks !== undefined && sequence.videoTracks.numTracks !== requested.videoTracks) ||
+        (requested.audioTracks !== undefined && sequence.audioTracks.numTracks !== requested.audioTracks)) {
         try { app.project.activeSequence = sequence; } catch (activateErr) {
             return { error: "Cannot activate the new sequence to configure tracks: " + activateErr.message };
         }
@@ -621,6 +622,79 @@ function getProjectState() {
 // ---------------------------------------------------------------------------
 // createSequence(paramsJson) - Create a new sequence
 // ---------------------------------------------------------------------------
+/** Resolve an online seed without modifying the project's source-item marks. */
+function _mcpSequenceSeed() {
+    var items = _mcpCollectProjectItems();
+    var fallback = null;
+    for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        try {
+            if (item.isSequence && item.isSequence()) continue;
+            if (item.isOffline && item.isOffline()) continue;
+            if (!_mcpMediaPath(item)) continue;
+            if (!fallback) fallback = item;
+            if (item.hasVideo && item.hasVideo()) return item;
+        } catch (ignoreSeed) {}
+    }
+    return fallback;
+}
+
+/** Identify one new sequence; ambiguity never authorizes deleting a sequence. */
+function _mcpResolveSeededSequence(previousIds, creationResult) {
+    var sequences = app.project.sequences;
+    var previousCount = previousIds.__mcpCount;
+    if (!sequences || sequences.numSequences !== previousCount + 1) {
+        return { error: "Expected exactly one new sequence; no cleanup was attempted" };
+    }
+    var candidate = null;
+    var oldCount = 0;
+    var seen = {};
+    for (var i = 0; i < sequences.numSequences; i++) {
+        var sequence = sequences[i];
+        var id = sequence ? String(sequence.sequenceID || "") : "";
+        if (!id || seen[id]) return { error: "Sequence identities are missing or duplicated; no cleanup was attempted" };
+        seen[id] = true;
+        if (previousIds[id]) oldCount++;
+        else {
+            if (candidate) return { error: "More than one new sequence was observed; no cleanup was attempted" };
+            candidate = sequence;
+        }
+    }
+    if (!candidate || oldCount !== previousCount) return { error: "Existing sequence identities changed; no cleanup was attempted" };
+    if (creationResult && creationResult.sequenceID && String(creationResult.sequenceID) !== String(candidate.sequenceID)) {
+        return { error: "Creation returned a different sequence identity; no cleanup was attempted" };
+    }
+    return { data: candidate };
+}
+
+/** Remove only seed placements from a proven newly created sequence. */
+function _mcpClearSequenceSeed(sequence, seed) {
+    var seedNode = String(seed.nodeId || "");
+    var seedPath = _mcpMediaPath(seed);
+    var collections = [sequence.videoTracks, sequence.audioTracks];
+    for (var type = 0; type < collections.length; type++) {
+        var tracks = collections[type];
+        if (!tracks || typeof tracks.numTracks !== "number") return { error: "Cannot inspect the new sequence's tracks" };
+        for (var t = 0; t < tracks.numTracks; t++) {
+            var track = tracks[t];
+            if (!track || !track.clips || typeof track.clips.numItems !== "number") return { error: "Cannot inspect the new sequence's seed clips" };
+            while (track.clips.numItems > 0) {
+                var before = track.clips.numItems;
+                var clip = track.clips[before - 1];
+                var item = clip ? clip.projectItem : null;
+                var sameSeed = item && (item === seed ||
+                    (seedNode && String(item.nodeId || "") === seedNode) ||
+                    (seedPath && _mcpMediaPath(item) === seedPath));
+                if (!sameSeed) return { error: "The new sequence contains a clip outside its creation seed" };
+                if (typeof clip.remove !== "function") return { error: "Premiere cannot remove the sequence's creation seed" };
+                clip.remove(false, false);
+                if (track.clips.numItems !== before - 1) return { error: "Premiere did not remove the sequence's creation seed" };
+            }
+        }
+    }
+    return { data: { empty: true } };
+}
+
 function createSequence(paramsJson) {
     var createdSequence = null;
     var previousActiveSequence = null;
@@ -651,11 +725,22 @@ function createSequence(paramsJson) {
         if (isNaN(videoTracks) || videoTracks !== videoRaw || videoTracks < 1 || videoTracks > 64) return _err("videoTracks must be an integer between 1 and 64");
         if (isNaN(audioTracks) || audioTracks !== audioRaw || audioTracks < 1 || audioTracks > 64) return _err("audioTracks must be an integer between 1 and 64");
 
+        if (typeof app.project.createNewSequenceFromClips !== "function") {
+            return _err("Unattended sequence creation is unsupported in this Premiere version. Use createSequenceFromPreset with an installed .sqpreset.");
+        }
+        var seed = _mcpSequenceSeed();
+        if (!seed) return _err("Import an online video or audio file before creating an empty sequence, or use createSequenceFromPreset with an installed .sqpreset.");
         var previousIds = _mcpCaptureSequenceIds();
-        var internalId = "mcp_sequence_" + (new Date()).getTime();
-        app.project.createNewSequence(name, internalId);
-        createdSequence = _mcpFindNewSequence(previousIds);
-        if (!createdSequence) return _err("Premiere did not create a distinct sequence");
+        // Adobe's CEP sample documents this non-modal creation route. The seed
+        // is removed only from the new sequence, never from the source project.
+        var creationResult = app.project.createNewSequenceFromClips(name, [seed], app.project.rootItem);
+        var resolved = _mcpResolveSeededSequence(previousIds, creationResult);
+        if (resolved.error) return _err(resolved.error);
+        createdSequence = resolved.data;
+        var cleared = _mcpClearSequenceSeed(createdSequence, seed);
+        if (cleared.error) throw new Error(cleared.error);
+        var activated = _mcpActivateSequenceAndVerify(createdSequence);
+        if (activated.error) throw new Error(activated.error);
 
         var configured = _mcpConfigureAndVerifySequence(createdSequence, {
             width: width,
@@ -686,13 +771,20 @@ function createSequence(paramsJson) {
             fps: actual.fps,
             videoTrackCount: actual.videoTracks,
             audioTrackCount: actual.audioTracks,
-            timebase: createdSequence.timebase || ""
+            timebase: createdSequence.timebase || "",
+            empty: true,
+            verified: true
         });
     } catch (e) {
-        if (createdSequence && _mcpDeleteSequenceQuietly(createdSequence) && previousActiveSequence) {
-            try { app.project.activeSequence = previousActiveSequence; } catch (ignoreCatchActive) {}
+        var cleanup = "";
+        if (createdSequence) {
+            var removed = _mcpDeleteSequenceQuietly(createdSequence);
+            cleanup = removed ? "; the invalid sequence was deleted" : "; cleanup failed, so inspect the project before continuing";
+            if (removed && previousActiveSequence) {
+                try { app.project.activeSequence = previousActiveSequence; } catch (ignoreCatchActive) {}
+            }
         }
-        return _err("createSequence failed: " + e.message);
+        return _err("createSequence failed: " + e.message + cleanup);
     }
 }
 

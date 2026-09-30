@@ -173,24 +173,9 @@ function closeProject(argsJson) {
 // ── Sequences ─────────────────────────────────────────────────────────
 
 function createSequence(argsJson) {
-    try {
-        if (!app.project) return _err("No project is open. Open or create a project first.");
-        var args = {};
-        if (argsJson && argsJson !== "") {
-            var parsed = _parseArgs(argsJson);
-            if (!parsed.error) args = parsed;
-        }
-        var name = args.name || "New Sequence";
-        app.project.createNewSequence(name, name);
-        var seq = _getActiveSequence();
-        if (!seq) return _err("Sequence '" + name + "' was created but could not be activated.");
-        return _ok({
-            name: seq.name,
-            id: seq.sequenceID,
-            width: seq.frameSizeHorizontal,
-            height: seq.frameSizeVertical
-        });
-    } catch (e) { return _err("Failed to create sequence '" + (name || "New Sequence") + "': " + e.message); }
+    // The full dispatcher owns settings/readback and unattended creation.
+    // Calling createNewSequence here opens Premiere's New Sequence dialog.
+    return _err("Sequence creation requires the full host dispatcher. Use evalCommand with createSequence, or update the CEP panel.");
 }
 
 function getActiveSequence() {
