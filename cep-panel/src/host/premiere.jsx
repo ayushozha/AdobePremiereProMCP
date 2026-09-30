@@ -14134,16 +14134,47 @@ function listSequencePresets() {
 // 2. createSequenceFromPreset
 function createSequenceFromPreset(name, presetPath) {
     try {
-        if (!name) return _err("name is required");
-        if (!presetPath) return _err("presetPath is required");
+        // mcpDispatch maps the Go JSON object's name/presetPath fields to these
+        // positional arguments, including the MCP schema's preset_path alias.
+        if (typeof name !== "string" || !name) return _err("name is required");
+        if (typeof presetPath !== "string" || !presetPath) return _err("presetPath is required");
         if (!new File(presetPath).exists) return _err("Preset file not found: " + presetPath);
         if (!app.project) return _err("No project open");
-        if (typeof qe !== "undefined" && qe.project) {
-            qe.project.newSequence(name, presetPath);
-            return _ok({created: true, name: name, presetPath: presetPath});
+        if (!app.project.sequences) return _err("Project sequence collection is unavailable");
+        if (typeof app.enableQE === "function") app.enableQE();
+        if (typeof qe === "undefined" || !qe.project || typeof qe.project.newSequence !== "function") {
+            return _err("Creating a sequence from a preset requires the QE DOM");
         }
-        app.project.createNewSequenceFromClips(name, [], presetPath);
-        return _ok({created: true, name: name, presetPath: presetPath, method: "fallback"});
+
+        var previousActiveSequence = app.project.activeSequence;
+        var previousIds = _mcpCaptureSequenceIds();
+        qe.project.newSequence(name, presetPath);
+        if (app.project.sequences.numSequences !== previousIds.__mcpCount + 1) {
+            return _err("Could not verify preset sequence creation: expected one new sequence; inspect the project before retrying");
+        }
+        var createdSequence = _mcpFindNewSequence(previousIds);
+        var createdId = createdSequence ? String(createdSequence.sequenceID || "") : "";
+        if (!createdId || previousIds[createdId]) {
+            return _err("Could not verify a distinct preset sequence ID; inspect the project before retrying");
+        }
+        if (String(createdSequence.name || "") !== name) {
+            var deleted = _mcpDeleteSequenceQuietly(createdSequence);
+            if (deleted && previousActiveSequence) {
+                try { app.project.activeSequence = previousActiveSequence; } catch (ignoreRestoreActive) {}
+            }
+            return _err("Premiere created the preset sequence with an unexpected name" +
+                (deleted ? "; it was deleted" : "; cleanup failed, so inspect the project before retrying"));
+        }
+        return _ok({
+            created: true,
+            name: String(createdSequence.name),
+            presetPath: presetPath,
+            sequenceID: createdId,
+            sequenceIndex: _mcpSequenceIndex(createdSequence),
+            settings: _mcpActualSequenceSpec(createdSequence),
+            method: "qe",
+            creationVerified: true
+        });
     } catch (e) { return _err("createSequenceFromPreset failed: " + e.message); }
 }
 

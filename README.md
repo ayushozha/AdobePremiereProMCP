@@ -101,7 +101,7 @@ Full architecture diagram: [`docs/architecture.md`](docs/architecture.md)
 ## Project Structure
 
 ```
-PremierProMCP/
+AdobePremiereProMCP/
 +-- go-orchestrator/          # Go -- MCP server & task orchestrator
 |   +-- cmd/server/           #   Entry point
 |   +-- internal/             #   Core packages

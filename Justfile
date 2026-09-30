@@ -1,5 +1,7 @@
 # PremierPro MCP Server — Unified Build System
 
+exe_suffix := if os() == "windows" { ".exe" } else { "" }
+
 default:
     @just --list
 
@@ -19,7 +21,7 @@ proto-lint:
 
 # Build the Go orchestrator
 go-build: proto
-    cd go-orchestrator && go build -o bin/premierpro-mcp ./cmd/server
+    cd go-orchestrator && go build -o bin/premierpro-mcp{{exe_suffix}} ./cmd/server
 
 # Run the Go orchestrator
 go-run:
