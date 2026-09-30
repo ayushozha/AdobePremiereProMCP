@@ -15,6 +15,7 @@ function fixture(status, options = {}) {
     const calls = [];
     const project = {
         name: "Fixture",
+        documentID: "fixture-document",
         path: options.unsaved ? "" : originalPath,
         save() {
             calls.push("save");
@@ -30,13 +31,22 @@ function fixture(status, options = {}) {
             }
             return status;
         },
-        closeDocument() { calls.push("closeDocument"); return true; },
+        closeDocument(save, prompt) {
+            calls.push("closeDocument");
+            assert.equal(save, 0);
+            assert.equal(prompt, 0);
+            context.app.project = null;
+            openProjects.splice(0, 1);
+            return true;
+        },
     };
     // The ExtendScript Project API has no portable dirty-state readback.
     // Tests fail if save verification starts depending on a guessed property.
     Object.defineProperty(project, "isDirty", { get() { assert.fail("unsupported dirty-state access"); } });
+    const openProjects = [project];
+    Object.defineProperty(openProjects, "numProjects", { get() { return openProjects.length; } });
     const context = vm.createContext({
-        app: { project },
+        app: { project, projects: openProjects },
         Folder: { fs: options.windows ? "Windows" : "Macintosh" },
         File: function (filename) {
             this.fsName = filename;

@@ -4592,12 +4592,67 @@ function saveProjectAs(path) {
 // ---------------------------------------------------------------------------
 // 5. closeProject(saveFirst) - Close current project, optionally saving
 // ---------------------------------------------------------------------------
+/** Match a captured document identity without dereferencing a closed handle. */
+function _mcpClosingProjectMatch(candidate, target, documentID, projectPath) {
+    if (!candidate) return false;
+    if (candidate === target) return true;
+    var candidateID = String(candidate.documentID || "");
+    if (documentID && candidateID) return documentID === candidateID;
+    var candidatePath = String(candidate.path || "");
+    if (projectPath && candidatePath) {
+        var expected = _mcpNormalizePath(projectPath);
+        var actual = _mcpNormalizePath(candidatePath);
+        var windows = typeof Folder !== "undefined" && Folder.fs === "Windows";
+        return (windows ? expected.toLowerCase() : expected) === (windows ? actual.toLowerCase() : actual);
+    }
+    return null;
+}
+
+function _mcpClosingProjectCount(target, documentID, projectPath) {
+    var projects = app.projects;
+    if (!projects || typeof projects.numProjects !== "number" ||
+        !isFinite(projects.numProjects) || projects.numProjects < 0 || projects.numProjects !== Math.floor(projects.numProjects)) {
+        return { error: "Open-project collection is unavailable; project closure cannot be verified" };
+    }
+    var matches = 0;
+    for (var i = 0; i < projects.numProjects; i++) {
+        if (!projects[i]) return { error: "Open-project readback is incomplete; project closure cannot be verified" };
+        var match = _mcpClosingProjectMatch(projects[i], target, documentID, projectPath);
+        if (match === null) return { error: "An open project has an unknown identity; project closure cannot be verified" };
+        if (match) matches++;
+    }
+    return { count: matches, total: projects.numProjects };
+}
+
+/** Read-only diagnostic for the document identity used by close verification. */
+function _mcpProjectCloseReadback() {
+    try {
+        var target = app.project;
+        if (!target) return _err("No project is open");
+        var documentID = String(target.documentID || "");
+        var projectPath = String(target.path || "");
+        var state = _mcpClosingProjectCount(target, documentID, projectPath);
+        if (state.error) return _err(state.error);
+        return _ok({ documentID: documentID, projectPath: projectPath,
+            openProjects: state.total, matchingDocuments: state.count });
+    } catch (e) {
+        return _err("Project close readback failed: " + e.message);
+    }
+}
+
 function closeProject(saveFirst) {
     try {
         if (!app.project) {
             return _err("No project is open");
         }
-        var projectName = app.project.name || "";
+        var target = app.project;
+        var projectName = target.name || "";
+        var documentID = String(target.documentID || "");
+        var projectPath = String(target.path || "");
+        if (!documentID && !projectPath) return _err("Current project identity is unavailable; project closure cannot be verified");
+        var before = _mcpClosingProjectCount(target, documentID, projectPath);
+        if (before.error) return _err(before.error);
+        if (before.count !== 1) return _err("Current project identity is not unique in the open-project collection");
 
         if (saveFirst === true || saveFirst === "true") {
             var savedBeforeClose = JSON.parse(saveProject());
@@ -4606,12 +4661,25 @@ function closeProject(saveFirst) {
             }
         }
 
-        app.project.closeDocument();
+        if (_mcpClosingProjectMatch(app.project, target, documentID, projectPath) !== true) {
+            return _err("The active project changed before closing; no close was attempted");
+        }
+        // Saving was already verified above. Suppress a second save and dirty
+        // prompt so an unattended tool call cannot wait on a dialog.
+        var closeResult = target.closeDocument(0, 0);
+        if (closeResult !== 0 && closeResult !== true) return _err("Project close failed with status " + closeResult);
+        var after = _mcpClosingProjectCount(target, documentID, projectPath);
+        if (after.error) return _err(after.error);
+        if (after.count !== 0 || _mcpClosingProjectMatch(app.project, target, documentID, projectPath) === true) {
+            return _err("Premiere reported close success but the requested project remains open");
+        }
 
         return _ok({
             closed: true,
             projectName: projectName,
-            savedFirst: (saveFirst === true || saveFirst === "true")
+            savedFirst: (saveFirst === true || saveFirst === "true"),
+            closeStatus: closeResult,
+            verified: true
         });
     } catch (e) {
         return _err("closeProject failed: " + e.message);
