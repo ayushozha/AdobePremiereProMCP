@@ -46,21 +46,29 @@ func (m *mockMediaClient) DetectScenes(_ context.Context, _ string, _ float64) (
 // ---------------------------------------------------------------------------
 
 type mockIntelClient struct {
-	parseResult  *ParsedScript
-	parseErr     error
-	matchResult  *MatchResult
-	matchErr     error
-	edlResult    *EDL
-	edlErr       error
-	pacingResult *PacingResult
-	pacingErr    error
+	generatedSegments []*ScriptSegment
+	generatedAssets   []*AssetInfo
+	generatedMatches  []*AssetMatch
+	generatedSettings *EDLSettings
+	parseResult       *ParsedScript
+	parseErr          error
+	matchResult       *MatchResult
+	matchErr          error
+	edlResult         *EDL
+	edlErr            error
+	pacingResult      *PacingResult
+	pacingErr         error
 }
 
 func (m *mockIntelClient) ParseScript(_ context.Context, _ string, _ string, _ string) (*ParsedScript, error) {
 	return m.parseResult, m.parseErr
 }
 
-func (m *mockIntelClient) GenerateEDL(_ context.Context, _ []*ScriptSegment, _ []*AssetInfo, _ *EDLSettings) (*EDL, error) {
+func (m *mockIntelClient) GenerateEDL(_ context.Context, segments []*ScriptSegment, assets []*AssetInfo, matches []*AssetMatch, settings *EDLSettings) (*EDL, error) {
+	m.generatedSegments = segments
+	m.generatedAssets = assets
+	m.generatedMatches = matches
+	m.generatedSettings = settings
 	return m.edlResult, m.edlErr
 }
 
@@ -77,6 +85,9 @@ func (m *mockIntelClient) AnalyzePacing(_ context.Context, _ *EDL, _ string) (*P
 // ---------------------------------------------------------------------------
 
 type mockPremiereClient struct {
+	executedEDL     *EDL
+	executeEDLCalls int
+	exportCalls     int
 	pingResult      *PingResult
 	pingErr         error
 	projectState    *ProjectState
@@ -147,10 +158,13 @@ func (m *mockPremiereClient) GetTimelineState(_ context.Context, _ string) (*Tim
 }
 
 func (m *mockPremiereClient) ExportSequence(_ context.Context, _ *ExportParams) (*ExportResult, error) {
+	m.exportCalls++
 	return m.exportResult, m.exportErr
 }
 
-func (m *mockPremiereClient) ExecuteEDL(_ context.Context, _ *EDL) (*EDLExecutionResult, error) {
+func (m *mockPremiereClient) ExecuteEDL(_ context.Context, edl *EDL) (*EDLExecutionResult, error) {
+	m.executedEDL = edl
+	m.executeEDLCalls++
 	return m.edlExecResult, m.edlExecErr
 }
 

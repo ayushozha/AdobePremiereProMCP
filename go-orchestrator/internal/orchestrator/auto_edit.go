@@ -214,7 +214,10 @@ func (e *Engine) AutoEdit(ctx context.Context, params *AutoEditParams) (*AutoEdi
 		e.logger.Debug("auto_edit: using default EDL settings")
 	}
 
-	edl, err := e.intel.GenerateEDL(ctx, parsedScript.Segments, scanResult.Assets, edlSettings)
+	edl, err := e.intel.GenerateEDL(ctx, parsedScript.Segments, scanResult.Assets, matchResult.Matches, edlSettings)
+	if err == nil && (edl == nil || len(edl.Entries) == 0) {
+		err = fmt.Errorf("EDL generation returned no entries")
+	}
 	if err != nil {
 		step3Duration := time.Since(step3Start)
 		result.Steps = append(result.Steps, &StepStatus{
@@ -251,7 +254,27 @@ func (e *Engine) AutoEdit(ctx context.Context, params *AutoEditParams) (*AutoEdi
 		zap.Int("entries", len(edl.Entries)),
 	)
 
-	execResult, err := e.premiere.ExecuteEDL(ctx, edl)
+	// Scanner asset IDs are opaque catalog identifiers, not Premiere node IDs.
+	// Keep them in the result, but execute with exact paths from the scan.
+	executionEDL, err := edlForPremiereExecution(edl, scanResult.Assets)
+	if err != nil {
+		result.Steps = append(result.Steps, &StepStatus{
+			Name: "execute_edl", Status: "failed", Duration: time.Since(step4Start), Error: err.Error(),
+		})
+		result.TotalDuration = time.Since(pipelineStart)
+		return result, fmt.Errorf("auto_edit step 4 (resolve sources): %w", err)
+	}
+	execResult, err := e.premiere.ExecuteEDL(ctx, executionEDL)
+	result.ExecutionResult = execResult
+	if err == nil {
+		if execResult == nil {
+			err = fmt.Errorf("Premiere returned no EDL execution result")
+		} else if execResult.Status != "completed" || execResult.SequenceID == "" || len(execResult.Errors) != 0 ||
+			execResult.ClipsPlaced != uint32(len(executionEDL.Entries)) {
+			err = fmt.Errorf("Premiere did not complete EDL execution: status %q, sequence %q, placed %d of %d clips, errors: %v",
+				execResult.Status, execResult.SequenceID, execResult.ClipsPlaced, len(executionEDL.Entries), execResult.Errors)
+		}
+	}
 	if err != nil {
 		step4Duration := time.Since(step4Start)
 		result.Steps = append(result.Steps, &StepStatus{
@@ -265,7 +288,6 @@ func (e *Engine) AutoEdit(ctx context.Context, params *AutoEditParams) (*AutoEdi
 		return result, fmt.Errorf("auto_edit step 4 (execute EDL): %w", err)
 	}
 
-	result.ExecutionResult = execResult
 	result.Steps = append(result.Steps, &StepStatus{
 		Name:     "execute_edl",
 		Status:   "completed",
@@ -371,6 +393,39 @@ func (e *Engine) AutoEdit(ctx context.Context, params *AutoEditParams) (*AutoEdi
 	)
 
 	return result, nil
+}
+
+func edlForPremiereExecution(edl *EDL, assets []*AssetInfo) (*EDL, error) {
+	if edl == nil || len(edl.Entries) == 0 {
+		return nil, fmt.Errorf("cannot execute an empty EDL")
+	}
+	byID := make(map[string][]*AssetInfo)
+	for _, asset := range assets {
+		if asset != nil && asset.ID != "" {
+			byID[asset.ID] = append(byID[asset.ID], asset)
+		}
+	}
+	execution := *edl
+	execution.Entries = make([]*EDLEntry, len(edl.Entries))
+	for index, entry := range edl.Entries {
+		if entry == nil || entry.SourceAssetID == "" {
+			return nil, fmt.Errorf("EDL entry %d has no source asset ID", index)
+		}
+		candidates := byID[entry.SourceAssetID]
+		if len(candidates) == 0 {
+			return nil, fmt.Errorf("EDL entry %d source asset %q is absent from the scan", index, entry.SourceAssetID)
+		}
+		if len(candidates) != 1 {
+			return nil, fmt.Errorf("EDL entry %d source asset %q is ambiguous in the scan", index, entry.SourceAssetID)
+		}
+		if candidates[0].FilePath == "" {
+			return nil, fmt.Errorf("EDL entry %d source asset %q has no file path", index, entry.SourceAssetID)
+		}
+		copyEntry := *entry
+		copyEntry.SourceAssetID = candidates[0].FilePath
+		execution.Entries[index] = &copyEntry
+	}
+	return &execution, nil
 }
 
 // countStepsByStatus counts how many steps have a given status string.

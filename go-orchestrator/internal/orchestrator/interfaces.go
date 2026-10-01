@@ -28,7 +28,7 @@ type IntelClient interface {
 	ParseScript(ctx context.Context, text string, filePath string, format string) (*ParsedScript, error)
 
 	// GenerateEDL produces an edit decision list from matched segments and assets.
-	GenerateEDL(ctx context.Context, segments []*ScriptSegment, assets []*AssetInfo, settings *EDLSettings) (*EDL, error)
+	GenerateEDL(ctx context.Context, segments []*ScriptSegment, assets []*AssetInfo, matches []*AssetMatch, settings *EDLSettings) (*EDL, error)
 
 	// MatchAssets pairs script segments with the best available media assets.
 	MatchAssets(ctx context.Context, segments []*ScriptSegment, assets []*AssetInfo, strategy string) (*MatchResult, error)
