@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, mkdirSync, symlinkSync, rmSync, realpathSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, symlinkSync, rmSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseArgs, runSuite, exitCode, decodeResult, verifyTimeline, verifyEDLTimeline, verifyPNG, validateFixture, prepareFixtures } from './e2e-premiere.mjs';
 
 const textResult = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }] });
@@ -233,12 +234,57 @@ test('real generated fixtures decode, repeat exactly, resist overwrite and detec
     assert.equal(first.files['media/e2e_test_pattern.mp4'].probe.streams[0].codec_name, 'h264');
     assert.equal(first.files['media/e2e_tone.wav'].probe.streams[0].codec_name, 'pcm_s16le');
     assert.equal(Number(first.files['media/e2e_test_pattern.mp4'].probe.format.duration), 8);
+    assert.equal(readFileSync(join(base, 'first/script.txt'), 'utf8'), 'B-ROLL: "e2e_test_pattern.mp4"\n');
     for (const name of ['media/e2e_test_pattern.mp4', 'media/e2e_tone.wav', 'script.txt']) assert.equal(first.files[name].sha256, second.files[name].sha256);
     assert.throws(() => prepareFixtures(join(base, 'first')), /EEXIST/);
     writeFileSync(first.project, 'test-only placeholder; never opened in Premiere');
     assert.equal(validateFixture(join(base, 'first'), first.project).sequence, 'MCP-E2E-fixture');
     writeFileSync(join(base, 'first', 'media/e2e_tone.wav'), 'tampered');
     assert.throws(() => validateFixture(join(base, 'first'), first.project), /hash mismatch/);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+const intelligenceRoot = fileURLToPath(new URL('../python-intelligence/', import.meta.url));
+const fixturePython = process.env.E2E_PYTHON || 'python3';
+const fixturePythonReady = spawnSync(fixturePython, ['-c', 'import sys; assert sys.version_info >= (3, 12); import pydantic'], { cwd: intelligenceRoot }).status === 0;
+
+test('generated script uses the real parser and matches only its exact fixture video', {
+  skip: !fixturePythonReady ? 'Requires intelligence Python3.12+pydantic (set E2E_PYTHON)' :
+    spawnSync(process.env.FFMPEG || 'ffmpeg', ['-version']).status !== 0 || spawnSync(process.env.FFPROBE || 'ffprobe', ['-version']).status !== 0,
+}, () => {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'premiere-e2e-script-')));
+  try {
+    prepareFixtures(join(base, 'fixture'));
+    const script = readFileSync(join(base, 'fixture/script.txt'), 'utf8');
+    const pythonCheck = String.raw`
+import json, sys
+from pathlib import Path
+from src.parser.script_parser import ScriptParser
+from src.matching.matcher import AssetMatcher
+from src.models import AssetInfo, AssetType, SegmentType
+request = json.load(sys.stdin)
+parser = ScriptParser()
+matcher = AssetMatcher()
+matcher.embedding_matcher._available = False  # Never call a paid embedding API.
+video = AssetInfo(id='fixture-video', file_name=Path(request['video']).name, file_path=request['video'], asset_type=AssetType.VIDEO)
+audio = AssetInfo(id='fixture-audio', file_name=Path(request['audio']).name, file_path=request['audio'], asset_type=AssetType.AUDIO)
+similar = AssetInfo(id='similar-video', file_name='e2e_test_pattern_backup.mp4', file_path=str(Path(request['video']).with_name('e2e_test_pattern_backup.mp4')), asset_type=AssetType.VIDEO)
+for format_hint in ['youtube', 'auto']:
+    parsed = parser.parse(request['script'], format_hint=format_hint)
+    assert [s.type for s in parsed.segments] == [SegmentType.BROLL], parsed
+    result = matcher.match(parsed.segments, [video, audio, similar])
+    assert [(m.asset_id, m.confidence) for m in result.matches] == [('fixture-video', 1.0)], result
+    assert not result.unmatched, result
+    missing = matcher.match(parsed.segments, [audio, similar])
+    assert not missing.matches and len(missing.unmatched) == 1, missing
+print(json.dumps({'segmentType':'broll', 'matchedAsset':'fixture-video', 'confidence':1.0, 'unrelatedMatches':0}))
+`;
+    const checked = spawnSync(fixturePython, ['-c', pythonCheck], {
+      cwd: intelligenceRoot, encoding: 'utf8', timeout: 10000,
+      input: JSON.stringify({ script, video: join(base, 'fixture/media/e2e_test_pattern.mp4'), audio: join(base, 'fixture/media/e2e_tone.wav') }),
+    });
+    assert.equal(checked.status, 0, checked.stderr || checked.error?.message);
+    assert.deepEqual(JSON.parse(checked.stdout), { segmentType: 'broll', matchedAsset: 'fixture-video', confidence: 1, unrelatedMatches: 0 });
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 

@@ -146,6 +146,9 @@ class AssetMatcher:
         strategy: MatchStrategy,
     ) -> list[ScoredMatch]:
         """Return all ``ScoredMatch`` entries for a single segment."""
+        explicit = self.keyword_matcher.match_explicit_references(segment, assets)
+        if explicit is not None:
+            return explicit
         match strategy:
             case MatchStrategy.KEYWORD:
                 return self.keyword_matcher.match(segment, assets)

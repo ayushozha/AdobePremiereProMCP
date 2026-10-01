@@ -93,7 +93,7 @@ export function prepareFixtures(directory) {
     decodeMedia(file);
     files[name] = { sha256: sha256(readFileSync(file)), probe: probe(file) };
   }
-  writeFileSync(join(root, 'script.txt'), 'INTRO\nShow e2e_test_pattern test pattern footage for four seconds.\n[B-ROLL: e2e_test_pattern]\n', { flag: 'wx' });
+  writeFileSync(join(root, 'script.txt'), 'B-ROLL: "e2e_test_pattern.mp4"\n', { flag: 'wx' });
   files['script.txt'] = { sha256: sha256(readFileSync(join(root, 'script.txt'))) };
   const manifest = { schema: 1, purpose: PURPOSE, project: join(root, 'MCP-E2E-disposable.prproj'), sequence: 'MCP-E2E-fixture', files, ffmpeg: command(ffmpeg, ['-version']).split('\n')[0] };
   writeFileSync(join(root, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx' });
