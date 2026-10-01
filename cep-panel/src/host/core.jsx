@@ -156,25 +156,11 @@ function getProjectInfo() {
 function getProjectState() { return getProjectInfo(); }
 
 function newProject(argsJson) {
-    try {
-        var args = _parseArgs(argsJson, ["path"]);
-        if (args.error) return _err(args.error);
-        app.newProject(args.path);
-        return _ok({ message: "Project created", path: args.path });
-    } catch (e) { return _err("Failed to create project at '" + (args && args.path ? args.path : "unknown") + "': " + e.message); }
+    return _err("Project creation requires the full host dispatcher for document identity and focus verification. Use evalCommand with newProject, or update the CEP panel.");
 }
 
 function openProject(argsJson) {
-    try {
-        var args = _parseArgs(argsJson, ["path"]);
-        if (args.error) return _err(args.error);
-        var f = new File(args.path);
-        if (!f.exists) return _err("Project file not found: " + args.path);
-        app.openDocument(args.path);
-        var projName = "";
-        try { projName = app.project.name; } catch (e1) {}
-        return _ok({ message: "Project opened: " + projName, path: args.path, name: projName });
-    } catch (e) { return _err("Failed to open project '" + (args && args.path ? args.path : "unknown") + "': " + e.message); }
+    return _err("Project opening requires the full host dispatcher for document identity and focus verification. Use evalCommand with openProject, or update the CEP panel.");
 }
 
 function saveProject() {

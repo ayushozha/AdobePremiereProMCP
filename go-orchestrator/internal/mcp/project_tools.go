@@ -17,7 +17,7 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_new_project",
-			gomcp.WithDescription("Create a new, empty Premiere Pro project at the specified file path. The path must end with '.prproj'. Any intermediate directories must already exist. The new project becomes the active project. If another project is already open, it will be closed (you may want to save first with premiere_save_project)."),
+			gomcp.WithDescription("Create a new, empty Premiere Pro project at a new file path ending with '.prproj'. Intermediate directories must already exist. Other open projects are preserved. Success requires verified document identity, saved file, and active project path. If creation succeeds but the project is inactive, the tool returns an error with its identity: focus its Project panel, then recheck with premiere_open_project. Do not repeat creation."),
 			gomcp.WithString("path",
 				gomcp.Required(),
 				gomcp.Description("Absolute file path for the new project, ending with .prproj (e.g. '/Users/me/Projects/NewEdit.prproj'). Parent directories must exist."),
@@ -31,7 +31,7 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_open_project",
-			gomcp.WithDescription("Open an existing Premiere Pro project file (.prproj). Closes any currently open project. If there are unsaved changes, Premiere may prompt to save. After opening, use premiere_get_project_info to inspect the project structure."),
+			gomcp.WithDescription("Open an existing Premiere Pro project file (.prproj), or verify it without reopening if it is already open. Other open projects are preserved. Success requires the requested document identity and path to be active. If it is open but inactive, focus its Project panel and repeat premiere_open_project to verify before editing. Use premiere_get_project_info to inspect the active project structure."),
 			gomcp.WithString("path",
 				gomcp.Required(),
 				gomcp.Description("Absolute path to the .prproj file to open (e.g. '/Users/me/Projects/MyEdit.prproj'). The file must exist."),
@@ -69,7 +69,7 @@ func registerProjectMgmtTools(s *server.MCPServer, orch Orchestrator, logger *za
 	// -----------------------------------------------------------------------
 	s.AddTool(
 		gomcp.NewTool("premiere_close_project",
-			gomcp.WithDescription("Close the currently open Premiere Pro project. Optionally save before closing. Premiere Pro remains running with no project open. Use premiere_open_project or premiere_new_project to work with a project afterward."),
+			gomcp.WithDescription("Close only the currently active Premiere Pro project, optionally saving and verifying the save first. Other open projects are preserved and Premiere Pro remains running. Closure is verified against the requested document identity; failure is reported if it remains open. Use premiere_open_project to verify the next project is active before editing."),
 			gomcp.WithBoolean("save_first",
 				gomcp.Description("If true, save the project before closing. If false (default), close without saving and discard unsaved changes."),
 			),

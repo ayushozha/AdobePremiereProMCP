@@ -4481,45 +4481,139 @@ function _findItemByPath(itemPath) {
 }
 
 // ---------------------------------------------------------------------------
-// 1. newProject(path) - Create a new project at the given path
+// Project lifecycle: document creation/opening does not guarantee panel focus.
+// Never infer the requested document from app.project or close another project.
 // ---------------------------------------------------------------------------
-function newProject(path) {
-    try {
-        if (!path || path === "") {
-            return _err("path is required");
+function _mcpProjectLifecyclePath(path) {
+    var canonical = String((new File(String(path))).fsName);
+    return typeof Folder !== "undefined" && Folder.fs === "Windows" ? canonical.toLowerCase() : canonical;
+}
+
+function _mcpProjectLifecycleSnapshot() {
+    var projects = app.projects;
+    if (!projects || typeof projects.numProjects !== "number" || !isFinite(projects.numProjects) ||
+        projects.numProjects < 0 || projects.numProjects !== Math.floor(projects.numProjects)) {
+        throw new Error("Open-project collection is unavailable; document identity cannot be verified");
+    }
+    var state = [];
+    var ids = {};
+    for (var i = 0; i < projects.numProjects; i++) {
+        var project = projects[i];
+        var id = project ? String(project.documentID || "") : "";
+        if (!project || !id) throw new Error("Open-project readback has an unknown document identity");
+        if (ids["$" + id]) throw new Error("Open-project readback has a duplicate document identity");
+        ids["$" + id] = true;
+        state.push({ documentID: id, path: String(project.path || ""), projectName: String(project.name || "") });
+    }
+    return state;
+}
+
+function _mcpProjectLifecycleTarget(state, path) {
+    var target = null;
+    var wanted = _mcpProjectLifecyclePath(path);
+    for (var i = 0; i < state.length; i++) {
+        if (state[i].path && _mcpProjectLifecyclePath(state[i].path) === wanted) {
+            if (target) throw new Error("Requested project path is ambiguous in the open-project collection");
+            target = state[i];
         }
-        app.newProject(path);
-        return _ok({
-            path: path,
-            created: true
-        });
+    }
+    return target;
+}
+
+function _mcpProjectLifecycleEvidence(target, status, alreadyOpen, count) {
+    var active = app.project;
+    var activeID = active ? String(active.documentID || "") : "";
+    var activePath = active ? String(active.path || "") : "";
+    return { path: String((new File(target.path)).fsName), projectName: target.projectName,
+        documentID: target.documentID, openProjects: count, nativeStatus: status,
+        alreadyOpen: alreadyOpen, opened: true,
+        active: activeID === target.documentID && !!activePath &&
+            _mcpProjectLifecyclePath(activePath) === _mcpProjectLifecyclePath(target.path),
+        activeDocumentID: activeID, activeProjectPath: activePath, identityVerified: true, verified: false };
+}
+
+function _mcpProjectLifecycleFailure(message, evidence) {
+    // The CEP transport forwards only error text. Keep state in that text as
+    // well as structured data so a caller never retries a successful creation.
+    return JSON.stringify({ success: false, error: message + (evidence ? "; project state: " + JSON.stringify(evidence) : ""), data: evidence || null });
+}
+
+function _mcpProjectLifecycleResult(evidence) {
+    if (!evidence.active) {
+        return _mcpProjectLifecycleFailure("The requested project is open but is not active. Focus its Project panel, then recheck or open the existing project. Do not repeat newProject", evidence);
+    }
+    return _ok(evidence);
+}
+
+function _mcpProjectLifecycleChange(before, after, target) {
+    var added = [];
+    for (var i = 0; i < before.length; i++) {
+        var present = false;
+        for (var j = 0; j < after.length; j++) {
+            if (before[i].documentID === after[j].documentID &&
+                ((!before[i].path && !after[j].path) ||
+                 (before[i].path && after[j].path && _mcpProjectLifecyclePath(before[i].path) === _mcpProjectLifecyclePath(after[j].path)))) present = true;
+        }
+        if (!present) return "A previously open project changed or disappeared during the operation";
+    }
+    for (var a = 0; a < after.length; a++) {
+        var existed = false;
+        for (var b = 0; b < before.length; b++) if (after[a].documentID === before[b].documentID) existed = true;
+        if (!existed) added.push(after[a].documentID);
+    }
+    if (added.length !== 1 || added[0] !== target.documentID) return "The operation did not produce exactly one new document at the requested path";
+    return "";
+}
+
+function _mcpOpenOrCreateProject(path, create) {
+    var operation = create ? "newProject" : "openProject";
+    try {
+        if (typeof path !== "string" || !path || !path.replace(/\s/g, "")) return _err("path is required");
+        var file = new File(path);
+        var canonical = String(file.fsName);
+        var before = _mcpProjectLifecycleSnapshot();
+        var existing = _mcpProjectLifecycleTarget(before, canonical);
+        if (create && (existing || file.exists)) {
+            var existingCreateEvidence = existing ? _mcpProjectLifecycleEvidence(existing, null, true, before.length) : { path: canonical, fileExists: true };
+            existingCreateEvidence.created = false;
+            return _mcpProjectLifecycleFailure("Project already exists; use openProject instead of repeating newProject", existingCreateEvidence);
+        }
+        if (!create && (!file.exists || !isFinite(Number(file.length)) || Number(file.length) <= 0)) return _err("Project file is missing or empty: " + canonical);
+        if (!create && existing) {
+            var existingEvidence = _mcpProjectLifecycleEvidence(existing, null, true, before.length);
+            existingEvidence.fileSize = Number(file.length);
+            existingEvidence.verified = true;
+            return _mcpProjectLifecycleResult(existingEvidence);
+        }
+
+        // Adobe's newProject/openDocument contracts specify boolean true.
+        // Numeric zero is not documented as success for these two methods.
+        var status = create ? app.newProject(canonical) : app.openDocument(canonical);
+        var after = _mcpProjectLifecycleSnapshot();
+        var target = _mcpProjectLifecycleTarget(after, canonical);
+        var evidence = target ? _mcpProjectLifecycleEvidence(target, status, false, after.length) : { path: canonical, nativeStatus: status, opened: false, active: false, verified: false };
+        evidence.created = false;
+        if (status !== true) return _mcpProjectLifecycleFailure(operation + " failed with status " + status + "; inspect the project state before retrying", evidence);
+        if (!target) return _mcpProjectLifecycleFailure("Premiere reported success but the requested project path is absent from the open-project collection", evidence);
+        var changeError = _mcpProjectLifecycleChange(before, after, target);
+        if (changeError) return _mcpProjectLifecycleFailure(changeError, evidence);
+        var savedFile = new File(target.path);
+        var size = Number(savedFile.length);
+        if (!savedFile.exists || !isFinite(size) || size <= 0) return _mcpProjectLifecycleFailure("Requested project file is missing or empty after the operation", evidence);
+        evidence.fileSize = size;
+        evidence.created = create;
+        evidence.verified = true;
+        return _mcpProjectLifecycleResult(evidence);
     } catch (e) {
-        return _err("newProject failed: " + e.message);
+        return _err(operation + " failed: " + e.message + ". Inspect open projects before retrying creation.");
     }
 }
 
-// ---------------------------------------------------------------------------
-// 2. openProject(path) - Open an existing .prproj file
-// ---------------------------------------------------------------------------
-function openProject(path) {
-    try {
-        if (!path || path === "") {
-            return _err("path is required");
-        }
-        var result = app.openDocument(path);
-        if (result) {
-            return _ok({
-                path: path,
-                opened: true,
-                projectName: app.project ? (app.project.name || "") : ""
-            });
-        } else {
-            return _err("openDocument returned false for: " + path);
-        }
-    } catch (e) {
-        return _err("openProject failed: " + e.message);
-    }
-}
+// 1. newProject(path) - Create and verify a new saved document.
+function newProject(path) { return _mcpOpenOrCreateProject(path, true); }
+
+// 2. openProject(path) - Verify an existing document and its current focus.
+function openProject(path) { return _mcpOpenOrCreateProject(path, false); }
 
 // ---------------------------------------------------------------------------
 // 3. saveProject() - Save current project
