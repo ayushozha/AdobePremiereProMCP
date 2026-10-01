@@ -247,11 +247,14 @@ test('real generated fixtures decode, repeat exactly, resist overwrite and detec
 const intelligenceRoot = fileURLToPath(new URL('../python-intelligence/', import.meta.url));
 const fixturePython = process.env.E2E_PYTHON || 'python3';
 const fixturePythonReady = spawnSync(fixturePython, ['-c', 'import sys; assert sys.version_info >= (3, 12); import pydantic'], { cwd: intelligenceRoot }).status === 0;
+const fixtureMediaReady = spawnSync(process.env.FFMPEG || 'ffmpeg', ['-version']).status === 0 && spawnSync(process.env.FFPROBE || 'ffprobe', ['-version']).status === 0;
+const requireParserTest = process.env.E2E_REQUIRE_PARSER_TEST === '1';
 
 test('generated script uses the real parser and matches only its exact fixture video', {
-  skip: !fixturePythonReady ? 'Requires intelligence Python3.12+pydantic (set E2E_PYTHON)' :
-    spawnSync(process.env.FFMPEG || 'ffmpeg', ['-version']).status !== 0 || spawnSync(process.env.FFPROBE || 'ffprobe', ['-version']).status !== 0,
+  skip: !requireParserTest && (!fixturePythonReady || !fixtureMediaReady),
 }, () => {
+  assert.ok(fixturePythonReady, 'Requires intelligence Python3.12+pydantic (set E2E_PYTHON)');
+  assert.ok(fixtureMediaReady, 'Requires ffmpeg and ffprobe for the real parser fixture regression');
   const base = realpathSync(mkdtempSync(join(tmpdir(), 'premiere-e2e-script-')));
   try {
     prepareFixtures(join(base, 'fixture'));

@@ -108,11 +108,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            python-intelligence/pyproject.toml
+            python-intelligence/constraints.txt
+      - name: Install real script-parser dependencies
+        run: python -m pip install --constraint python-intelligence/constraints.txt -e "./python-intelligence[dev]"
       - name: Install real-media fixture tools
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Test npm distribution offline
         run: npm test --prefix npm-package
       - name: Test live-runner safeguards and generated media
+        env:
+          E2E_PYTHON: python
+          E2E_REQUIRE_PARSER_TEST: '1'
         run: node --test scripts/e2e-premiere.test.mjs
       - name: Test UXP inspection reporting
         run: node --test uxp-panel/test/inspect.test.js
