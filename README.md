@@ -56,7 +56,7 @@ particular OS/Premiere build.
 | 23.x | 2023 | Manifest target; live matrix pending |
 | 24.x | 2024 | Manifest target; live matrix pending |
 | 25.x | 2025 | Primary development target; live matrix pending |
-| 26.x | 2026 | 26.5.2 CEP tested partially on macOS arm64; full live matrix pending |
+| 26.x | 2026 | 26.5.2: 8 core CEP workflows tested on macOS arm64; broader matrix pending |
 
 The CEP bridge targets **macOS** and **Windows** and declares Premiere Pro 14.0+ in its extension manifest.
 

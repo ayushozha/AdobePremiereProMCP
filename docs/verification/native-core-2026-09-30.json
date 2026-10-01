@@ -1,0 +1,123 @@
+{
+  "schema": "premiere-native-acceptance-summary/v1",
+  "localAuditDate": "2026-09-30",
+  "startedAt": "2026-10-01T00:32:01.382Z",
+  "finishedAt": "2026-10-01T00:32:18.544Z",
+  "sourceRevisions": {
+    "goOrchestrator": "451b762",
+    "cepHost": "ae53835",
+    "runner": "a573cd0"
+  },
+  "environment": {
+    "hostMetadataSource": "runner host; remote backend hosts may differ",
+    "os": "darwin",
+    "osRelease": "27.0.0",
+    "architecture": "arm64",
+    "node": "v26.6.0",
+    "locale": "en_US",
+    "localeSource": "operator declaration",
+    "toolProfile": "all",
+    "premiereVersion": "26.5.2",
+    "toolCount": 1033,
+    "bridgeMode": "cep"
+  },
+  "preflight": {
+    "running": true,
+    "connected": true,
+    "project": "MCP-E2E-disposable.prproj",
+    "projectItems": 0,
+    "sequences": 0
+  },
+  "summary": {
+    "pass": 8,
+    "fail": 0,
+    "blocked": 0
+  },
+  "checks": [
+    {
+      "id": "import_media",
+      "status": "pass"
+    },
+    {
+      "id": "sequence_placement",
+      "status": "pass"
+    },
+    {
+      "id": "transitions_effects",
+      "status": "pass"
+    },
+    {
+      "id": "lumetri",
+      "status": "pass"
+    },
+    {
+      "id": "audio_levels",
+      "status": "pass"
+    },
+    {
+      "id": "h264_export",
+      "status": "pass",
+      "bytes": 467677,
+      "sha256": "04afddcb4716166415cef226143356e282b784dd0ab1d6baa0f0222b1216ccaf",
+      "fullyDecoded": true,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "width": 320,
+      "height": 180,
+      "frameRate": 24,
+      "durationSeconds": 4,
+      "presetSha256": "68cf2ab2a0a62193c8d9f4a0b4501c0bd4be72258a13c1e0437539cf35aa4597"
+    },
+    {
+      "id": "frame_capture",
+      "status": "pass",
+      "bytes": 38584,
+      "sha256": "aa7d86555789be795ba5e44ae3791d8c9475bc84492af22f55a5b811a6b95898",
+      "fullyDecoded": true,
+      "metadata": {
+        "format": "png",
+        "height": 180,
+        "timecode": 1,
+        "width": 320
+      }
+    },
+    {
+      "id": "script_edl_timeline",
+      "status": "pass",
+      "nativeSequence": {
+        "id": "5492dd32-df6d-4d69-a6be-e02bd14097ec",
+        "name": "Sequence - \"e2e_test_pattern.mp4\"",
+        "resolution": {
+          "width": 1920,
+          "height": 1080
+        },
+        "frame_rate": 24,
+        "duration_seconds": 3,
+        "video_track_count": 2,
+        "audio_track_count": 1
+      },
+      "edlEntries": 1,
+      "clipsPlaced": 1,
+      "verification": "Every EDL entry matched a distinct native clip by source, track, source trims and timeline positions."
+    }
+  ],
+  "fullReport": {
+    "localFilename": "live-native-2026-09-30-all-eight.json",
+    "sha256": "7a85fe752637dadec510e3fbb249efdfdd8360c55582be9ab902d7f9eea58292",
+    "note": "Full call evidence and fixture artifacts are preserved outside Git; this is a compact summary with private absolute paths removed."
+  },
+  "limits": [
+    "One Premiere version/OS/locale combination, not a universal compatibility matrix.",
+    "API readback and complete output decoding, not perceptual quality or performance certification.",
+    "Project close acknowledgement remains separately unverified because CEP disconnected after native close."
+  ],
+  "projectFocusRetest": {
+    "sourceRevision": "537fcfb",
+    "activeAlreadyOpenProject": "pass: exact document ID/path, active=true, nonempty saved file; preserved six open disposable documents",
+    "inactiveAlreadyOpenProject": "pass: expected MCP error with target identity and focus instructions; active project preserved",
+    "reports": {
+      "native-lifecycle-active-2026-09-30.jsonl": "f9ded3aeb4aa209a148f359d8e9db8b1b755c180dc57f232d4a9c1bf2aa488aa",
+      "native-lifecycle-inactive-2026-09-30.jsonl": "4b55927a8cfb3922df2fb7f73508eb5e53215fc48818dc4765ea6f85fd5e27d6"
+    }
+  }
+}
