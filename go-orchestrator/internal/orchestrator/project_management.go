@@ -252,10 +252,47 @@ func (e *Engine) GetProjectItems(ctx context.Context, binPath string) (*ProjectI
 		return nil, fmt.Errorf("failed to list project items — open a project first with premiere_open_project: %w", err)
 	}
 	var out ProjectItemsResult
-	if err := json.Unmarshal([]byte(result), &out); err != nil {
+	if err := decodeProjectItems(result, &out); err != nil {
 		return nil, fmt.Errorf("GetProjectItems: could not parse response from Premiere Pro: %w", err)
 	}
 	return &out, nil
+}
+
+// decodeProjectItems accepts the CEP host's camelCase inventory fields while
+// retaining the snake_case public MCP schema (and older normalized backends).
+func decodeProjectItems(result string, out *ProjectItemsResult) error {
+	if err := json.Unmarshal([]byte(result), out); err != nil {
+		return err
+	}
+	var host struct {
+		BinPath   *string `json:"binPath"`
+		ItemCount *int    `json:"itemCount"`
+		Items     []struct {
+			MediaPath  *string `json:"mediaPath"`
+			ChildCount *int    `json:"childCount"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(result), &host); err != nil {
+		return err
+	}
+	if host.BinPath != nil {
+		out.BinPath = *host.BinPath
+	}
+	if host.ItemCount != nil {
+		out.ItemCount = *host.ItemCount
+	}
+	for i, item := range host.Items {
+		if out.Items[i] == nil {
+			continue
+		}
+		if item.MediaPath != nil {
+			out.Items[i].MediaPath = *item.MediaPath
+		}
+		if item.ChildCount != nil {
+			out.Items[i].ChildCount = *item.ChildCount
+		}
+	}
+	return nil
 }
 
 func (e *Engine) SetItemLabel(ctx context.Context, itemPath string, colorIndex int) (*GenericResult, error) {

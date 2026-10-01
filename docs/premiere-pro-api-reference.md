@@ -118,8 +118,6 @@ osascript -e 'tell application "Adobe Premiere Pro 2025" to do script "app.proje
 
 Cross Dissolve, Dip to Black, Dip to White, Film Dissolve, Wipe, Barn Doors, Push, Slide, Morph Cut, Constant Power (audio), Constant Gain (audio)
 
-## 10. Future: UXP
+## 10. UXP support and migration
 
-- ExtendScript/CEP supported through September 2026
-- UXP is the future but currently beta-only for Premiere Pro
-- CEP + ExtendScript is the correct choice for now
+Adobe documents UXP support from [Premiere 25.6](https://developer.adobe.com/premiere-pro/uxp/introduction/). This repository's production bridge currently uses CEP/ExtendScript; UXP is not yet an interchangeable MCP backend. The [migration plan and inspection prototype](uxp-migration.md) track the remaining transport, capability, and native-validation work. No verified CEP removal date is asserted here.

@@ -96,7 +96,6 @@ interface PendingRequest {
 
 const DEFAULT_WS_PORT = 9801;
 const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
-const DEFAULT_MAX_RECONNECT_ATTEMPTS = 100;
 const DEFAULT_RECONNECT_BASE_MS = 5_000;
 const DEFAULT_RECONNECT_MAX_MS = 30_000;
 const HEARTBEAT_INTERVAL_MS = 15_000;
@@ -111,7 +110,6 @@ export class CepBridge implements PremiereBridge {
   private readonly wsEndpoint: string;
   private readonly wsHeaders: Readonly<Record<string, string>>;
   private readonly commandTimeoutMs: number;
-  private readonly maxReconnectAttempts: number;
   private readonly reconnectBaseMs: number;
   private readonly reconnectMaxMs: number;
   private readonly exportPresetPaths: ExportPresetPaths;
@@ -132,7 +130,6 @@ export class CepBridge implements PremiereBridge {
     this.wsEndpoint = `ws://127.0.0.1:${port}`;
     this.wsHeaders = { Authorization: `Bearer ${token}` };
     this.commandTimeoutMs = DEFAULT_COMMAND_TIMEOUT_MS;
-    this.maxReconnectAttempts = DEFAULT_MAX_RECONNECT_ATTEMPTS;
     this.reconnectBaseMs = DEFAULT_RECONNECT_BASE_MS;
     this.reconnectMaxMs = DEFAULT_RECONNECT_MAX_MS;
     this.exportPresetPaths = config.exportPresetPaths ?? {};
@@ -163,7 +160,13 @@ export class CepBridge implements PremiereBridge {
     this.cancelReconnect();
 
     return new Promise<void>((resolve) => {
-      this.log.info(`Connecting to CEP panel at ${this.wsEndpoint}...`);
+      const reconnectAttempt = this.reconnectAttempts;
+      const connectionMessage = `Connecting to CEP panel at ${this.wsEndpoint}...`;
+      if (reconnectAttempt === 0) {
+        this.log.info(connectionMessage);
+      } else {
+        this.log.debug(connectionMessage);
+      }
 
       const ws = new WebSocket(this.wsEndpoint, { headers: this.wsHeaders });
       // Track the socket while it is connecting so disconnect() can cancel it.
@@ -175,10 +178,14 @@ export class CepBridge implements PremiereBridge {
         if (!settled) {
           settled = true;
           ws.terminate();
-          this.log.warn(
+          const message =
             `Connection to CEP panel at ${this.wsEndpoint} timed out. ` +
-              "Bridge will operate in disconnected mode.",
-          );
+            "Bridge will operate in disconnected mode.";
+          if (reconnectAttempt === 0) {
+            this.log.warn(message);
+          } else {
+            this.log.debug(message);
+          }
           resolve();
         }
       }, this.commandTimeoutMs);
@@ -241,10 +248,14 @@ export class CepBridge implements PremiereBridge {
         if (!settled) {
           settled = true;
           clearTimeout(connectionTimeout);
-          this.log.warn(
+          const message =
             `Could not connect to CEP panel: ${err.message}. ` +
-              "Bridge will operate in disconnected mode.",
-          );
+            "Bridge will operate in disconnected mode.";
+          if (reconnectAttempt === 0) {
+            this.log.warn(message);
+          } else {
+            this.log.debug(message);
+          }
           resolve();
         } else {
           this.log.error(`WebSocket error: ${err.message}`);
@@ -556,11 +567,27 @@ export class CepBridge implements PremiereBridge {
       throw new CepCommandError(functionName, response.errorMessage);
     }
     if (response.resultJson === "") return undefined as T;
+    let result: unknown;
     try {
-      return JSON.parse(response.resultJson) as T;
+      result = JSON.parse(response.resultJson);
     } catch {
       return response.resultJson as T;
     }
+    // Current panels unwrap the host envelope. Older panels return it intact.
+    // Reserve only the exact helper shape so flat successes retain their data.
+    if (typeof result === "object" && result !== null && !Array.isArray(result)) {
+      const fields = result as Record<string, unknown>;
+      if (Object.keys(fields).length === 2) {
+        if (fields["success"] === true && Object.hasOwn(fields, "data")) {
+          return fields["data"] as T;
+        }
+        if (fields["success"] === false && typeof fields["error"] === "string") {
+          throw new CepCommandError(functionName,
+            fields["error"] || "ExtendScript reported failure without an error message");
+        }
+      }
+    }
+    return result as T;
   }
 
   /**
@@ -670,34 +697,28 @@ export class CepBridge implements PremiereBridge {
     if (this.intentionalClose || this.reconnectTimer || this.isConnected() ||
         this.ws?.readyState === WebSocket.CONNECTING) return;
 
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      this.log.error(
-        `Max reconnection attempts (${this.maxReconnectAttempts}) reached. ` +
-          "Giving up. Restart the bridge manually or call connect() again.",
-      );
-      this.rejectAllPending("Max reconnection attempts exceeded");
-      return;
-    }
-
     this.reconnectAttempts++;
     const delay = this.getReconnectDelay();
-    this.log.info(
-      `Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`,
-    );
+    const reconnectMessage =
+      `Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})...`;
+    if (this.shouldLogReconnectMilestone()) {
+      this.log.info(reconnectMessage);
+    } else {
+      this.log.debug(reconnectMessage);
+    }
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       if (this.intentionalClose) return;
 
-      this.log.info(
-        `Attempting reconnection (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`,
-      );
+      const attempt = this.reconnectAttempts;
+      this.log.debug(`Attempting reconnection (attempt ${attempt})...`);
 
       this.connect()
         .then(() => {
           if (this._isConnected) {
             this.log.info(
-              `Reconnected to CEP panel at ${this.wsEndpoint} after ${this.reconnectAttempts} attempt(s).`,
+              `Reconnected to CEP panel at ${this.wsEndpoint} after ${attempt} attempt(s).`,
             );
             // Reset attempt counter on successful connection -- already
             // done inside connect()'s "open" handler.
@@ -710,6 +731,11 @@ export class CepBridge implements PremiereBridge {
           this.scheduleReconnect();
         });
     }, delay);
+  }
+
+  /** Keep default-level offline logs useful without growing them every 30 seconds. */
+  private shouldLogReconnectMilestone(): boolean {
+    return this.reconnectAttempts === 1 || this.reconnectAttempts % 100 === 0;
   }
 
   /**

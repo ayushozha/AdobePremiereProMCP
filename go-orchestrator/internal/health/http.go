@@ -3,7 +3,6 @@ package health
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 )
 
 // httpResponse is the JSON body returned by the /health endpoint.
@@ -16,7 +15,9 @@ type httpResponse struct {
 // servicePayload is the per-service slice of the health response.
 type servicePayload struct {
 	Status    string `json:"status"`
+	Ready     bool   `json:"ready"`
 	LatencyMs int64  `json:"latency_ms"`
+	LastCheck string `json:"last_check,omitempty"`
 	Error     string `json:"error,omitempty"`
 }
 
@@ -27,30 +28,32 @@ type servicePayload struct {
 //
 //	GET /health          — aggregate status of all services
 //	GET /health/{service} — status of a single service
+//	GET /livez           — process is serving HTTP, independent of dependencies
+//	GET /readyz          — all dependencies have recent successful probes
 func NewHTTPHandler(checker *Checker) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		// The standard library mux matches "/health" as a prefix, so we
-		// distinguish between the aggregate endpoint and the per-service
-		// endpoint by inspecting the remainder of the path.
-		trimmed := strings.TrimPrefix(r.URL.Path, "/health")
-		trimmed = strings.TrimPrefix(trimmed, "/")
-
-		if trimmed != "" {
-			handleServiceHealth(checker, trimmed, w, r)
-			return
-		}
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		handleAggregateHealth(checker, w, r)
+	})
+	mux.HandleFunc("GET /health/{service}", func(w http.ResponseWriter, r *http.Request) {
+		handleServiceHealth(checker, r.PathValue("service"), w, r)
+	})
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		handleAggregateHealth(checker, w, r)
+	})
+	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "alive"})
 	})
 	return mux
 }
 
 func handleAggregateHealth(checker *Checker, w http.ResponseWriter, _ *http.Request) {
 	statuses := checker.GetAllStatuses()
-	ready := checker.IsReady()
+	ready := len(statuses) > 0
 
 	overall := StatusHealthy
 	for _, sh := range statuses {
+		ready = ready && serviceReady(sh)
 		if sh.Status > overall {
 			overall = sh.Status
 		}
@@ -62,18 +65,11 @@ func handleAggregateHealth(checker *Checker, w http.ResponseWriter, _ *http.Requ
 		Services: make(map[string]*servicePayload, len(statuses)),
 	}
 	for name, sh := range statuses {
-		sp := &servicePayload{
-			Status:    sh.Status.String(),
-			LatencyMs: sh.Latency.Milliseconds(),
-		}
-		if sh.LastError != nil {
-			sp.Error = sh.LastError.Error()
-		}
-		resp.Services[name] = sp
+		resp.Services[name] = payload(sh)
 	}
 
 	statusCode := http.StatusOK
-	if overall == StatusUnhealthy {
+	if !ready {
 		statusCode = http.StatusServiceUnavailable
 	}
 
@@ -89,20 +85,25 @@ func handleServiceHealth(checker *Checker, serviceName string, w http.ResponseWr
 		return
 	}
 
-	sp := &servicePayload{
-		Status:    sh.Status.String(),
-		LatencyMs: sh.Latency.Milliseconds(),
-	}
-	if sh.LastError != nil {
-		sp.Error = sh.LastError.Error()
-	}
+	sp := payload(sh)
 
 	statusCode := http.StatusOK
-	if sh.Status == StatusUnhealthy {
+	if !sp.Ready {
 		statusCode = http.StatusServiceUnavailable
 	}
 
 	writeJSON(w, statusCode, sp)
+}
+
+func payload(sh *ServiceHealth) *servicePayload {
+	sp := &servicePayload{Status: sh.Status.String(), Ready: serviceReady(sh), LatencyMs: sh.Latency.Milliseconds()}
+	if !sh.LastCheck.IsZero() {
+		sp.LastCheck = sh.LastCheck.UTC().Format("2006-01-02T15:04:05Z07:00")
+	}
+	if sh.LastError != nil {
+		sp.Error = sh.LastError.Error()
+	}
+	return sp
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

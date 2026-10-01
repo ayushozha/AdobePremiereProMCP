@@ -427,7 +427,7 @@ func (a *IntelAdapter) ParseScript(ctx context.Context, text, filePath, format s
 	}, nil
 }
 
-func (a *IntelAdapter) GenerateEDL(ctx context.Context, segments []*orch.ScriptSegment, assets []*orch.AssetInfo, settings *orch.EDLSettings) (*orch.EDL, error) {
+func (a *IntelAdapter) GenerateEDL(ctx context.Context, segments []*orch.ScriptSegment, assets []*orch.AssetInfo, matches []*orch.AssetMatch, settings *orch.EDLSettings) (*orch.EDL, error) {
 	grpcSegments := make([]ScriptSegment, len(segments))
 	for i, s := range segments {
 		grpcSegments[i] = ScriptSegment{
@@ -446,6 +446,19 @@ func (a *IntelAdapter) GenerateEDL(ctx context.Context, segments []*orch.ScriptS
 	for i, a := range assets {
 		grpcAssets[i] = convertOrchestratorAssetToGRPC(a)
 	}
+	grpcMatches := make([]AssetMatch, len(matches))
+	for i, match := range matches {
+		grpcMatches[i] = AssetMatch{
+			SegmentIndex: match.SegmentIndex,
+			AssetID:      match.AssetID,
+			Confidence:   match.Confidence,
+			Reasoning:    match.Reasoning,
+		}
+		if match.SuggestedRange != nil {
+			rangeValue := convertOrchestratorTimeRangeToGRPC(match.SuggestedRange)
+			grpcMatches[i].SuggestedRange = &rangeValue
+		}
+	}
 
 	var grpcSettings EDLSettings
 	if settings != nil {
@@ -461,6 +474,7 @@ func (a *IntelAdapter) GenerateEDL(ctx context.Context, segments []*orch.ScriptS
 	res, err := a.C.GenerateEDL(ctx, GenerateEDLParams{
 		Segments:        grpcSegments,
 		AvailableAssets: grpcAssets,
+		Matches:         grpcMatches,
 		Settings:        grpcSettings,
 	})
 	if err != nil {
@@ -655,6 +669,8 @@ func convertOrchestratorEDLToGRPC(edl *orch.EDL) EditDecisionList {
 		entry := EDLEntry{
 			Index:         e.Index,
 			SourceAssetID: e.SourceAssetID,
+			SourceRange:   convertOrchestratorTimeRangeToGRPC(e.SourceRange),
+			TimelineRange: convertOrchestratorTimeRangeToGRPC(e.TimelineRange),
 			Notes:         e.Notes,
 		}
 		if e.Track != nil {
@@ -722,6 +738,8 @@ func convertGRPCEDLToOrchestrator(edl *EditDecisionList) *orch.EDL {
 		entry := &orch.EDLEntry{
 			Index:         e.Index,
 			SourceAssetID: e.SourceAssetID,
+			SourceRange:   convertGRPCTimeRangeToOrchestrator(&e.SourceRange),
+			TimelineRange: convertGRPCTimeRangeToOrchestrator(&e.TimelineRange),
 			Notes:         e.Notes,
 		}
 		entry.Track = &orch.TrackTarget{
@@ -753,6 +771,28 @@ func convertGRPCEDLToOrchestrator(edl *EditDecisionList) *orch.EDL {
 		SequenceResolution: orch.Resolution{Width: edl.SequenceResolution.Width, Height: edl.SequenceResolution.Height},
 		SequenceFrameRate:  edl.SequenceFrameRate,
 		Entries:            entries,
+	}
+}
+
+func convertOrchestratorTimeRangeToGRPC(tr *orch.TimeRange) TimeRange {
+	if tr == nil {
+		return TimeRange{}
+	}
+	return TimeRange{
+		InPoint: Timecode{
+			Hours:     tr.InPoint.Hours,
+			Minutes:   tr.InPoint.Minutes,
+			Seconds:   tr.InPoint.Seconds,
+			Frames:    tr.InPoint.Frames,
+			FrameRate: tr.InPoint.FrameRate,
+		},
+		OutPoint: Timecode{
+			Hours:     tr.OutPoint.Hours,
+			Minutes:   tr.OutPoint.Minutes,
+			Seconds:   tr.OutPoint.Seconds,
+			Frames:    tr.OutPoint.Frames,
+			FrameRate: tr.OutPoint.FrameRate,
+		},
 	}
 }
 

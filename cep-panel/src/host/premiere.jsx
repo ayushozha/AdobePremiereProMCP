@@ -45,11 +45,38 @@ if (typeof Date.prototype.toISOString !== "function") {
     };
 }
 
-/**
- * Safe JSON serializer that handles ExtendScript quirks.
- * ExtendScript's native JSON may not exist in older versions.
- */
-if (typeof JSON === "undefined") {
+// Quote values and object keys identically, including every JSON control
+// character. Also escape line separators for the ES3 eval-based parser.
+function _mcpQuoteJSONString(value) {
+    return '"' + String(value).replace(/["\\\x00-\x1f\u2028\u2029]/g, function (character) {
+        if (character === '"') return '\\"';
+        if (character === "\\") return "\\\\";
+        if (character === "\b") return "\\b";
+        if (character === "\f") return "\\f";
+        if (character === "\n") return "\\n";
+        if (character === "\r") return "\\r";
+        if (character === "\t") return "\\t";
+        var hex = character.charCodeAt(0).toString(16);
+        while (hex.length < 4) hex = "0" + hex;
+        return "\\u" + hex;
+    }) + '"';
+}
+
+// Upgrade an already-loaded older polyfill as well as missing JSON. Keep a
+// working native serializer intact when the full host is lazily reloaded.
+var _mcpJSONNeedsPolyfill = typeof JSON === "undefined";
+if (!_mcpJSONNeedsPolyfill) {
+    try {
+        var _mcpJSONProbeKey = 'key"\\\n';
+        var _mcpJSONProbe = {};
+        _mcpJSONProbe[_mcpJSONProbeKey] = String.fromCharCode(0, 3, 8, 12);
+        var _mcpJSONProbeText = JSON.stringify(_mcpJSONProbe);
+        _mcpJSONNeedsPolyfill = typeof _mcpJSONProbeText !== "string" ||
+            /[\x00-\x1f]/.test(_mcpJSONProbeText) ||
+            _mcpJSONProbeText.indexOf(_mcpQuoteJSONString(_mcpJSONProbeKey) + ":") < 0;
+    } catch (ignoreJSONProbe) { _mcpJSONNeedsPolyfill = true; }
+}
+if (_mcpJSONNeedsPolyfill) {
     // Minimal JSON polyfill for ExtendScript environments that lack it.
     JSON = {
         stringify: function (obj, replacer, space) {
@@ -61,14 +88,10 @@ if (typeof JSON === "undefined") {
             }
             function _str(val, depth) {
                 if (val === null) return "null";
-                if (val === undefined) return "undefined";
+                if (val === undefined || typeof val === "function") return undefined;
                 if (typeof val === "number") return isFinite(val) ? String(val) : "null";
                 if (typeof val === "boolean") return String(val);
-                if (typeof val === "string") {
-                    return '"' + val.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
-                                    .replace(/\n/g, "\\n").replace(/\r/g, "\\r")
-                                    .replace(/\t/g, "\\t") + '"';
-                }
+                if (typeof val === "string") return _mcpQuoteJSONString(val);
                 var pad = "";
                 var childPad = "";
                 if (indent) {
@@ -81,15 +104,17 @@ if (typeof JSON === "undefined") {
                     if (val.length === 0) return "[]";
                     var arrParts = [];
                     for (var i = 0; i < val.length; i++) {
-                        arrParts.push(childPad + _str(val[i], depth + 1));
+                        var element = _str(val[i], depth + 1);
+                        arrParts.push(childPad + (element === undefined ? "null" : element));
                     }
                     return "[" + nl + arrParts.join("," + nl) + nl + pad + "]";
                 }
                 if (typeof val === "object") {
                     var objParts = [];
                     for (var key in val) {
-                        if (val.hasOwnProperty(key)) {
-                            objParts.push(childPad + '"' + key + '":' + sep + _str(val[key], depth + 1));
+                        if (Object.prototype.hasOwnProperty.call(val, key)) {
+                            var property = _str(val[key], depth + 1);
+                            if (property !== undefined) objParts.push(childPad + _mcpQuoteJSONString(key) + ':' + sep + property);
                         }
                     }
                     if (objParts.length === 0) return "{}";
@@ -482,7 +507,8 @@ function _mcpConfigureAndVerifySequence(sequence, requested) {
         } catch (ignoreQEFrameSize) {}
     }
 
-    if (requested.videoTracks !== undefined || requested.audioTracks !== undefined) {
+    if ((requested.videoTracks !== undefined && sequence.videoTracks.numTracks !== requested.videoTracks) ||
+        (requested.audioTracks !== undefined && sequence.audioTracks.numTracks !== requested.audioTracks)) {
         try { app.project.activeSequence = sequence; } catch (activateErr) {
             return { error: "Cannot activate the new sequence to configure tracks: " + activateErr.message };
         }
@@ -621,6 +647,79 @@ function getProjectState() {
 // ---------------------------------------------------------------------------
 // createSequence(paramsJson) - Create a new sequence
 // ---------------------------------------------------------------------------
+/** Resolve an online seed without modifying the project's source-item marks. */
+function _mcpSequenceSeed() {
+    var items = _mcpCollectProjectItems();
+    var fallback = null;
+    for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        try {
+            if (item.isSequence && item.isSequence()) continue;
+            if (item.isOffline && item.isOffline()) continue;
+            if (!_mcpMediaPath(item)) continue;
+            if (!fallback) fallback = item;
+            if (item.hasVideo && item.hasVideo()) return item;
+        } catch (ignoreSeed) {}
+    }
+    return fallback;
+}
+
+/** Identify one new sequence; ambiguity never authorizes deleting a sequence. */
+function _mcpResolveSeededSequence(previousIds, creationResult) {
+    var sequences = app.project.sequences;
+    var previousCount = previousIds.__mcpCount;
+    if (!sequences || sequences.numSequences !== previousCount + 1) {
+        return { error: "Expected exactly one new sequence; no cleanup was attempted" };
+    }
+    var candidate = null;
+    var oldCount = 0;
+    var seen = {};
+    for (var i = 0; i < sequences.numSequences; i++) {
+        var sequence = sequences[i];
+        var id = sequence ? String(sequence.sequenceID || "") : "";
+        if (!id || seen[id]) return { error: "Sequence identities are missing or duplicated; no cleanup was attempted" };
+        seen[id] = true;
+        if (previousIds[id]) oldCount++;
+        else {
+            if (candidate) return { error: "More than one new sequence was observed; no cleanup was attempted" };
+            candidate = sequence;
+        }
+    }
+    if (!candidate || oldCount !== previousCount) return { error: "Existing sequence identities changed; no cleanup was attempted" };
+    if (creationResult && creationResult.sequenceID && String(creationResult.sequenceID) !== String(candidate.sequenceID)) {
+        return { error: "Creation returned a different sequence identity; no cleanup was attempted" };
+    }
+    return { data: candidate };
+}
+
+/** Remove only seed placements from a proven newly created sequence. */
+function _mcpClearSequenceSeed(sequence, seed) {
+    var seedNode = String(seed.nodeId || "");
+    var seedPath = _mcpMediaPath(seed);
+    var collections = [sequence.videoTracks, sequence.audioTracks];
+    for (var type = 0; type < collections.length; type++) {
+        var tracks = collections[type];
+        if (!tracks || typeof tracks.numTracks !== "number") return { error: "Cannot inspect the new sequence's tracks" };
+        for (var t = 0; t < tracks.numTracks; t++) {
+            var track = tracks[t];
+            if (!track || !track.clips || typeof track.clips.numItems !== "number") return { error: "Cannot inspect the new sequence's seed clips" };
+            while (track.clips.numItems > 0) {
+                var before = track.clips.numItems;
+                var clip = track.clips[before - 1];
+                var item = clip ? clip.projectItem : null;
+                var sameSeed = item && (item === seed ||
+                    (seedNode && String(item.nodeId || "") === seedNode) ||
+                    (seedPath && _mcpMediaPath(item) === seedPath));
+                if (!sameSeed) return { error: "The new sequence contains a clip outside its creation seed" };
+                if (typeof clip.remove !== "function") return { error: "Premiere cannot remove the sequence's creation seed" };
+                clip.remove(false, false);
+                if (track.clips.numItems !== before - 1) return { error: "Premiere did not remove the sequence's creation seed" };
+            }
+        }
+    }
+    return { data: { empty: true } };
+}
+
 function createSequence(paramsJson) {
     var createdSequence = null;
     var previousActiveSequence = null;
@@ -651,11 +750,34 @@ function createSequence(paramsJson) {
         if (isNaN(videoTracks) || videoTracks !== videoRaw || videoTracks < 1 || videoTracks > 64) return _err("videoTracks must be an integer between 1 and 64");
         if (isNaN(audioTracks) || audioTracks !== audioRaw || audioTracks < 1 || audioTracks > 64) return _err("audioTracks must be an integer between 1 and 64");
 
+        if (typeof app.project.createNewSequenceFromClips !== "function") {
+            return _err("Unattended sequence creation is unsupported in this Premiere version. Use createSequenceFromPreset with an installed .sqpreset.");
+        }
+        var seed = _mcpSequenceSeed();
+        if (!seed) return _err("Import an online video or audio file before creating an empty sequence, or use createSequenceFromPreset with an installed .sqpreset.");
         var previousIds = _mcpCaptureSequenceIds();
-        var internalId = "mcp_sequence_" + (new Date()).getTime();
-        app.project.createNewSequence(name, internalId);
-        createdSequence = _mcpFindNewSequence(previousIds);
-        if (!createdSequence) return _err("Premiere did not create a distinct sequence");
+        // Adobe's CEP sample documents this non-modal creation route. The seed
+        // is removed only from the new sequence, never from the source project.
+        var creationResult = app.project.createNewSequenceFromClips(name, [seed], app.project.rootItem);
+        var resolved = _mcpResolveSeededSequence(previousIds, creationResult);
+        if (resolved.error) return _err(resolved.error);
+        createdSequence = resolved.data;
+        // Creation may interpret the name as a filename. Sequence.name is a
+        // writable DOM property; assign the exact display name only after
+        // proving that this sequence belongs to the current creation request.
+        try { createdSequence.name = name; } catch (nameWriteError) {
+            throw new Error("Premiere rejected the requested sequence name: expected " + JSON.stringify(name) +
+                ", got " + JSON.stringify(String(createdSequence.name || "")) + "; " + nameWriteError.message);
+        }
+        var actualName = String(createdSequence.name || "");
+        if (actualName !== name) {
+            throw new Error("Premiere did not apply the requested sequence name: expected " + JSON.stringify(name) +
+                ", got " + JSON.stringify(actualName));
+        }
+        var cleared = _mcpClearSequenceSeed(createdSequence, seed);
+        if (cleared.error) throw new Error(cleared.error);
+        var activated = _mcpActivateSequenceAndVerify(createdSequence);
+        if (activated.error) throw new Error(activated.error);
 
         var configured = _mcpConfigureAndVerifySequence(createdSequence, {
             width: width,
@@ -671,10 +793,8 @@ function createSequence(paramsJson) {
             return _err(configured.error + (deleted ? "; the invalid sequence was deleted" : "; cleanup failed, so inspect the project before continuing"));
         }
         if (String(createdSequence.name || "") !== name) {
-            var nameDeleted = _mcpDeleteSequenceQuietly(createdSequence);
-            if (nameDeleted && previousActiveSequence) { try { app.project.activeSequence = previousActiveSequence; } catch (ignoreRestoreNameActive) {} }
-            createdSequence = null;
-            return _err("Premiere created the sequence with an unexpected name" + (nameDeleted ? "; it was deleted" : "; cleanup failed"));
+            throw new Error("Premiere changed the requested sequence name: expected " + JSON.stringify(name) +
+                ", got " + JSON.stringify(String(createdSequence.name || "")));
         }
 
         var actual = configured.data;
@@ -686,13 +806,20 @@ function createSequence(paramsJson) {
             fps: actual.fps,
             videoTrackCount: actual.videoTracks,
             audioTrackCount: actual.audioTracks,
-            timebase: createdSequence.timebase || ""
+            timebase: createdSequence.timebase || "",
+            empty: true,
+            verified: true
         });
     } catch (e) {
-        if (createdSequence && _mcpDeleteSequenceQuietly(createdSequence) && previousActiveSequence) {
-            try { app.project.activeSequence = previousActiveSequence; } catch (ignoreCatchActive) {}
+        var cleanup = "";
+        if (createdSequence) {
+            var removed = _mcpDeleteSequenceQuietly(createdSequence);
+            cleanup = removed ? "; the invalid sequence was deleted" : "; cleanup failed, so inspect the project before continuing";
+            if (removed && previousActiveSequence) {
+                try { app.project.activeSequence = previousActiveSequence; } catch (ignoreCatchActive) {}
+            }
         }
-        return _err("createSequence failed: " + e.message);
+        return _err("createSequence failed: " + e.message + cleanup);
     }
 }
 
@@ -1004,65 +1131,7 @@ function placeClip(projectItemIndex, trackIndex, startTime) {
 // addTransition(trackIndex, clipIndex, transitionName, duration)
 // ---------------------------------------------------------------------------
 function addTransition(trackIndex, clipIndex, transitionName, duration) {
-    try {
-        if (!app.project) {
-            return _err("No project is open");
-        }
-
-        var seq = app.project.activeSequence;
-        if (!seq) {
-            return _err("No active sequence");
-        }
-
-        trackIndex = parseInt(trackIndex, 10) || 0;
-        clipIndex = parseInt(clipIndex, 10) || 0;
-        duration = parseFloat(duration) || 1.0;
-
-        if (trackIndex >= seq.videoTracks.numTracks) {
-            return _err("Video track index " + trackIndex + " out of range");
-        }
-
-        var track = seq.videoTracks[trackIndex];
-        if (!track.clips || clipIndex >= track.clips.numItems) {
-            return _err("Clip index " + clipIndex + " out of range on track " + trackIndex);
-        }
-
-        var clip = track.clips[clipIndex];
-
-        // Apply transition at the end of the clip
-        // Premiere's DOM uses QE (Quick Export) domain for transitions in some versions
-        var transitionDuration = _secondsToTime(duration);
-
-        // Try using the TrackItem's transitions
-        if (clip.setEndTransition) {
-            clip.setEndTransition(transitionName, transitionDuration);
-        } else if (typeof qe !== "undefined" && qe.project) {
-            // Fallback: QE DOM approach
-            var qeSeq = qe.project.getActiveSequence();
-            if (qeSeq) {
-                var qeTrack = qeSeq.getVideoTrackAt(trackIndex);
-                if (qeTrack) {
-                    var qeClip = qeTrack.getItemAt(clipIndex);
-                    if (qeClip) {
-                        qeClip.addTransition(
-                            qe.project.getVideoTransitionByName(transitionName || "Cross Dissolve"),
-                            true,  // at end
-                            duration.toString()
-                        );
-                    }
-                }
-            }
-        }
-
-        return _ok({
-            trackIndex: trackIndex,
-            clipIndex: clipIndex,
-            transitionName: transitionName || "Cross Dissolve",
-            duration: duration
-        });
-    } catch (e) {
-        return _err("addTransition failed: " + e.message);
-    }
+    return addVideoTransition(trackIndex, clipIndex, transitionName, duration, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -1167,6 +1236,23 @@ function _mcpAudioLevelInput(value, label) {
     return parsed;
 }
 
+function _mcpSetAudioAmplitudeAndVerify(param, amplitude) {
+    if (!param || typeof param.setValue !== "function") return { error: "Audio level parameter is not writable" };
+    if (typeof param.getValue !== "function") return { error: "Audio level parameter cannot be read back" };
+    var status = param.setValue(amplitude, true);
+    // Premiere 26.5.2 returns true for this audio write; older documented
+    // hosts return 0. Neither status is sufficient without value readback.
+    if (status !== true && status !== 0) {
+        return { error: "ComponentParam.setValue returned failure status " + String(status) };
+    }
+    var actual = _mcpStrictNumber(param.getValue(), "Audio level readback");
+    if (actual.error) return actual;
+    if (!_componentParamValuesEquivalent(actual.value, amplitude)) {
+        return { error: "Premiere read back audio amplitude " + actual.value + " instead of " + amplitude };
+    }
+    return { value: actual.value, status: status };
+}
+
 // ===========================================================================
 // AUDIO LEVELS (1-5)
 // ===========================================================================
@@ -1183,7 +1269,7 @@ function setAudioLevel(trackIndex, clipIndex, levelDb) {
         var p = _findVolumeParam(r.clip);
         if (!p || !p.setValue || !p.getValue) return _err("Volume/Level parameter is not readable and writable");
         var expectedAmplitude = _dbToAmplitude(parsedLevel.value);
-        var write = _setComponentParamAndVerify(p, expectedAmplitude);
+        var write = _mcpSetAudioAmplitudeAndVerify(p, expectedAmplitude);
         if (write.error) return _err("Could not set audio level: " + write.error);
         var actualAmplitude = write.value;
         return _ok({
@@ -1233,7 +1319,7 @@ function normalizeAudio(trackIndex, clipIndex, targetDb) {
 
         function restoreNormalizationState() {
             var restored = true;
-            var flatRestore = _setComponentParamAndVerify(p, previousAmplitude);
+            var flatRestore = _mcpSetAudioAmplitudeAndVerify(p, previousAmplitude);
             if (flatRestore.error) restored = false;
             for (var restoreIndex = removedKeyframes.length - 1; restoreIndex >= 0; restoreIndex--) {
                 var record = removedKeyframes[restoreIndex];
@@ -1264,7 +1350,7 @@ function normalizeAudio(trackIndex, clipIndex, targetDb) {
                 (remainingRestored ? "; original level and keyframes were restored" : "; original automation could not be fully restored"));
         }
         var expectedAmplitude = _dbToAmplitude(parsedTarget.value);
-        var write = _setComponentParamAndVerify(p, expectedAmplitude);
+        var write = _mcpSetAudioAmplitudeAndVerify(p, expectedAmplitude);
         if (write.error) {
             var levelRestored = restoreNormalizationState();
             return _err("Could not set normalized audio level: " + write.error +
@@ -1339,7 +1425,19 @@ function getAudioEffects(trackIndex, clipIndex) { try { var r = _getAudioClip(tr
 // ===========================================================================
 // AUDIO TRANSITIONS (15)
 // ===========================================================================
-function addAudioCrossfade(trackIndex, clipIndex, duration, type) { try { var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r; duration = parseFloat(duration)||1.0; type = type||"constant_power"; var tn = "Constant Power"; if (type==="constant_gain") tn = "Constant Gain"; else if (type==="exponential") tn = "Exponential Fade"; if (typeof qe !== "undefined" && qe.project) { var qs = qe.project.getActiveSequence(); if (qs) { var qt = qs.getAudioTrackAt(parseInt(trackIndex,10)||0); if (qt) { var qc = qt.getItemAt(parseInt(clipIndex,10)||0); if (qc) { var tr = qe.project.getAudioTransitionByName(tn); if (tr) { qc.addTransition(tr, true, duration.toString()); return _ok({trackIndex:parseInt(trackIndex,10)||0, clipIndex:parseInt(clipIndex,10)||0, duration:duration, type:tn}); } else return _err("Audio transition not found: "+tn); } } } } return _err("Audio crossfades require QE DOM. Call app.enableQE() first."); } catch(e) { return _err("addAudioCrossfade failed: "+e.message); } }
+function addAudioCrossfade(trackIndex, clipIndex, duration, type) {
+    try {
+        var r = _getAudioClip(trackIndex, clipIndex);
+        if (typeof r === "string") return r;
+        type = type || "constant_power";
+        var transitionName = "Constant Power";
+        if (type === "constant_gain") transitionName = "Constant Gain";
+        else if (type === "exponential") transitionName = "Exponential Fade";
+        var result = JSON.parse(addAudioTransition(trackIndex, clipIndex, transitionName, duration));
+        if (result.success) result.data.type = transitionName;
+        return JSON.stringify(result);
+    } catch (e) { return _err("addAudioCrossfade failed: " + e.message); }
+}
 
 // ===========================================================================
 // ESSENTIAL SOUND (16-18)
@@ -4383,60 +4481,181 @@ function _findItemByPath(itemPath) {
 }
 
 // ---------------------------------------------------------------------------
-// 1. newProject(path) - Create a new project at the given path
+// Project lifecycle: document creation/opening does not guarantee panel focus.
+// Never infer the requested document from app.project or close another project.
 // ---------------------------------------------------------------------------
-function newProject(path) {
-    try {
-        if (!path || path === "") {
-            return _err("path is required");
+function _mcpProjectLifecyclePath(path) {
+    var canonical = String((new File(String(path))).fsName);
+    return typeof Folder !== "undefined" && Folder.fs === "Windows" ? canonical.toLowerCase() : canonical;
+}
+
+function _mcpProjectLifecycleSnapshot() {
+    var projects = app.projects;
+    if (!projects || typeof projects.numProjects !== "number" || !isFinite(projects.numProjects) ||
+        projects.numProjects < 0 || projects.numProjects !== Math.floor(projects.numProjects)) {
+        throw new Error("Open-project collection is unavailable; document identity cannot be verified");
+    }
+    var state = [];
+    var ids = {};
+    for (var i = 0; i < projects.numProjects; i++) {
+        var project = projects[i];
+        var id = project ? String(project.documentID || "") : "";
+        if (!project || !id) throw new Error("Open-project readback has an unknown document identity");
+        if (ids["$" + id]) throw new Error("Open-project readback has a duplicate document identity");
+        ids["$" + id] = true;
+        state.push({ documentID: id, path: String(project.path || ""), projectName: String(project.name || "") });
+    }
+    return state;
+}
+
+function _mcpProjectLifecycleTarget(state, path) {
+    var target = null;
+    var wanted = _mcpProjectLifecyclePath(path);
+    for (var i = 0; i < state.length; i++) {
+        if (state[i].path && _mcpProjectLifecyclePath(state[i].path) === wanted) {
+            if (target) throw new Error("Requested project path is ambiguous in the open-project collection");
+            target = state[i];
         }
-        app.newProject(path);
-        return _ok({
-            path: path,
-            created: true
-        });
+    }
+    return target;
+}
+
+function _mcpProjectLifecycleEvidence(target, status, alreadyOpen, count) {
+    var active = app.project;
+    var activeID = active ? String(active.documentID || "") : "";
+    var activePath = active ? String(active.path || "") : "";
+    return { path: String((new File(target.path)).fsName), projectName: target.projectName,
+        documentID: target.documentID, openProjects: count, nativeStatus: status,
+        alreadyOpen: alreadyOpen, opened: true,
+        active: activeID === target.documentID && !!activePath &&
+            _mcpProjectLifecyclePath(activePath) === _mcpProjectLifecyclePath(target.path),
+        activeDocumentID: activeID, activeProjectPath: activePath, identityVerified: true, verified: false };
+}
+
+function _mcpProjectLifecycleFailure(message, evidence) {
+    // The CEP transport forwards only error text. Keep state in that text as
+    // well as structured data so a caller never retries a successful creation.
+    return JSON.stringify({ success: false, error: message + (evidence ? "; project state: " + JSON.stringify(evidence) : ""), data: evidence || null });
+}
+
+function _mcpProjectLifecycleResult(evidence) {
+    if (!evidence.active) {
+        return _mcpProjectLifecycleFailure("The requested project is open but is not active. Focus its Project panel, then recheck or open the existing project. Do not repeat newProject", evidence);
+    }
+    return _ok(evidence);
+}
+
+function _mcpProjectLifecycleChange(before, after, target) {
+    var added = [];
+    for (var i = 0; i < before.length; i++) {
+        var present = false;
+        for (var j = 0; j < after.length; j++) {
+            if (before[i].documentID === after[j].documentID &&
+                ((!before[i].path && !after[j].path) ||
+                 (before[i].path && after[j].path && _mcpProjectLifecyclePath(before[i].path) === _mcpProjectLifecyclePath(after[j].path)))) present = true;
+        }
+        if (!present) return "A previously open project changed or disappeared during the operation";
+    }
+    for (var a = 0; a < after.length; a++) {
+        var existed = false;
+        for (var b = 0; b < before.length; b++) if (after[a].documentID === before[b].documentID) existed = true;
+        if (!existed) added.push(after[a].documentID);
+    }
+    if (added.length !== 1 || added[0] !== target.documentID) return "The operation did not produce exactly one new document at the requested path";
+    return "";
+}
+
+function _mcpOpenOrCreateProject(path, create) {
+    var operation = create ? "newProject" : "openProject";
+    try {
+        if (typeof path !== "string" || !path || !path.replace(/\s/g, "")) return _err("path is required");
+        var file = new File(path);
+        var canonical = String(file.fsName);
+        var before = _mcpProjectLifecycleSnapshot();
+        var existing = _mcpProjectLifecycleTarget(before, canonical);
+        if (create && (existing || file.exists)) {
+            var existingCreateEvidence = existing ? _mcpProjectLifecycleEvidence(existing, null, true, before.length) : { path: canonical, fileExists: true };
+            existingCreateEvidence.created = false;
+            return _mcpProjectLifecycleFailure("Project already exists; use openProject instead of repeating newProject", existingCreateEvidence);
+        }
+        if (!create && (!file.exists || !isFinite(Number(file.length)) || Number(file.length) <= 0)) return _err("Project file is missing or empty: " + canonical);
+        if (!create && existing) {
+            var existingEvidence = _mcpProjectLifecycleEvidence(existing, null, true, before.length);
+            existingEvidence.fileSize = Number(file.length);
+            existingEvidence.verified = true;
+            return _mcpProjectLifecycleResult(existingEvidence);
+        }
+
+        // Adobe's newProject/openDocument contracts specify boolean true.
+        // Numeric zero is not documented as success for these two methods.
+        var status = create ? app.newProject(canonical) : app.openDocument(canonical);
+        var after = _mcpProjectLifecycleSnapshot();
+        var target = _mcpProjectLifecycleTarget(after, canonical);
+        var evidence = target ? _mcpProjectLifecycleEvidence(target, status, false, after.length) : { path: canonical, nativeStatus: status, opened: false, active: false, verified: false };
+        evidence.created = false;
+        if (status !== true) return _mcpProjectLifecycleFailure(operation + " failed with status " + status + "; inspect the project state before retrying", evidence);
+        if (!target) return _mcpProjectLifecycleFailure("Premiere reported success but the requested project path is absent from the open-project collection", evidence);
+        var changeError = _mcpProjectLifecycleChange(before, after, target);
+        if (changeError) return _mcpProjectLifecycleFailure(changeError, evidence);
+        var savedFile = new File(target.path);
+        var size = Number(savedFile.length);
+        if (!savedFile.exists || !isFinite(size) || size <= 0) return _mcpProjectLifecycleFailure("Requested project file is missing or empty after the operation", evidence);
+        evidence.fileSize = size;
+        evidence.created = create;
+        evidence.verified = true;
+        return _mcpProjectLifecycleResult(evidence);
     } catch (e) {
-        return _err("newProject failed: " + e.message);
+        return _err(operation + " failed: " + e.message + ". Inspect open projects before retrying creation.");
     }
 }
 
-// ---------------------------------------------------------------------------
-// 2. openProject(path) - Open an existing .prproj file
-// ---------------------------------------------------------------------------
-function openProject(path) {
-    try {
-        if (!path || path === "") {
-            return _err("path is required");
-        }
-        var result = app.openDocument(path);
-        if (result) {
-            return _ok({
-                path: path,
-                opened: true,
-                projectName: app.project ? (app.project.name || "") : ""
-            });
-        } else {
-            return _err("openDocument returned false for: " + path);
-        }
-    } catch (e) {
-        return _err("openProject failed: " + e.message);
-    }
-}
+// 1. newProject(path) - Create and verify a new saved document.
+function newProject(path) { return _mcpOpenOrCreateProject(path, true); }
+
+// 2. openProject(path) - Verify an existing document and its current focus.
+function openProject(path) { return _mcpOpenOrCreateProject(path, false); }
 
 // ---------------------------------------------------------------------------
 // 3. saveProject() - Save current project
 // ---------------------------------------------------------------------------
+function _mcpSavedProjectReadback(expectedPath) {
+    if (!app.project || !app.project.path) return { error: "Saved project path is unavailable" };
+    var savedFile = new File(String(app.project.path));
+    var actualPath = String(savedFile.fsName);
+    var requestedPath = String((new File(String(expectedPath))).fsName);
+    // Windows paths are case insensitive; preserve exact case on other file
+    // systems so two differently named files cannot satisfy the same request.
+    var windows = typeof Folder !== "undefined" && Folder.fs === "Windows";
+    if ((windows ? actualPath.toLowerCase() : actualPath) !==
+        (windows ? requestedPath.toLowerCase() : requestedPath)) {
+        return { error: "Project save path readback mismatch: " + actualPath };
+    }
+    var fileSize = Number(savedFile.length);
+    if (!savedFile.exists || !isFinite(fileSize) || fileSize <= 0) {
+        return { error: "Saved project file is missing or empty: " + actualPath };
+    }
+    return { path: actualPath, fileSize: fileSize };
+}
+
 function saveProject() {
     try {
         if (!app.project) {
             return _err("No project is open");
         }
+        var expectedPath = String(app.project.path || "");
+        if (!expectedPath) return _err("Project has no saved path; use saveProjectAs before saving");
         var saveResult = app.project.save();
-        if (saveResult !== 0) return _err("Project save failed with status " + saveResult);
+        // API versions report numeric zero or boolean true on success. Do not
+        // accept false/undefined merely because an older file already exists.
+        if (saveResult !== 0 && saveResult !== true) return _err("Project save failed with status " + saveResult);
+        var saved = _mcpSavedProjectReadback(expectedPath);
+        if (saved.error) return _err(saved.error);
         return _ok({
             saved: true,
             projectName: app.project.name || "",
-            projectPath: app.project.path || ""
+            projectPath: saved.path,
+            fileSize: saved.fileSize,
+            saveStatus: saveResult
         });
     } catch (e) {
         return _err("saveProject failed: " + e.message);
@@ -4451,20 +4670,19 @@ function saveProjectAs(path) {
         if (!app.project) {
             return _err("No project is open");
         }
-        if (!path || path === "") {
+        if (typeof path !== "string" || path === "") {
             return _err("path is required");
         }
         var saveAsResult = app.project.saveAs(path);
-        if (saveAsResult !== 0) return _err("Project save-as failed with status " + saveAsResult);
-        var expectedProjectPath = (new File(String(path))).fsName;
-        var actualProjectPath = (new File(String(app.project.path || ""))).fsName;
-        if (String(actualProjectPath).toLowerCase() !== String(expectedProjectPath).toLowerCase()) {
-            return _err("Project save-as path readback mismatch: " + actualProjectPath);
-        }
+        if (saveAsResult !== 0 && saveAsResult !== true) return _err("Project save-as failed with status " + saveAsResult);
+        var saved = _mcpSavedProjectReadback(path);
+        if (saved.error) return _err(saved.error);
         return _ok({
             saved: true,
-            newPath: path,
-            projectName: app.project.name || ""
+            newPath: saved.path,
+            projectName: app.project.name || "",
+            fileSize: saved.fileSize,
+            saveStatus: saveAsResult
         });
     } catch (e) {
         return _err("saveProjectAs failed: " + e.message);
@@ -4474,24 +4692,94 @@ function saveProjectAs(path) {
 // ---------------------------------------------------------------------------
 // 5. closeProject(saveFirst) - Close current project, optionally saving
 // ---------------------------------------------------------------------------
+/** Match a captured document identity without dereferencing a closed handle. */
+function _mcpClosingProjectMatch(candidate, target, documentID, projectPath) {
+    if (!candidate) return false;
+    if (candidate === target) return true;
+    var candidateID = String(candidate.documentID || "");
+    if (documentID && candidateID) return documentID === candidateID;
+    var candidatePath = String(candidate.path || "");
+    if (projectPath && candidatePath) {
+        var expected = _mcpNormalizePath(projectPath);
+        var actual = _mcpNormalizePath(candidatePath);
+        var windows = typeof Folder !== "undefined" && Folder.fs === "Windows";
+        return (windows ? expected.toLowerCase() : expected) === (windows ? actual.toLowerCase() : actual);
+    }
+    return null;
+}
+
+function _mcpClosingProjectCount(target, documentID, projectPath) {
+    var projects = app.projects;
+    if (!projects || typeof projects.numProjects !== "number" ||
+        !isFinite(projects.numProjects) || projects.numProjects < 0 || projects.numProjects !== Math.floor(projects.numProjects)) {
+        return { error: "Open-project collection is unavailable; project closure cannot be verified" };
+    }
+    var matches = 0;
+    for (var i = 0; i < projects.numProjects; i++) {
+        if (!projects[i]) return { error: "Open-project readback is incomplete; project closure cannot be verified" };
+        var match = _mcpClosingProjectMatch(projects[i], target, documentID, projectPath);
+        if (match === null) return { error: "An open project has an unknown identity; project closure cannot be verified" };
+        if (match) matches++;
+    }
+    return { count: matches, total: projects.numProjects };
+}
+
+/** Read-only diagnostic for the document identity used by close verification. */
+function _mcpProjectCloseReadback() {
+    try {
+        var target = app.project;
+        if (!target) return _err("No project is open");
+        var documentID = String(target.documentID || "");
+        var projectPath = String(target.path || "");
+        var state = _mcpClosingProjectCount(target, documentID, projectPath);
+        if (state.error) return _err(state.error);
+        return _ok({ documentID: documentID, projectPath: projectPath,
+            openProjects: state.total, matchingDocuments: state.count });
+    } catch (e) {
+        return _err("Project close readback failed: " + e.message);
+    }
+}
+
 function closeProject(saveFirst) {
     try {
         if (!app.project) {
             return _err("No project is open");
         }
-        var projectName = app.project.name || "";
+        var target = app.project;
+        var projectName = target.name || "";
+        var documentID = String(target.documentID || "");
+        var projectPath = String(target.path || "");
+        if (!documentID && !projectPath) return _err("Current project identity is unavailable; project closure cannot be verified");
+        var before = _mcpClosingProjectCount(target, documentID, projectPath);
+        if (before.error) return _err(before.error);
+        if (before.count !== 1) return _err("Current project identity is not unique in the open-project collection");
 
         if (saveFirst === true || saveFirst === "true") {
-            var closeSaveResult = app.project.save();
-            if (closeSaveResult !== 0) return _err("Project save before close failed with status " + closeSaveResult);
+            var savedBeforeClose = JSON.parse(saveProject());
+            if (savedBeforeClose.success !== true) {
+                return _err("Project save before close failed: " + (savedBeforeClose.error || "unverified save"));
+            }
         }
 
-        app.project.closeDocument();
+        if (_mcpClosingProjectMatch(app.project, target, documentID, projectPath) !== true) {
+            return _err("The active project changed before closing; no close was attempted");
+        }
+        // Saving was already verified above. Suppress a second save and dirty
+        // prompt so an unattended tool call cannot wait on a dialog.
+        var closeResult = target.closeDocument(0, 0);
+        if (closeResult !== 0 && closeResult !== true) return _err("Project close failed with status " + closeResult);
+        var after = _mcpClosingProjectCount(target, documentID, projectPath);
+        if (after.error) return _err(after.error);
+        if (after.count !== 0 || _mcpClosingProjectMatch(app.project, target, documentID, projectPath) === true) {
+            return _err("Premiere reported close success but the requested project remains open");
+        }
 
         return _ok({
             closed: true,
             projectName: projectName,
-            savedFirst: (saveFirst === true || saveFirst === "true")
+            savedFirst: (saveFirst === true || saveFirst === "true"),
+            closeStatus: closeResult,
+            verified: true
         });
     } catch (e) {
         return _err("closeProject failed: " + e.message);
@@ -5446,6 +5734,31 @@ function _verifiedTransitionData(track, beforeState, requestedName, requestedDur
     };
 }
 
+function _qeTransitionDurationSpec(sequence, duration) {
+    if (duration === undefined || duration === null || duration === "") duration = 1.0;
+    duration = Number(duration);
+    if (!isFinite(duration) || duration <= 0) return { error: "Transition duration must be a positive number of seconds" };
+    var fps = _mcpActualSequenceSpec(sequence).fps;
+    if (!isFinite(fps) || fps <= 0) return { error: "Cannot read the sequence frame rate for transition duration" };
+    var nominalFPS = Math.round(fps);
+    if (nominalFPS < 1) return { error: "Cannot encode transition duration at this sequence frame rate" };
+    var frameCount = Math.max(1, Math.round(duration * fps));
+    if (!isFinite(frameCount) || frameCount > 9007199254740991) return { error: "Transition duration exceeds the supported frame count" };
+    // QE parses SS.FF as seconds and frames, not decimal seconds. For example,
+    // "0.5" means five frames; half a second at 24 fps must be "0.12".
+    // Fractional rates use their nominal timecode rate, after rounding the
+    // requested seconds to an exact frame count at the actual sequence rate.
+    var seconds = Math.floor(frameCount / nominalFPS);
+    var frames = frameCount % nominalFPS;
+    return {
+        requestedDuration: duration,
+        frameRate: fps,
+        frameCount: frameCount,
+        quantizedDuration: frameCount / fps,
+        qeDuration: String(seconds) + "." + (frames < 10 ? "0" : "") + String(frames)
+    };
+}
+
 function addVideoTransition(trackIndex, clipIndex, transitionName, duration, applyToEnd) {
     try {
         if (!app.project) return _err("No project is open");
@@ -5453,7 +5766,9 @@ function addVideoTransition(trackIndex, clipIndex, transitionName, duration, app
         if (!seq) return _err("No active sequence");
         trackIndex = parseInt(trackIndex, 10) || 0;
         clipIndex = parseInt(clipIndex, 10) || 0;
-        duration = parseFloat(duration) || 1.0;
+        var timing = _qeTransitionDurationSpec(seq, duration);
+        if (timing.error) return _err(timing.error);
+        duration = timing.requestedDuration;
         transitionName = transitionName || "Cross Dissolve";
         if (applyToEnd === undefined) applyToEnd = true;
         if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
@@ -5469,12 +5784,16 @@ function addVideoTransition(trackIndex, clipIndex, transitionName, duration, app
         if (!qeClip) return _err("QE: clip " + clipIndex + " not found on video track " + trackIndex);
         var tr = qe.project.getVideoTransitionByName(transitionName);
         if (!tr) return _err("QE: video transition '" + transitionName + "' not found");
-        qeClip.addTransition(tr, applyToEnd, duration.toString());
+        qeClip.addTransition(tr, applyToEnd, timing.qeDuration);
         var verified = _verifiedTransitionData(domTrack, beforeState, transitionName, duration);
         if (verified.error) return _err(verified.error + ": " + transitionName);
         verified.data.trackIndex = trackIndex;
         verified.data.clipIndex = clipIndex;
         verified.data.applyToEnd = applyToEnd;
+        verified.data.requestedFrames = timing.frameCount;
+        verified.data.quantizedDuration = timing.quantizedDuration;
+        verified.data.frameRate = timing.frameRate;
+        verified.data.qeDuration = timing.qeDuration;
         return _ok(verified.data);
     } catch (e) { return _err("addVideoTransition failed: " + e.message); }
 }
@@ -5486,7 +5805,9 @@ function addAudioTransition(trackIndex, clipIndex, transitionName, duration) {
         if (!seq) return _err("No active sequence");
         trackIndex = parseInt(trackIndex, 10) || 0;
         clipIndex = parseInt(clipIndex, 10) || 0;
-        duration = parseFloat(duration) || 1.0;
+        var timing = _qeTransitionDurationSpec(seq, duration);
+        if (timing.error) return _err(timing.error);
+        duration = timing.requestedDuration;
         transitionName = transitionName || "Constant Power";
         if (trackIndex >= seq.audioTracks.numTracks) return _err("Audio track index out of range");
         var domTrack = seq.audioTracks[trackIndex];
@@ -5501,11 +5822,15 @@ function addAudioTransition(trackIndex, clipIndex, transitionName, duration) {
         if (!qeClip) return _err("QE: clip " + clipIndex + " not found on audio track " + trackIndex);
         var tr = qe.project.getAudioTransitionByName(transitionName);
         if (!tr) return _err("QE: audio transition '" + transitionName + "' not found");
-        qeClip.addTransition(tr, true, duration.toString());
+        qeClip.addTransition(tr, true, timing.qeDuration);
         var verified = _verifiedTransitionData(domTrack, beforeState, transitionName, duration);
         if (verified.error) return _err(verified.error + ": " + transitionName);
         verified.data.trackIndex = trackIndex;
         verified.data.clipIndex = clipIndex;
+        verified.data.requestedFrames = timing.frameCount;
+        verified.data.quantizedDuration = timing.quantizedDuration;
+        verified.data.frameRate = timing.frameRate;
+        verified.data.qeDuration = timing.qeDuration;
         return _ok(verified.data);
     } catch (e) { return _err("addAudioTransition failed: " + e.message); }
 }
@@ -10561,23 +10886,28 @@ function applyTransitionToAllCuts(trackIndex, transitionName, duration) {
         if (!seq) return _err("No active sequence");
         trackIndex = parseInt(trackIndex, 10) || 0;
         transitionName = transitionName || "Cross Dissolve";
-        duration = parseFloat(duration) || 1.0;
+        var timing = _qeTransitionDurationSpec(seq, duration);
+        if (timing.error) return _err(timing.error);
+        duration = timing.requestedDuration;
         if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
         var track = seq.videoTracks[trackIndex];
-        var qe = null;
-        try { qe = app.enableQE(); } catch(qex) {}
-        if (!qe) return _err("QE DOM not available");
-        var qeSeq = qe.project.getActiveSequence();
-        var qeTrack = qeSeq.getVideoTrackAt(trackIndex);
         var applied = 0;
         var numClips = track.clips.numItems;
+        var totalCuts = Math.max(0, numClips - 1);
+        var transitions = [];
+        var errors = [];
         for (var i = 0; i < numClips - 1; i++) {
             try {
-                var qeClip = qeTrack.getItemAt(i);
-                if (qeClip) { qeClip.addTransition(qe.project.getVideoTransitionByName(transitionName), false, duration.toString()); applied++; }
-            } catch (te) {}
+                var result = JSON.parse(addVideoTransition(trackIndex, i, transitionName, duration, false));
+                if (!result.success) { errors.push("Clip " + i + ": " + result.error); continue; }
+                transitions.push(result.data);
+                applied++;
+            } catch (te) { errors.push("Clip " + i + ": " + te.message); }
         }
-        return _ok({trackIndex: trackIndex, transitionName: transitionName, duration: duration, cutsProcessed: numClips - 1, transitionsApplied: applied});
+        if (errors.length) return _err("Applied " + applied + " of " + totalCuts + " transitions with readback; " + errors.join("; "));
+        return _ok({trackIndex: trackIndex, transitionName: transitionName, duration: duration, cutsProcessed: totalCuts,
+            transitionsApplied: applied, transitions: transitions, requestedFrames: timing.frameCount,
+            quantizedDuration: timing.quantizedDuration, frameRate: timing.frameRate, qeDuration: timing.qeDuration, verified: true});
     } catch (e) { return _err("applyTransitionToAllCuts failed: " + e.message); }
 }
 
@@ -14134,16 +14464,47 @@ function listSequencePresets() {
 // 2. createSequenceFromPreset
 function createSequenceFromPreset(name, presetPath) {
     try {
-        if (!name) return _err("name is required");
-        if (!presetPath) return _err("presetPath is required");
+        // mcpDispatch maps the Go JSON object's name/presetPath fields to these
+        // positional arguments, including the MCP schema's preset_path alias.
+        if (typeof name !== "string" || !name) return _err("name is required");
+        if (typeof presetPath !== "string" || !presetPath) return _err("presetPath is required");
         if (!new File(presetPath).exists) return _err("Preset file not found: " + presetPath);
         if (!app.project) return _err("No project open");
-        if (typeof qe !== "undefined" && qe.project) {
-            qe.project.newSequence(name, presetPath);
-            return _ok({created: true, name: name, presetPath: presetPath});
+        if (!app.project.sequences) return _err("Project sequence collection is unavailable");
+        if (typeof app.enableQE === "function") app.enableQE();
+        if (typeof qe === "undefined" || !qe.project || typeof qe.project.newSequence !== "function") {
+            return _err("Creating a sequence from a preset requires the QE DOM");
         }
-        app.project.createNewSequenceFromClips(name, [], presetPath);
-        return _ok({created: true, name: name, presetPath: presetPath, method: "fallback"});
+
+        var previousActiveSequence = app.project.activeSequence;
+        var previousIds = _mcpCaptureSequenceIds();
+        qe.project.newSequence(name, presetPath);
+        if (app.project.sequences.numSequences !== previousIds.__mcpCount + 1) {
+            return _err("Could not verify preset sequence creation: expected one new sequence; inspect the project before retrying");
+        }
+        var createdSequence = _mcpFindNewSequence(previousIds);
+        var createdId = createdSequence ? String(createdSequence.sequenceID || "") : "";
+        if (!createdId || previousIds[createdId]) {
+            return _err("Could not verify a distinct preset sequence ID; inspect the project before retrying");
+        }
+        if (String(createdSequence.name || "") !== name) {
+            var deleted = _mcpDeleteSequenceQuietly(createdSequence);
+            if (deleted && previousActiveSequence) {
+                try { app.project.activeSequence = previousActiveSequence; } catch (ignoreRestoreActive) {}
+            }
+            return _err("Premiere created the preset sequence with an unexpected name" +
+                (deleted ? "; it was deleted" : "; cleanup failed, so inspect the project before retrying"));
+        }
+        return _ok({
+            created: true,
+            name: String(createdSequence.name),
+            presetPath: presetPath,
+            sequenceID: createdId,
+            sequenceIndex: _mcpSequenceIndex(createdSequence),
+            settings: _mcpActualSequenceSpec(createdSequence),
+            method: "qe",
+            creationVerified: true
+        });
     } catch (e) { return _err("createSequenceFromPreset failed: " + e.message); }
 }
 
@@ -14426,11 +14787,13 @@ function batchSetSpeed(trackType, trackIndex, speed) {
 // 23. batchApplyTransitions
 function batchApplyTransitions(trackIndex, transitionName, duration) {
     try {
-        if (!transitionName) return _err("transitionName is required"); if (!app.project || !app.project.activeSequence) return _err("No active sequence");
-        var seq = app.project.activeSequence; if (trackIndex < 0 || trackIndex >= seq.videoTracks.numTracks) return _err("Invalid track index");
-        var track = seq.videoTracks[trackIndex]; var dur = (duration !== undefined && duration !== null) ? duration : 1.0; var applied = 0;
-        for (var i = 0; i < track.clips.numItems - 1; i++) { try { if (typeof qe !== "undefined") { var qeSeq = qe.project.getActiveSequence(); var qeTrack = qeSeq.getVideoTrackAt(trackIndex); var qeClip = qeTrack.getItemAt(i); if (qeClip && qeClip.addTransition) { qeClip.addTransition(transitionName, dur); applied++; } } } catch (te) {} }
-        return _ok({applied: applied, transitionName: transitionName, duration: dur, totalCuts: Math.max(0, track.clips.numItems - 1)});
+        if (!transitionName) return _err("transitionName is required");
+        var result = JSON.parse(applyTransitionToAllCuts(trackIndex, transitionName, duration));
+        if (result.success) {
+            result.data.applied = result.data.transitionsApplied;
+            result.data.totalCuts = result.data.cutsProcessed;
+        }
+        return JSON.stringify(result);
     } catch (e) { return _err("batchApplyTransitions failed: " + e.message); }
 }
 
@@ -19229,15 +19592,17 @@ function setHighContrastMode(enabled) {
  * assembleFromEDL — Assemble timeline from EDL JSON.
  * edlJson: JSON string with {clips:[{file,inPoint,outPoint,trackIndex,position,transitionName,transitionDuration},...]}
  */
-function _mcpReadProjectItemRange(projectItem) {
+function _mcpReadProjectItemRange(projectItem, trackType) {
     if (!projectItem || !projectItem.getInPoint || !projectItem.getOutPoint) {
         return { error: "Premiere does not expose source marks for this project item" };
     }
     try {
-        var inPoint;
-        var outPoint;
-        try { inPoint = projectItem.getInPoint(4); } catch (ignoreTypedIn) { inPoint = projectItem.getInPoint(); }
-        try { outPoint = projectItem.getOutPoint(4); } catch (ignoreTypedOut) { outPoint = projectItem.getOutPoint(); }
+        // Getter selectors are 1=video and 2=audio. The setter's 4=all value
+        // is not a getter selector and can return unchanged video/default
+        // marks for an audio-only source instead of the requested audio range.
+        var mediaType = trackType === "audio" ? 2 : 1;
+        var inPoint = projectItem.getInPoint(mediaType);
+        var outPoint = projectItem.getOutPoint(mediaType);
         var inSeconds = _timeToSeconds(inPoint);
         var outSeconds = _timeToSeconds(outPoint);
         if (isNaN(inSeconds) || isNaN(outSeconds) || outSeconds <= inSeconds) {
@@ -19249,7 +19614,7 @@ function _mcpReadProjectItemRange(projectItem) {
     }
 }
 
-function _mcpSetProjectItemRange(projectItem, inSeconds, outSeconds) {
+function _mcpSetProjectItemRange(projectItem, inSeconds, outSeconds, trackType) {
     if (!projectItem || !projectItem.setInPoint || !projectItem.setOutPoint) {
         return { error: "Premiere cannot set source marks for this project item" };
     }
@@ -19257,13 +19622,14 @@ function _mcpSetProjectItemRange(projectItem, inSeconds, outSeconds) {
         return { error: "Invalid project item source range" };
     }
     try {
-        var current = _mcpReadProjectItemRange(projectItem);
+        var mediaType = trackType === "audio" ? 2 : 1;
+        var current = _mcpReadProjectItemRange(projectItem, trackType);
         if (current.error) return current;
         function setIn(value) {
-            try { return projectItem.setInPoint(value, 4); } catch (ignoreTypedIn) { return projectItem.setInPoint(value); }
+            return projectItem.setInPoint(value, mediaType);
         }
         function setOut(value) {
-            try { return projectItem.setOutPoint(value, 4); } catch (ignoreTypedOut) { return projectItem.setOutPoint(value); }
+            return projectItem.setOutPoint(value, mediaType);
         }
         function restoreCurrent() {
             try {
@@ -19285,7 +19651,7 @@ function _mcpSetProjectItemRange(projectItem, inSeconds, outSeconds) {
             if (setIn(inSeconds) === false) return { error: "Premiere rejected the source in point" };
             if (setOut(outSeconds) === false) { restoreCurrent(); return { error: "Premiere rejected the source out point; original marks were restored" }; }
         }
-        var actual = _mcpReadProjectItemRange(projectItem);
+        var actual = _mcpReadProjectItemRange(projectItem, trackType);
         if (actual.error) { restoreCurrent(); return { error: actual.error + "; original marks were restored" }; }
         if (Math.abs(actual.inPoint - inSeconds) > 0.02 || Math.abs(actual.outPoint - outSeconds) > 0.02) {
             restoreCurrent();
@@ -19393,7 +19759,7 @@ function assembleFromEDL(edlJson) {
                 }
             }
             if (!plan.item) { errors.push("Entry " + plan.entryIndex + ": imported source could not be resolved: " + plan.filePath); continue; }
-            var originalRange = _mcpReadProjectItemRange(plan.item);
+            var originalRange = _mcpReadProjectItemRange(plan.item, plan.trackType);
             if (originalRange.error) {
                 errors.push("Entry " + plan.entryIndex + ": " + originalRange.error);
                 continue;
@@ -19422,7 +19788,7 @@ function assembleFromEDL(edlJson) {
             var inserted = null;
             var sourceMarksChanged = current.hasIn || current.hasOut;
             if (sourceMarksChanged) {
-                var marked = _mcpSetProjectItemRange(current.item, current.effectiveIn, current.effectiveOut);
+                var marked = _mcpSetProjectItemRange(current.item, current.effectiveIn, current.effectiveOut, current.trackType);
                 if (marked.error) { errors.push("Entry " + current.entryIndex + ": " + marked.error); continue; }
             }
 
@@ -19434,7 +19800,7 @@ function assembleFromEDL(edlJson) {
                 errors.push("Entry " + current.entryIndex + ": overwrite failed: " + overwriteErr.message);
             } finally {
                 if (sourceMarksChanged) {
-                    var restored = _mcpSetProjectItemRange(current.item, current.originalRange.inPoint, current.originalRange.outPoint);
+                    var restored = _mcpSetProjectItemRange(current.item, current.originalRange.inPoint, current.originalRange.outPoint, current.trackType);
                     if (restored.error) errors.push("Entry " + current.entryIndex + ": source marks were not restored: " + restored.error);
                 }
             }
@@ -27459,14 +27825,14 @@ function mcpPlaceClip(argsJson) {
             var rawOutPoint = range.outPoint !== undefined ? range.outPoint : range.out_point;
             var inSeconds = _mcpTimecodeToSeconds(rawInPoint);
             var outSeconds = _mcpTimecodeToSeconds(rawOutPoint);
-            originalRange = _mcpReadProjectItemRange(projectItem);
+            originalRange = _mcpReadProjectItemRange(projectItem, trackType);
             if (originalRange.error) return _err(originalRange.error);
             var hasIn = _mcpTimecodeWasProvided(rawInPoint);
             var hasOut = _mcpTimecodeWasProvided(rawOutPoint);
             var effectiveIn = hasIn ? inSeconds : originalRange.inPoint;
             var effectiveOut = hasOut ? outSeconds : originalRange.outPoint;
             if (effectiveIn < 0 || effectiveOut <= effectiveIn) return _err("Invalid sourceRange: effective outPoint must follow inPoint");
-            var marked = _mcpSetProjectItemRange(projectItem, effectiveIn, effectiveOut);
+            var marked = _mcpSetProjectItemRange(projectItem, effectiveIn, effectiveOut, trackType);
             if (marked.error) return _err(marked.error);
             sourceMarksChanged = true;
         }
@@ -27479,7 +27845,7 @@ function mcpPlaceClip(argsJson) {
             overwriteError = placeErr;
         } finally {
             if (sourceMarksChanged) {
-                var restored = _mcpSetProjectItemRange(projectItem, originalRange.inPoint, originalRange.outPoint);
+                var restored = _mcpSetProjectItemRange(projectItem, originalRange.inPoint, originalRange.outPoint, trackType);
                 if (restored.error) {
                     if (placed && placed.clip) { try { placed.clip.remove(false, true); } catch (ignoreRestoreRollback) {} }
                     return _err("Source marks were not restored: " + restored.error);
@@ -27765,7 +28131,7 @@ function mcpSetAudioLevel(argsJson) {
         var property = _findVolumeParam(clipRef.clip);
         if (!property || !property.setValue || !property.getValue) return _err("Volume/Level parameter is not readable and writable on audio clip");
         var amplitude = _dbToAmplitude(level);
-        var write = _setComponentParamAndVerify(property, amplitude);
+        var write = _mcpSetAudioAmplitudeAndVerify(property, amplitude);
         if (write.error) return _err("Could not set audio level: " + write.error);
         var actualDb = _amplitudeToDb(write.value);
         if (Math.abs(actualDb - level) > 0.25) return _err("Premiere did not accept the requested audio level");
@@ -28276,32 +28642,112 @@ function _mcpBinaryToBase64(data) {
 
 function captureFrameAsBase64(argsJson) {
     var outputFile = null;
+    var ownsOutputPath = false;
     try {
         if (!app.project || !app.project.activeSequence) return _err("No active sequence");
         var seq = app.project.activeSequence;
         var position = seq.getPlayerPosition();
         if (!position) return _err("Could not read the playhead position");
-        outputFile = new File(Folder.temp.fsName + "/premiere_mcp_frame_" + (new Date()).getTime() + ".png");
-        var exported = false;
-        if (seq.exportFramePNG) {
-            seq.exportFramePNG(String(position.ticks), outputFile.fsName);
-            exported = outputFile.exists;
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (!qeSeq || !qeSeq.exportFramePNG) return _err("Frame export is unavailable in this Premiere version");
+        var settings = seq.getSettings();
+        if (!settings) return _err("Frame sequence settings are unavailable in this Premiere version");
+        // Adobe's QE frame-export sample uses CTI.timecode. Formatting the
+        // regular playhead using videoDisplayFormat can produce a frame count
+        // or feet-and-frames string instead of the timecode QE expects.
+        var frameTimecode = qeSeq.CTI ? qeSeq.CTI.timecode : null;
+        if (typeof frameTimecode !== "string" || !/^\d{2,}[:;]\d{2}[:;]\d{2}[:;]\d{2,3}$/.test(frameTimecode)) {
+            return _err("QE frame timecode is unavailable or invalid in this Premiere version");
         }
-        if (!exported) {
-            app.enableQE();
-            var qeSeq = qe.project.getActiveSequence();
-            if (!qeSeq || !qeSeq.exportFramePNG) return _err("Frame export is unavailable in this Premiere version");
-            qeSeq.exportFramePNG(position.ticks, outputFile.fsName);
-        }
+        // QE appends .png to the supplied output stem; including the suffix
+        // yields .png.png on current Premiere versions.
+        var outputStem = Folder.temp.fsName + "/premiere_mcp_frame_" + (new Date()).getTime() + "_" + Math.floor(Math.random() * 1000000000);
+        outputFile = new File(outputStem + ".png");
+        if (outputFile.exists) return _err("Captured frame temporary path already exists");
+        ownsOutputPath = true;
+        qeSeq.exportFramePNG(frameTimecode, outputStem);
         if (!outputFile.exists || outputFile.length === 0) return _err("Premiere did not create the captured PNG");
         outputFile.encoding = "BINARY";
         if (!outputFile.open("r")) return _err("Could not open the captured PNG");
         var binary = outputFile.read();
         outputFile.close();
-        var settings = null;
-        try { settings = seq.getSettings(); } catch (ignoreSettings) {}
         var width = settings ? parseInt(settings.videoFrameWidth, 10) || 0 : (seq.frameSizeHorizontal || 0);
         var height = settings ? parseInt(settings.videoFrameHeight, 10) || 0 : (seq.frameSizeVertical || 0);
+        if (binary.length < 33 || binary.substring(0, 8) !== "\x89PNG\r\n\x1a\n") {
+            return _err("Captured file is not a PNG image");
+        }
+        function uint32(offset) {
+            return (binary.charCodeAt(offset) & 255) * 16777216 + (binary.charCodeAt(offset + 1) & 255) * 65536 +
+                (binary.charCodeAt(offset + 2) & 255) * 256 + (binary.charCodeAt(offset + 3) & 255);
+        }
+        if (uint32(8) !== 13 || binary.substring(12, 16) !== "IHDR") return _err("Captured PNG has an invalid image header");
+        var pngWidth = uint32(16);
+        var pngHeight = uint32(20);
+        if (pngWidth <= 0 || pngHeight <= 0 || pngWidth > 2147483647 || pngHeight > 2147483647 ||
+            width <= 0 || height <= 0 || pngWidth !== width || pngHeight !== height) {
+            return _err("Captured PNG dimensions do not match the active sequence");
+        }
+        var bitDepth = binary.charCodeAt(24) & 255;
+        var colorType = binary.charCodeAt(25) & 255;
+        var validDepth = (colorType === 0 && (bitDepth === 1 || bitDepth === 2 || bitDepth === 4 || bitDepth === 8 || bitDepth === 16)) ||
+            ((colorType === 2 || colorType === 4 || colorType === 6) && (bitDepth === 8 || bitDepth === 16)) ||
+            (colorType === 3 && (bitDepth === 1 || bitDepth === 2 || bitDepth === 4 || bitDepth === 8));
+        if (!validDepth || (binary.charCodeAt(26) & 255) !== 0 || (binary.charCodeAt(27) & 255) !== 0 || (binary.charCodeAt(28) & 255) > 1) {
+            return _err("Captured PNG has invalid image-header fields");
+        }
+        // A signature and dimensions alone also match a truncated export.
+        // Validate the complete chunk stream and CRCs before returning bytes.
+        var crcTable = [];
+        for (var tableIndex = 0; tableIndex < 256; tableIndex++) {
+            var tableValue = tableIndex;
+            for (var bitIndex = 0; bitIndex < 8; bitIndex++) {
+                tableValue = (tableValue & 1) ? (0xedb88320 ^ (tableValue >>> 1)) : (tableValue >>> 1);
+            }
+            crcTable[tableIndex] = tableValue >>> 0;
+        }
+        var chunkOffset = 8;
+        var chunkIndex = 0;
+        var seenPalette = false;
+        var seenData = false;
+        var dataEnded = false;
+        var dataLength = 0;
+        var seenEnd = false;
+        while (chunkOffset < binary.length) {
+            if (binary.length - chunkOffset < 12) return _err("Captured PNG contains a truncated chunk");
+            var chunkLength = uint32(chunkOffset);
+            var chunkType = binary.substring(chunkOffset + 4, chunkOffset + 8);
+            var chunkEnd = chunkOffset + chunkLength + 12;
+            if (chunkLength > 2147483647 || chunkEnd > binary.length) return _err("Captured PNG contains a truncated or invalid chunk length");
+            if (!/^[A-Za-z]{4}$/.test(chunkType) || !/^[A-Z]$/.test(chunkType.charAt(2))) return _err("Captured PNG contains an invalid chunk type");
+            var crc = -1;
+            for (var byteIndex = chunkOffset + 4; byteIndex < chunkEnd - 4; byteIndex++) {
+                crc = (crc >>> 8) ^ crcTable[(crc ^ (binary.charCodeAt(byteIndex) & 255)) & 255];
+            }
+            if (((crc ^ -1) >>> 0) !== uint32(chunkEnd - 4)) return _err("Captured PNG contains a corrupt chunk checksum");
+            if (chunkIndex === 0) {
+                if (chunkType !== "IHDR" || chunkLength !== 13) return _err("Captured PNG must begin with one image header");
+            } else if (chunkType === "IHDR") {
+                return _err("Captured PNG contains a duplicate image header");
+            } else if (chunkType === "PLTE") {
+                if (seenPalette || seenData || colorType === 0 || colorType === 4 || chunkLength < 3 || chunkLength > 768 || chunkLength % 3 !== 0 ||
+                    (colorType === 3 && chunkLength / 3 > Math.pow(2, bitDepth))) return _err("Captured PNG contains an invalid palette");
+                seenPalette = true;
+            } else if (chunkType === "IDAT") {
+                if (dataEnded || (colorType === 3 && !seenPalette)) return _err("Captured PNG contains an invalid image-data order");
+                seenData = true;
+                dataLength += chunkLength;
+            } else if (chunkType === "IEND") {
+                if (chunkLength !== 0 || !seenData || dataLength === 0 || chunkEnd !== binary.length) return _err("Captured PNG has an invalid or incomplete image trailer");
+                seenEnd = true;
+            } else if ((chunkType.charCodeAt(0) & 32) === 0) {
+                return _err("Captured PNG contains an unsupported critical chunk");
+            }
+            if (seenData && chunkType !== "IDAT") dataEnded = true;
+            chunkOffset = chunkEnd;
+            chunkIndex++;
+        }
+        if (!seenEnd) return _err("Captured PNG is incomplete: image trailer is missing");
         var payload = {
             image_base64: _mcpBinaryToBase64(binary),
             format: "png",
@@ -28309,11 +28755,11 @@ function captureFrameAsBase64(argsJson) {
             height: height,
             timecode: _timeToSeconds(position)
         };
-        try { outputFile.remove(); } catch (ignoreCleanup) {}
         return _ok(payload);
     } catch (e) {
-        if (outputFile) { try { if (outputFile.opened) outputFile.close(); } catch (ignoreClose) {} try { if (outputFile.exists) outputFile.remove(); } catch (ignoreRemove) {} }
         return _err("captureFrameAsBase64 failed: " + e.message);
+    } finally {
+        if (outputFile && ownsOutputPath) { try { outputFile.close(); } catch (ignoreClose) {} try { if (outputFile.exists) outputFile.remove(); } catch (ignoreRemove) {} }
     }
 }
 

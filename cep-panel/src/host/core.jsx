@@ -5,23 +5,61 @@
 function _ok(data) { return JSON.stringify({ success: true, data: data }); }
 function _err(message) { return JSON.stringify({ success: false, error: String(message) }); }
 
-// JSON polyfill for older ExtendScript
-if (typeof JSON === "undefined") {
+// Quote values and object keys identically, including every JSON control
+// character. Also escape line separators for the ES3 eval-based parser.
+function _mcpQuoteJSONString(value) {
+    return '"' + String(value).replace(/["\\\x00-\x1f\u2028\u2029]/g, function (character) {
+        if (character === '"') return '\\"';
+        if (character === "\\") return "\\\\";
+        if (character === "\b") return "\\b";
+        if (character === "\f") return "\\f";
+        if (character === "\n") return "\\n";
+        if (character === "\r") return "\\r";
+        if (character === "\t") return "\\t";
+        var hex = character.charCodeAt(0).toString(16);
+        while (hex.length < 4) hex = "0" + hex;
+        return "\\u" + hex;
+    }) + '"';
+}
+
+// Upgrade an already-loaded older polyfill as well as missing JSON. Keep a
+// working native serializer intact when the full host is lazily reloaded.
+var _mcpJSONNeedsPolyfill = typeof JSON === "undefined";
+if (!_mcpJSONNeedsPolyfill) {
+    try {
+        var _mcpJSONProbeKey = 'key"\\\n';
+        var _mcpJSONProbe = {};
+        _mcpJSONProbe[_mcpJSONProbeKey] = String.fromCharCode(0, 3, 8, 12);
+        var _mcpJSONProbeText = JSON.stringify(_mcpJSONProbe);
+        _mcpJSONNeedsPolyfill = typeof _mcpJSONProbeText !== "string" ||
+            /[\x00-\x1f]/.test(_mcpJSONProbeText) ||
+            _mcpJSONProbeText.indexOf(_mcpQuoteJSONString(_mcpJSONProbeKey) + ":") < 0;
+    } catch (ignoreJSONProbe) { _mcpJSONNeedsPolyfill = true; }
+}
+if (_mcpJSONNeedsPolyfill) {
     JSON = {
         stringify: function(obj) {
             if (obj === null) return "null";
-            if (typeof obj === "undefined") return undefined;
-            if (typeof obj === "string") return '"' + obj.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t") + '"';
+            if (typeof obj === "undefined" || typeof obj === "function") return undefined;
+            if (typeof obj === "string") return _mcpQuoteJSONString(obj);
             if (typeof obj === "number") return isFinite(obj) ? String(obj) : "null";
             if (typeof obj === "boolean") return String(obj);
             if (obj instanceof Array) {
                 var a = [];
-                for (var i = 0; i < obj.length; i++) a.push(JSON.stringify(obj[i]));
+                for (var i = 0; i < obj.length; i++) {
+                    var element = JSON.stringify(obj[i]);
+                    a.push(element === undefined ? "null" : element);
+                }
                 return "[" + a.join(",") + "]";
             }
             if (typeof obj === "object") {
                 var p = [];
-                for (var k in obj) if (obj.hasOwnProperty(k)) p.push('"' + k + '":' + JSON.stringify(obj[k]));
+                for (var k in obj) {
+                    if (Object.prototype.hasOwnProperty.call(obj, k)) {
+                        var property = JSON.stringify(obj[k]);
+                        if (property !== undefined) p.push(_mcpQuoteJSONString(k) + ':' + property);
+                    }
+                }
                 return "{" + p.join(",") + "}";
             }
             return '""';
@@ -118,25 +156,11 @@ function getProjectInfo() {
 function getProjectState() { return getProjectInfo(); }
 
 function newProject(argsJson) {
-    try {
-        var args = _parseArgs(argsJson, ["path"]);
-        if (args.error) return _err(args.error);
-        app.newProject(args.path);
-        return _ok({ message: "Project created", path: args.path });
-    } catch (e) { return _err("Failed to create project at '" + (args && args.path ? args.path : "unknown") + "': " + e.message); }
+    return _err("Project creation requires the full host dispatcher for document identity and focus verification. Use evalCommand with newProject, or update the CEP panel.");
 }
 
 function openProject(argsJson) {
-    try {
-        var args = _parseArgs(argsJson, ["path"]);
-        if (args.error) return _err(args.error);
-        var f = new File(args.path);
-        if (!f.exists) return _err("Project file not found: " + args.path);
-        app.openDocument(args.path);
-        var projName = "";
-        try { projName = app.project.name; } catch (e1) {}
-        return _ok({ message: "Project opened: " + projName, path: args.path, name: projName });
-    } catch (e) { return _err("Failed to open project '" + (args && args.path ? args.path : "unknown") + "': " + e.message); }
+    return _err("Project opening requires the full host dispatcher for document identity and focus verification. Use evalCommand with openProject, or update the CEP panel.");
 }
 
 function saveProject() {
@@ -173,24 +197,9 @@ function closeProject(argsJson) {
 // ── Sequences ─────────────────────────────────────────────────────────
 
 function createSequence(argsJson) {
-    try {
-        if (!app.project) return _err("No project is open. Open or create a project first.");
-        var args = {};
-        if (argsJson && argsJson !== "") {
-            var parsed = _parseArgs(argsJson);
-            if (!parsed.error) args = parsed;
-        }
-        var name = args.name || "New Sequence";
-        app.project.createNewSequence(name, name);
-        var seq = _getActiveSequence();
-        if (!seq) return _err("Sequence '" + name + "' was created but could not be activated.");
-        return _ok({
-            name: seq.name,
-            id: seq.sequenceID,
-            width: seq.frameSizeHorizontal,
-            height: seq.frameSizeVertical
-        });
-    } catch (e) { return _err("Failed to create sequence '" + (name || "New Sequence") + "': " + e.message); }
+    // The full dispatcher owns settings/readback and unattended creation.
+    // Calling createNewSequence here opens Premiere's New Sequence dialog.
+    return _err("Sequence creation requires the full host dispatcher. Use evalCommand with createSequence, or update the CEP panel.");
 }
 
 function getActiveSequence() {

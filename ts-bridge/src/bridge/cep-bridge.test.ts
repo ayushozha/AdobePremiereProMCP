@@ -105,6 +105,54 @@ test("retries an initially offline CEP panel and sends commands when it starts",
   assert.equal(lifecycle.reconnectTimer, null);
 });
 
+test("keeps retrying past the legacy 100-attempt cap until the CEP panel starts", async (t) => {
+  const port = await unusedPort();
+  const { bridge, lifecycle } = reconnectingBridge(port);
+  const legacyAttemptCap = 100;
+  lifecycle.reconnectAttempts = legacyAttemptCap - 1;
+  const infoMessages: string[] = [];
+  const warnMessages: string[] = [];
+  const logger = (bridge as unknown as {
+    log: {
+      info: (message: string) => void;
+      warn: (message: string) => void;
+    };
+  }).log;
+  logger.info = (message: string) => {
+    infoMessages.push(message);
+  };
+  logger.warn = (message: string) => {
+    warnMessages.push(message);
+  };
+  let server: WebSocketServer | undefined;
+  t.after(async () => {
+    await bridge.disconnect();
+    if (server) {
+      for (const client of server.clients) client.terminate();
+      await new Promise<void>((resolve) => server!.close(() => resolve()));
+    }
+  });
+
+  await bridge.connect();
+  await waitFor(() => lifecycle.reconnectAttempts > legacyAttemptCap);
+
+  server = new WebSocketServer({ port, host: "127.0.0.1" });
+  await once(server, "listening");
+  await waitFor(() => bridge.isConnected());
+
+  const recoveryMessage = infoMessages.find((message) =>
+    message.startsWith("Reconnected to CEP panel"));
+  assert.ok(recoveryMessage);
+  const recoveredAfter = Number(/after (\d+) attempt/.exec(recoveryMessage)?.[1]);
+  assert.ok(recoveredAfter > legacyAttemptCap);
+  assert.equal(
+    infoMessages.filter((message) => message.startsWith("Reconnecting in")).length,
+    1,
+    "Routine retries must stay below the default log level",
+  );
+  assert.deepEqual(warnMessages, [], "Routine retries must not emit warnings");
+});
+
 test("disconnect cancels retrying an offline CEP panel", async (t) => {
   const port = await unusedPort();
   const { bridge, lifecycle } = reconnectingBridge(port);
@@ -264,6 +312,46 @@ test("adapts core sequence and clip calls to explicit host commands", async () =
     { hours: 0, minutes: 0, seconds: 1, frames: 0, frameRate: 30 },
   );
   assert.equal(calls[1]?.args["speed"], 1.25);
+});
+
+test("reads typed project data from canonical older-panel envelopes", async () => {
+  const { bridge } = bridgeWithHostResult({
+    success: true,
+    data: { name: "Legacy Panel Project", path: "/tmp/legacy.prproj", binCount: 3, sequences: [] },
+  });
+  const project = await bridge.getProjectState();
+  assert.equal(project.projectName, "Legacy Panel Project");
+  assert.equal(project.projectPath, "/tmp/legacy.prproj");
+  assert.equal(project.binCount, 3);
+});
+
+test("rejects canonical older-panel failures with the native error", async () => {
+  const { bridge } = bridgeWithHostResult({ success: false, error: "No project is open" });
+  await assert.rejects(bridge.getProjectState(), (error: unknown) =>
+    error instanceof CepCommandError && error.message.includes("No project is open"));
+});
+
+test("older-panel ping envelopes preserve the actual Premiere connection", async () => {
+  const { bridge } = bridgeWithHostResult({
+    success: true,
+    data: { premiereRunning: true, premiereVersion: "26.3.2", projectOpen: true },
+  });
+  assert.deepEqual(await bridge.ping(), {
+    premiereRunning: true, premiereVersion: "26.3.2", projectOpen: true, bridgeMode: "cep",
+  });
+});
+
+test("preserves flat success payloads with business fields", async () => {
+  for (const payload of [
+    { success: true, name: "Flat result", path: "/tmp/flat.prproj", binCount: 2 },
+    { success: true, data: { name: "Nested business value" }, name: "Flat result", path: "/tmp/flat.prproj", binCount: 2 },
+  ]) {
+    const { bridge } = bridgeWithHostResult(payload);
+    const project = await bridge.getProjectState();
+    assert.equal(project.projectName, "Flat result");
+    assert.equal(project.projectPath, "/tmp/flat.prproj");
+    assert.equal(project.binCount, 2);
+  }
 });
 
 test("turns host command failures into typed bridge errors", async () => {

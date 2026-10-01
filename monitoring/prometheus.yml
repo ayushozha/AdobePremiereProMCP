@@ -1,0 +1,10 @@
+# Run Prometheus on the same host/network namespace as the orchestrator.
+# Start the MCP process with MCP_OBSERVABILITY_ADDR=127.0.0.1:9091.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+scrape_configs:
+  - job_name: premiere-mcp
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['127.0.0.1:9091']

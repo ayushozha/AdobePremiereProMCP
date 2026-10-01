@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"time"
@@ -29,6 +30,10 @@ type Config struct {
 
 	// LogLevel controls the zap log verbosity (debug, info, warn, error).
 	LogLevel string
+
+	// ObservabilityAddr enables a separate, loopback-only metrics and health
+	// listener when nonempty. It is disabled by default, including in stdio mode.
+	ObservabilityAddr string
 
 	// Service addresses for gRPC connections.
 	RustEngineAddr       string
@@ -66,6 +71,7 @@ func Defaults() Config {
 //	MCP_SSE_PORT            - port number for SSE transport
 //	MCP_SSE_HOST            - bind host for SSE transport (default 127.0.0.1)
 //	MCP_LOG_LEVEL           - "debug", "info", "warn", "error"
+//	MCP_OBSERVABILITY_ADDR  - optional loopback IP:port for metrics and health
 //	RUST_ENGINE_ADDR        - gRPC address for the Rust media engine
 //	PYTHON_INTEL_ADDR       - gRPC address for the Python intelligence service
 //	TS_BRIDGE_ADDR          - gRPC address for the TypeScript Premiere bridge
@@ -74,6 +80,15 @@ func Defaults() Config {
 //	TS_BRIDGE_TIMEOUT       - timeout in seconds for TypeScript bridge calls
 func LoadFromEnv() (Config, error) {
 	cfg := Defaults()
+	if v := os.Getenv("MCP_OBSERVABILITY_ADDR"); v != "" {
+		host, portText, err := net.SplitHostPort(v)
+		port, portErr := strconv.Atoi(portText)
+		ip := net.ParseIP(host)
+		if err != nil || portErr != nil || port < 1 || port > 65535 || ip == nil || !ip.IsLoopback() {
+			return cfg, fmt.Errorf("MCP_OBSERVABILITY_ADDR must be a loopback IP and port (1-65535), for example 127.0.0.1:9090")
+		}
+		cfg.ObservabilityAddr = v
+	}
 
 	if v := os.Getenv("MCP_TRANSPORT"); v != "" {
 		switch TransportType(v) {

@@ -4,6 +4,8 @@
 > original roadmap, not current live verification. Use `tools/list`, the
 > default curated profile, and host readback as the current authority.
 
+For the September 2026 issue audit and acceptance gaps, see [issue status](issue-status-2026-09-29.md). Current implementation guides cover [npm distribution](npm-distribution.md), [observability](observability.md), [live Premiere tests](live-premiere-testing.md), and [UXP migration](uxp-migration.md).
+
 Master plan for every MCP tool the PremierPro MCP Server will expose. Each tool maps to one or more Adobe Premiere Pro ExtendScript/QE DOM operations, orchestrated through the four-language stack (Go orchestration, Rust media processing, Python intelligence, TypeScript ExtendScript bridge).
 
 **Current state:** 16 tools implemented (Phase 0). This plan adds ~230 additional tools across 7 phases.
@@ -512,7 +514,7 @@ The Go orchestrator wraps all downstream errors with context and applies circuit
 | No undo grouping | Each scripted operation is a separate undo step | Document this limitation; consider batching in single evalScript calls |
 | Sync execution blocks Premiere UI | Long scripts freeze the app | Split into small atomic operations with `$.sleep()` between them |
 | No caption API in ExtendScript | Caption creation/editing not in standard DOM | Import .srt files; use UI automation as last resort |
-| ExtendScript EOL September 2026 | API will eventually be replaced by UXP | Architecture supports future UXP bridge module swap |
+| UXP migration is incomplete | Production MCP commands currently require CEP/ExtendScript | [UXP inspection prototype and migration plan](uxp-migration.md); native transport and editing parity remain unverified |
 
 ---
 

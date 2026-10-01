@@ -284,7 +284,7 @@
     var ACTION_MAP = {
         ping:               function ()        { return "ping()"; },
         getProjectState:    function ()        { return "getProjectState()"; },
-        createSequence:     function (p)       { return "createSequence(" + escapeForEval(JSON.stringify(p)) + ")"; },
+        createSequence:     function (p)       { return hostLoader.buildDispatchScript(premiereJsxPath, "createSequence", JSON.stringify(p)); },
         getTimelineState:   function (p)       { return "getTimelineState(" + (p.sequenceIndex || 0) + ")"; },
         importMedia:        function (p)       { return "importMedia(" + escapeForEval(p.filePath) + "," + escapeForEval(p.binPath || "") + ")"; },
         placeClip:          function (p)       { return "placeClip(" + (p.projectItemIndex || 0) + "," + (p.trackIndex || 0) + "," + (p.startTime || 0) + ")"; },

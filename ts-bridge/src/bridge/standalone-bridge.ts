@@ -352,6 +352,15 @@ export class StandaloneBridge implements PremiereBridge {
   async ping(): Promise<PingResult> {
     const script = ES.ping();
     try {
+      // AppleScript's `tell application` may launch a stopped application.
+      // Check the configured app's executable first; unavailable process
+      // inspection must fail closed rather than turn monitoring into a launch.
+      const appName = this.resolveAppName().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      execFileSync("pgrep", ["-f", `/${appName}\\.app/Contents/MacOS/`], {
+        encoding: "utf-8",
+        timeout: 2_000,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
       return this.execute<PingResult>(script, "ping");
     } catch {
       return {
@@ -384,6 +393,12 @@ export class StandaloneBridge implements PremiereBridge {
     // handles JSON, quotes, and newlines without corruption.
     const appleScript = [
       "on run argv",
+      // Recheck inside AppleScript in case Premiere quit after the process probe.
+      ...(command === "ping" ? [
+        `if not (application "${appName}" is running) then`,
+        'return "{\\"premiereRunning\\":false,\\"premiereVersion\\":\\"unknown\\",\\"projectOpen\\":false,\\"bridgeMode\\":\\"standalone\\"}"',
+        "end if",
+      ] : []),
       `tell application "${appName}"`,
       "DoScript (item 1 of argv)",
       "end tell",

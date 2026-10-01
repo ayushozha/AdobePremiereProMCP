@@ -3,18 +3,151 @@ on:
   push:
     tags: ['v*']
 
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   validate:
     uses: ./.github/workflows/ci.yml
 
-  release:
+  binaries:
     needs: validate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: darwin
+            goarch: arm64
+            asset: premierpro-mcp-darwin-arm64
+          - goos: darwin
+            goarch: amd64
+            asset: premierpro-mcp-darwin-x64
+          - goos: linux
+            goarch: amd64
+            asset: premierpro-mcp-linux-x64
+          - goos: windows
+            goarch: amd64
+            asset: premierpro-mcp-win-x64.exe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go-orchestrator/go.mod
+          cache-dependency-path: |
+            go-orchestrator/go.sum
+            gen/go/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: bufbuild/buf-action@v1
+        with:
+          version: '1.72.0'
+          setup_only: true
+      - name: Validate release tag
+        run: node -e 'require("./npm-package/lib/release.cjs").versionFromTag(process.env.GITHUB_REF_NAME)'
+      - name: Generate protobuf clients
+        run: bash scripts/generate-proto.sh
+      - name: Build native MCP server
+        working-directory: go-orchestrator
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          ASSET: ${{ matrix.asset }}
+        run: |
+          mkdir -p ../artifacts
+          RELEASE_VERSION="${GITHUB_REF_NAME#v}"
+          BUILD_DATE="$(git show -s --format=%cI "$GITHUB_SHA")"
+          go build -trimpath -ldflags "-s -w -X main.version=$RELEASE_VERSION -X main.commit=$GITHUB_SHA -X main.date=$BUILD_DATE" -o "../artifacts/$ASSET" ./cmd/server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.asset }}
+          path: artifacts/${{ matrix.asset }}
+          if-no-files-found: error
+
+  release:
+    needs: binaries
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - name: Refuse to replace an existing release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.repos.getReleaseByTag({
+                ...context.repo, tag: context.ref.replace('refs/tags/', '')
+              });
+              core.setFailed('This release already exists. Use a new version; published binary hashes must remain stable.');
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: artifacts
+          merge-multiple: true
+      - name: Stage exact npm version and binary checksums
+        run: node npm-package/scripts/prepare-release.cjs "$GITHUB_REF_NAME" artifacts npm-release
+      - name: Pack npm distribution
+        working-directory: npm-release
+        run: npm pack --pack-destination ../artifacts
+      - name: Smoke the packaged Go server over stdio
+        run: |
+          chmod +x artifacts/premierpro-mcp-linux-x64
+          MCP_SERVER_BIN="$PWD/artifacts/premierpro-mcp-linux-x64" MCP_TOOL_PROFILE=standard node scripts/smoke-mcp.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-release
+          path: artifacts/premierpro-mcp-server-*.tgz
+          if-no-files-found: error
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          fail_on_unmatched_files: true
+          overwrite_files: false
+          files: |
+            artifacts/premierpro-mcp-darwin-arm64
+            artifacts/premierpro-mcp-darwin-x64
+            artifacts/premierpro-mcp-linux-x64
+            artifacts/premierpro-mcp-win-x64.exe
+            artifacts/SHA256SUMS
+            artifacts/premierpro-mcp-server-*.tgz
+
+  publish-npm:
+    needs: release
+    # Opt-in only after the scope, npm trusted publisher and GitHub environment
+    # are configured. No token or publication is needed to build a release.
+    if: github.repository == 'ayushozha/AdobePremiereProMCP' && vars.NPM_PUBLISH_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-release
+          path: artifacts
+      - name: Publish public npm package using trusted publishing
+        run: |
+          NPM_TAG=latest
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then NPM_TAG=next; fi
+          npm publish artifacts/premierpro-mcp-server-*.tgz --access public --tag "$NPM_TAG" --provenance
