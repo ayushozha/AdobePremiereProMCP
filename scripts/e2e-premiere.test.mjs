@@ -110,20 +110,22 @@ const edlFixture = () => {
     edl: { sequence_frame_rate: 24, entries: [entry(second, 1, 0, 'video-id'), entry(audio, 2, 1, 'audio-id'), entry(first, 1, 0, 'video-id')] },
     assets: [{ id: 'video-id', file_path: '/video.mp4' }, { id: 'audio-id', file_path: '/audio.wav' }],
     sources: ['/video.mp4', '/audio.wav'],
-    timeline: { sequence_id: 'auto', frame_rate: 24, video_tracks: [{ index: 2, clips: [] }, { index: 0, clips: [first, second] }], audio_tracks: [{ index: 1, clips: [audio] }, { index: 0, clips: [] }] },
+    nativeSequence: { id: 'auto', name: 'Auto edit', resolution: { width: 320, height: 180 }, frame_rate: 24 },
+    timeline: { sequence_id: 'auto', total_duration_seconds: 4, video_tracks: [{ index: 2, clips: [] }, { index: 0, clips: [first, second] }], audio_tracks: [{ index: 1, clips: [audio] }, { index: 0, clips: [] }] },
   };
 };
 
 test('EDL readback matches scanned asset IDs, repeated sources, and unordered tracks and entries', () => {
-  const { timeline, edl, assets, sources } = edlFixture();
-  verifyEDLTimeline(timeline, 'auto', edl, assets, sources);
+  const { timeline, nativeSequence, edl, assets, sources } = edlFixture();
+  assert.equal(Object.hasOwn(timeline, 'frame_rate'), false, 'Go TimelineState has no frame_rate field');
+  verifyEDLTimeline(timeline, 'auto', nativeSequence, edl, assets, sources);
   // Within-one-frame candidates may overlap. A complete distinct assignment
   // exists here, but a greedy match of the first entry to the first clip fails.
   const ranged = frame => ({ in_point: { ...tc(0), frames: frame }, out_point: { ...tc(2), frames: frame } });
   edl.entries = [1, 0].map(frame => ({ source_asset_id: 'video-id', track: { type: 1, track_index: 0 }, source_range: ranged(frame), timeline_range: ranged(frame) }));
   timeline.video_tracks = [{ index: 0, clips: [0, 2].map(frame => ({ source_path: '/video.mp4', source_range: ranged(frame), timeline_range: ranged(frame) })) }];
   timeline.audio_tracks = [];
-  verifyEDLTimeline(timeline, 'auto', edl, assets, sources);
+  verifyEDLTimeline(timeline, 'auto', nativeSequence, edl, assets, sources);
 });
 
 test('EDL readback rejects equal-count edits with wrong positions, source trims, targets, or duplicate clips', () => {
@@ -134,15 +136,25 @@ test('EDL readback rejects equal-count edits with wrong positions, source trims,
     f => { f.timeline.video_tracks[1].clips[1].source_path = '/audio.wav'; },
     f => { f.timeline.video_tracks[1].clips[1] = structuredClone(f.timeline.video_tracks[1].clips[0]); },
     f => { f.edl.entries[0].source_asset_id = 'unmapped-id'; },
-    f => { f.timeline.frame_rate = 30; },
+    f => { f.nativeSequence.frame_rate = 30; },
   ]) {
     const f = edlFixture();
     alter(f);
-    assert.throws(() => verifyEDLTimeline(f.timeline, 'auto', f.edl, f.assets, f.sources), /matching|mapping|frame rate/);
+    assert.throws(() => verifyEDLTimeline(f.timeline, 'auto', f.nativeSequence, f.edl, f.assets, f.sources), /matching|mapping|frame rate/);
   }
 });
 
-test('script workflow cannot pass when native clip count matches but EDL timing and track are wrong', async () => {
+test('EDL readback requires matching native sequence identity and finite frame rate metadata', () => {
+  const f = edlFixture();
+  for (const nativeSequence of [undefined, null, { id: 'another-sequence', frame_rate: 24 },
+    ...[undefined, null, 0, -1, NaN, Infinity, '24'].map(frame_rate => ({ id: 'auto', frame_rate }))]) {
+    assert.throws(() => verifyEDLTimeline(f.timeline, 'auto', nativeSequence, f.edl, f.assets, f.sources), /sequence metadata|frame rate/);
+  }
+  assert.throws(() => verifyEDLTimeline({ ...f.timeline, sequence_id: 'another-sequence' }, 'auto', f.nativeSequence, f.edl, f.assets, f.sources), /sequence ID/);
+});
+
+for (const outcome of ['correct Go readback', 'wrong timing and track', 'missing frame rate', 'wrong frame rate']) {
+test('script workflow validates native sequence metadata: ' + outcome, async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'premiere-e2e-edl-')));
   try {
     const fixture = { root, project: join(root, 'MCP-E2E-disposable.prproj'), artifacts: join(root, 'artifacts'), sequence: 'MCP-E2E-fixture', video: '/video.mp4', audio: '/audio.wav', script: '/script.txt' };
@@ -155,14 +167,18 @@ test('script workflow cannot pass when native clip count matches but EDL timing 
       async callTool({ name, arguments: args }) {
         if (name === 'premiere_is_running') return textResult({ running: true });
         if (name === 'premiere_ping') return textResult({ premiere_running: true, project_open: true });
-        if (name === 'premiere_get_project') return textResult({ project_path: fixture.project, sequences: created ? [{ id: 'seq', name: fixture.sequence, resolution: { width: 320, height: 180 }, frame_rate: 24 }, ...(auto ? [{ id: 'auto' }] : [])] : [] });
+        if (name === 'premiere_get_project') return textResult({ project_path: fixture.project, sequences: created ? [{ id: 'seq', name: fixture.sequence, resolution: { width: 320, height: 180 }, frame_rate: 24 }, ...(auto ? [{ id: 'auto', name: 'Auto edit', resolution: { width: 320, height: 180 }, frame_rate: outcome === 'missing frame rate' ? undefined : outcome === 'wrong frame rate' ? 30 : 24 }] : [])] : [] });
         if (name === 'premiere_get_project_items') return textResult({ items: imported === 2 ? [{ media_path: fixture.video }, { media_path: fixture.audio }] : [] });
         if (name === 'premiere_import_media') { imported++; return textResult({ imported: true }); }
         if (name === 'premiere_create_sequence') { created = true; return textResult({ sequence_id: 'seq' }); }
         if (name === 'premiere_place_clip') return textResult({ placed: true });
-        if (name === 'premiere_get_timeline') return textResult(args.sequence_id === 'auto'
-          ? { sequence_id: 'auto', frame_rate: 24, video_tracks: [{ index: 99, clips: [clip(fixture.video, 99, 120)] }], audio_tracks: [] }
-          : { sequence_id: 'seq', total_duration_seconds: 4, video_tracks: [{ index: 0, clips: [clip(fixture.video, 0, 2), clip(fixture.video, 2, 4)] }], audio_tracks: [{ index: 0, clips: [clip(fixture.audio, 0, 4)] }] });
+        if (name === 'premiere_get_timeline') {
+          const autoClip = clip(fixture.video, 0, 4);
+          autoClip.source_range = { in_point: tc(0), out_point: tc(4) };
+          return textResult(args.sequence_id === 'auto'
+            ? { sequence_id: 'auto', total_duration_seconds: 4, video_tracks: [{ index: outcome === 'wrong timing and track' ? 99 : 0, clips: [outcome === 'wrong timing and track' ? clip(fixture.video, 99, 120) : autoClip] }], audio_tracks: [] }
+            : { sequence_id: 'seq', total_duration_seconds: 4, video_tracks: [{ index: 0, clips: [clip(fixture.video, 0, 2), clip(fixture.video, 2, 4)] }], audio_tracks: [{ index: 0, clips: [clip(fixture.audio, 0, 4)] }] });
+        }
         if (name === 'premiere_parse_script') return textResult({ segments: [{ text: 'show clip' }] });
         if (name === 'premiere_auto_edit') {
           auto = true;
@@ -172,12 +188,19 @@ test('script workflow cannot pass when native clip count matches but EDL timing 
       },
     };
     const report = await runSuite(client, { ...parseArgs([]), mutate: true }, fixture);
-    assert.equal(report.checks.find(c => c.id === 'script_edl_timeline').status, 'fail');
-    assert.match(report.checks.find(c => c.id === 'script_edl_timeline').reason, /no distinct native clip/);
-    assert.deepEqual(report.summary, { pass: 2, fail: 1, blocked: 5 });
-    assert.equal(exitCode(report), 1);
+    const check = report.checks.find(c => c.id === 'script_edl_timeline');
+    if (outcome === 'correct Go readback') {
+      assert.equal(check.status, 'pass');
+      assert.deepEqual(report.summary, { pass: 3, fail: 0, blocked: 5 });
+    } else {
+      assert.equal(check.status, 'fail');
+      assert.match(check.reason, outcome === 'wrong timing and track' ? /no distinct native clip/ : /frame rate/);
+      assert.deepEqual(report.summary, { pass: 2, fail: 1, blocked: 5 });
+      assert.equal(exitCode(report), 1);
+    }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+}
 
 test('project switch between imports blocks the next write and every dependent test', async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'premiere-e2e-guard-')));

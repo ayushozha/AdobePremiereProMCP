@@ -148,11 +148,13 @@ export function verifyTimeline(timeline, sequence, video, audio) {
   near(timeline.total_duration_seconds, 4, 'Sequence duration');
 }
 
-export function verifyEDLTimeline(timeline, sequence, edl, assets, fixtureSources) {
+export function verifyEDLTimeline(timeline, sequence, nativeSequence, edl, assets, fixtureSources) {
   requireThat(timeline.sequence_id === sequence, 'EDL sequence ID differs from timeline readback');
+  requireThat(nativeSequence?.id === sequence, 'Native EDL sequence metadata is missing or has a different sequence ID');
   requireThat(Array.isArray(edl?.entries) && edl.entries.length > 0, 'Missing EDL entries');
   requireThat(Number.isFinite(edl.sequence_frame_rate) && edl.sequence_frame_rate > 0, 'Missing EDL frame rate');
-  near(timeline.frame_rate, edl.sequence_frame_rate, 'EDL sequence frame rate', 0.001);
+  requireThat(Number.isFinite(nativeSequence.frame_rate) && nativeSequence.frame_rate > 0, 'Missing native EDL sequence frame rate');
+  near(nativeSequence.frame_rate, edl.sequence_frame_rate, 'EDL sequence frame rate', 0.001);
   const tolerance = 1 / edl.sequence_frame_rate + 0.001;
   const sourcePaths = new Map();
   for (const asset of assets || []) {
@@ -434,11 +436,12 @@ export async function runSuite(client, options, fixture) {
     requireThat(execution?.sequence_id && execution.sequence_id !== sequence && execution.clips_placed > 0 && !execution.errors?.length, 'EDL execution did not create a verified new sequence');
     requireThat(result.steps?.some(s => s.name === 'execute_edl' && s.status === 'completed') && !result.steps.some(s => s.status === 'failed'), 'Auto-edit pipeline reported incomplete steps');
     const project = await data('premiere_get_project');
-    requireThat(project.project_path === fixture.project && project.sequences?.some(s => s.id === execution.sequence_id), 'EDL sequence absent from disposable project');
+    const nativeSequence = project.sequences?.find(s => s.id === execution.sequence_id);
+    requireThat(project.project_path === fixture.project && nativeSequence, 'EDL sequence absent from disposable project');
     const timeline = await data('premiere_get_timeline', { sequence_id: execution.sequence_id });
     requireThat(execution.clips_placed === result.edl.entries.length, 'EDL clip count differs from execution result');
-    verifyEDLTimeline(timeline, execution.sequence_id, result.edl, result.scan_result?.assets, [fixture.video, fixture.audio]);
-    return [{ parsed, result, timeline }];
+    verifyEDLTimeline(timeline, execution.sequence_id, nativeSequence, result.edl, result.scan_result?.assets, [fixture.video, fixture.audio]);
+    return [{ parsed, result, nativeSequence, timeline }];
   });
   return finish(report);
 }
