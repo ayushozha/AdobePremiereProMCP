@@ -474,7 +474,7 @@ vm.runInContext([
     "var __transitionClip={end:{seconds:2}};var __transitionClips=[__transitionClip];__transitionClips.numItems=1;",
     "var __transitionTrack={clips:__transitionClips,transitions:__transitions};",
     "var __transitionTracks=[__transitionTrack];__transitionTracks.numTracks=1;",
-    "app={enableQE:function(){},project:{activeSequence:{videoTracks:__transitionTracks}}};",
+    "app={enableQE:function(){},project:{activeSequence:{videoTracks:__transitionTracks,timebase:'10584000000'}}};",
     "var __qeTransitionClip={addTransition:function(){}};",
     "qe={project:{getActiveSequence:function(){return {getVideoTrackAt:function(){return {getItemAt:function(){return __qeTransitionClip;}};}};},",
     "  getVideoTransitionByName:function(){return {name:'Cross Dissolve'};}}};",

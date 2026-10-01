@@ -45,11 +45,38 @@ if (typeof Date.prototype.toISOString !== "function") {
     };
 }
 
-/**
- * Safe JSON serializer that handles ExtendScript quirks.
- * ExtendScript's native JSON may not exist in older versions.
- */
-if (typeof JSON === "undefined") {
+// Quote values and object keys identically, including every JSON control
+// character. Also escape line separators for the ES3 eval-based parser.
+function _mcpQuoteJSONString(value) {
+    return '"' + String(value).replace(/["\\\x00-\x1f\u2028\u2029]/g, function (character) {
+        if (character === '"') return '\\"';
+        if (character === "\\") return "\\\\";
+        if (character === "\b") return "\\b";
+        if (character === "\f") return "\\f";
+        if (character === "\n") return "\\n";
+        if (character === "\r") return "\\r";
+        if (character === "\t") return "\\t";
+        var hex = character.charCodeAt(0).toString(16);
+        while (hex.length < 4) hex = "0" + hex;
+        return "\\u" + hex;
+    }) + '"';
+}
+
+// Upgrade an already-loaded older polyfill as well as missing JSON. Keep a
+// working native serializer intact when the full host is lazily reloaded.
+var _mcpJSONNeedsPolyfill = typeof JSON === "undefined";
+if (!_mcpJSONNeedsPolyfill) {
+    try {
+        var _mcpJSONProbeKey = 'key"\\\n';
+        var _mcpJSONProbe = {};
+        _mcpJSONProbe[_mcpJSONProbeKey] = String.fromCharCode(0, 3, 8, 12);
+        var _mcpJSONProbeText = JSON.stringify(_mcpJSONProbe);
+        _mcpJSONNeedsPolyfill = typeof _mcpJSONProbeText !== "string" ||
+            /[\x00-\x1f]/.test(_mcpJSONProbeText) ||
+            _mcpJSONProbeText.indexOf(_mcpQuoteJSONString(_mcpJSONProbeKey) + ":") < 0;
+    } catch (ignoreJSONProbe) { _mcpJSONNeedsPolyfill = true; }
+}
+if (_mcpJSONNeedsPolyfill) {
     // Minimal JSON polyfill for ExtendScript environments that lack it.
     JSON = {
         stringify: function (obj, replacer, space) {
@@ -61,14 +88,10 @@ if (typeof JSON === "undefined") {
             }
             function _str(val, depth) {
                 if (val === null) return "null";
-                if (val === undefined) return "undefined";
+                if (val === undefined || typeof val === "function") return undefined;
                 if (typeof val === "number") return isFinite(val) ? String(val) : "null";
                 if (typeof val === "boolean") return String(val);
-                if (typeof val === "string") {
-                    return '"' + val.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
-                                    .replace(/\n/g, "\\n").replace(/\r/g, "\\r")
-                                    .replace(/\t/g, "\\t") + '"';
-                }
+                if (typeof val === "string") return _mcpQuoteJSONString(val);
                 var pad = "";
                 var childPad = "";
                 if (indent) {
@@ -81,15 +104,17 @@ if (typeof JSON === "undefined") {
                     if (val.length === 0) return "[]";
                     var arrParts = [];
                     for (var i = 0; i < val.length; i++) {
-                        arrParts.push(childPad + _str(val[i], depth + 1));
+                        var element = _str(val[i], depth + 1);
+                        arrParts.push(childPad + (element === undefined ? "null" : element));
                     }
                     return "[" + nl + arrParts.join("," + nl) + nl + pad + "]";
                 }
                 if (typeof val === "object") {
                     var objParts = [];
                     for (var key in val) {
-                        if (val.hasOwnProperty(key)) {
-                            objParts.push(childPad + '"' + key + '":' + sep + _str(val[key], depth + 1));
+                        if (Object.prototype.hasOwnProperty.call(val, key)) {
+                            var property = _str(val[key], depth + 1);
+                            if (property !== undefined) objParts.push(childPad + _mcpQuoteJSONString(key) + ':' + sep + property);
                         }
                     }
                     if (objParts.length === 0) return "{}";
@@ -1096,65 +1121,7 @@ function placeClip(projectItemIndex, trackIndex, startTime) {
 // addTransition(trackIndex, clipIndex, transitionName, duration)
 // ---------------------------------------------------------------------------
 function addTransition(trackIndex, clipIndex, transitionName, duration) {
-    try {
-        if (!app.project) {
-            return _err("No project is open");
-        }
-
-        var seq = app.project.activeSequence;
-        if (!seq) {
-            return _err("No active sequence");
-        }
-
-        trackIndex = parseInt(trackIndex, 10) || 0;
-        clipIndex = parseInt(clipIndex, 10) || 0;
-        duration = parseFloat(duration) || 1.0;
-
-        if (trackIndex >= seq.videoTracks.numTracks) {
-            return _err("Video track index " + trackIndex + " out of range");
-        }
-
-        var track = seq.videoTracks[trackIndex];
-        if (!track.clips || clipIndex >= track.clips.numItems) {
-            return _err("Clip index " + clipIndex + " out of range on track " + trackIndex);
-        }
-
-        var clip = track.clips[clipIndex];
-
-        // Apply transition at the end of the clip
-        // Premiere's DOM uses QE (Quick Export) domain for transitions in some versions
-        var transitionDuration = _secondsToTime(duration);
-
-        // Try using the TrackItem's transitions
-        if (clip.setEndTransition) {
-            clip.setEndTransition(transitionName, transitionDuration);
-        } else if (typeof qe !== "undefined" && qe.project) {
-            // Fallback: QE DOM approach
-            var qeSeq = qe.project.getActiveSequence();
-            if (qeSeq) {
-                var qeTrack = qeSeq.getVideoTrackAt(trackIndex);
-                if (qeTrack) {
-                    var qeClip = qeTrack.getItemAt(clipIndex);
-                    if (qeClip) {
-                        qeClip.addTransition(
-                            qe.project.getVideoTransitionByName(transitionName || "Cross Dissolve"),
-                            true,  // at end
-                            duration.toString()
-                        );
-                    }
-                }
-            }
-        }
-
-        return _ok({
-            trackIndex: trackIndex,
-            clipIndex: clipIndex,
-            transitionName: transitionName || "Cross Dissolve",
-            duration: duration
-        });
-    } catch (e) {
-        return _err("addTransition failed: " + e.message);
-    }
+    return addVideoTransition(trackIndex, clipIndex, transitionName, duration, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -1259,6 +1226,23 @@ function _mcpAudioLevelInput(value, label) {
     return parsed;
 }
 
+function _mcpSetAudioAmplitudeAndVerify(param, amplitude) {
+    if (!param || typeof param.setValue !== "function") return { error: "Audio level parameter is not writable" };
+    if (typeof param.getValue !== "function") return { error: "Audio level parameter cannot be read back" };
+    var status = param.setValue(amplitude, true);
+    // Premiere 26.5.2 returns true for this audio write; older documented
+    // hosts return 0. Neither status is sufficient without value readback.
+    if (status !== true && status !== 0) {
+        return { error: "ComponentParam.setValue returned failure status " + String(status) };
+    }
+    var actual = _mcpStrictNumber(param.getValue(), "Audio level readback");
+    if (actual.error) return actual;
+    if (!_componentParamValuesEquivalent(actual.value, amplitude)) {
+        return { error: "Premiere read back audio amplitude " + actual.value + " instead of " + amplitude };
+    }
+    return { value: actual.value, status: status };
+}
+
 // ===========================================================================
 // AUDIO LEVELS (1-5)
 // ===========================================================================
@@ -1275,7 +1259,7 @@ function setAudioLevel(trackIndex, clipIndex, levelDb) {
         var p = _findVolumeParam(r.clip);
         if (!p || !p.setValue || !p.getValue) return _err("Volume/Level parameter is not readable and writable");
         var expectedAmplitude = _dbToAmplitude(parsedLevel.value);
-        var write = _setComponentParamAndVerify(p, expectedAmplitude);
+        var write = _mcpSetAudioAmplitudeAndVerify(p, expectedAmplitude);
         if (write.error) return _err("Could not set audio level: " + write.error);
         var actualAmplitude = write.value;
         return _ok({
@@ -1325,7 +1309,7 @@ function normalizeAudio(trackIndex, clipIndex, targetDb) {
 
         function restoreNormalizationState() {
             var restored = true;
-            var flatRestore = _setComponentParamAndVerify(p, previousAmplitude);
+            var flatRestore = _mcpSetAudioAmplitudeAndVerify(p, previousAmplitude);
             if (flatRestore.error) restored = false;
             for (var restoreIndex = removedKeyframes.length - 1; restoreIndex >= 0; restoreIndex--) {
                 var record = removedKeyframes[restoreIndex];
@@ -1356,7 +1340,7 @@ function normalizeAudio(trackIndex, clipIndex, targetDb) {
                 (remainingRestored ? "; original level and keyframes were restored" : "; original automation could not be fully restored"));
         }
         var expectedAmplitude = _dbToAmplitude(parsedTarget.value);
-        var write = _setComponentParamAndVerify(p, expectedAmplitude);
+        var write = _mcpSetAudioAmplitudeAndVerify(p, expectedAmplitude);
         if (write.error) {
             var levelRestored = restoreNormalizationState();
             return _err("Could not set normalized audio level: " + write.error +
@@ -1431,7 +1415,19 @@ function getAudioEffects(trackIndex, clipIndex) { try { var r = _getAudioClip(tr
 // ===========================================================================
 // AUDIO TRANSITIONS (15)
 // ===========================================================================
-function addAudioCrossfade(trackIndex, clipIndex, duration, type) { try { var r = _getAudioClip(trackIndex, clipIndex); if (typeof r === "string") return r; duration = parseFloat(duration)||1.0; type = type||"constant_power"; var tn = "Constant Power"; if (type==="constant_gain") tn = "Constant Gain"; else if (type==="exponential") tn = "Exponential Fade"; if (typeof qe !== "undefined" && qe.project) { var qs = qe.project.getActiveSequence(); if (qs) { var qt = qs.getAudioTrackAt(parseInt(trackIndex,10)||0); if (qt) { var qc = qt.getItemAt(parseInt(clipIndex,10)||0); if (qc) { var tr = qe.project.getAudioTransitionByName(tn); if (tr) { qc.addTransition(tr, true, duration.toString()); return _ok({trackIndex:parseInt(trackIndex,10)||0, clipIndex:parseInt(clipIndex,10)||0, duration:duration, type:tn}); } else return _err("Audio transition not found: "+tn); } } } } return _err("Audio crossfades require QE DOM. Call app.enableQE() first."); } catch(e) { return _err("addAudioCrossfade failed: "+e.message); } }
+function addAudioCrossfade(trackIndex, clipIndex, duration, type) {
+    try {
+        var r = _getAudioClip(trackIndex, clipIndex);
+        if (typeof r === "string") return r;
+        type = type || "constant_power";
+        var transitionName = "Constant Power";
+        if (type === "constant_gain") transitionName = "Constant Gain";
+        else if (type === "exponential") transitionName = "Exponential Fade";
+        var result = JSON.parse(addAudioTransition(trackIndex, clipIndex, transitionName, duration));
+        if (result.success) result.data.type = transitionName;
+        return JSON.stringify(result);
+    } catch (e) { return _err("addAudioCrossfade failed: " + e.message); }
+}
 
 // ===========================================================================
 // ESSENTIAL SOUND (16-18)
@@ -5634,6 +5630,31 @@ function _verifiedTransitionData(track, beforeState, requestedName, requestedDur
     };
 }
 
+function _qeTransitionDurationSpec(sequence, duration) {
+    if (duration === undefined || duration === null || duration === "") duration = 1.0;
+    duration = Number(duration);
+    if (!isFinite(duration) || duration <= 0) return { error: "Transition duration must be a positive number of seconds" };
+    var fps = _mcpActualSequenceSpec(sequence).fps;
+    if (!isFinite(fps) || fps <= 0) return { error: "Cannot read the sequence frame rate for transition duration" };
+    var nominalFPS = Math.round(fps);
+    if (nominalFPS < 1) return { error: "Cannot encode transition duration at this sequence frame rate" };
+    var frameCount = Math.max(1, Math.round(duration * fps));
+    if (!isFinite(frameCount) || frameCount > 9007199254740991) return { error: "Transition duration exceeds the supported frame count" };
+    // QE parses SS.FF as seconds and frames, not decimal seconds. For example,
+    // "0.5" means five frames; half a second at 24 fps must be "0.12".
+    // Fractional rates use their nominal timecode rate, after rounding the
+    // requested seconds to an exact frame count at the actual sequence rate.
+    var seconds = Math.floor(frameCount / nominalFPS);
+    var frames = frameCount % nominalFPS;
+    return {
+        requestedDuration: duration,
+        frameRate: fps,
+        frameCount: frameCount,
+        quantizedDuration: frameCount / fps,
+        qeDuration: String(seconds) + "." + (frames < 10 ? "0" : "") + String(frames)
+    };
+}
+
 function addVideoTransition(trackIndex, clipIndex, transitionName, duration, applyToEnd) {
     try {
         if (!app.project) return _err("No project is open");
@@ -5641,7 +5662,9 @@ function addVideoTransition(trackIndex, clipIndex, transitionName, duration, app
         if (!seq) return _err("No active sequence");
         trackIndex = parseInt(trackIndex, 10) || 0;
         clipIndex = parseInt(clipIndex, 10) || 0;
-        duration = parseFloat(duration) || 1.0;
+        var timing = _qeTransitionDurationSpec(seq, duration);
+        if (timing.error) return _err(timing.error);
+        duration = timing.requestedDuration;
         transitionName = transitionName || "Cross Dissolve";
         if (applyToEnd === undefined) applyToEnd = true;
         if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
@@ -5657,12 +5680,16 @@ function addVideoTransition(trackIndex, clipIndex, transitionName, duration, app
         if (!qeClip) return _err("QE: clip " + clipIndex + " not found on video track " + trackIndex);
         var tr = qe.project.getVideoTransitionByName(transitionName);
         if (!tr) return _err("QE: video transition '" + transitionName + "' not found");
-        qeClip.addTransition(tr, applyToEnd, duration.toString());
+        qeClip.addTransition(tr, applyToEnd, timing.qeDuration);
         var verified = _verifiedTransitionData(domTrack, beforeState, transitionName, duration);
         if (verified.error) return _err(verified.error + ": " + transitionName);
         verified.data.trackIndex = trackIndex;
         verified.data.clipIndex = clipIndex;
         verified.data.applyToEnd = applyToEnd;
+        verified.data.requestedFrames = timing.frameCount;
+        verified.data.quantizedDuration = timing.quantizedDuration;
+        verified.data.frameRate = timing.frameRate;
+        verified.data.qeDuration = timing.qeDuration;
         return _ok(verified.data);
     } catch (e) { return _err("addVideoTransition failed: " + e.message); }
 }
@@ -5674,7 +5701,9 @@ function addAudioTransition(trackIndex, clipIndex, transitionName, duration) {
         if (!seq) return _err("No active sequence");
         trackIndex = parseInt(trackIndex, 10) || 0;
         clipIndex = parseInt(clipIndex, 10) || 0;
-        duration = parseFloat(duration) || 1.0;
+        var timing = _qeTransitionDurationSpec(seq, duration);
+        if (timing.error) return _err(timing.error);
+        duration = timing.requestedDuration;
         transitionName = transitionName || "Constant Power";
         if (trackIndex >= seq.audioTracks.numTracks) return _err("Audio track index out of range");
         var domTrack = seq.audioTracks[trackIndex];
@@ -5689,11 +5718,15 @@ function addAudioTransition(trackIndex, clipIndex, transitionName, duration) {
         if (!qeClip) return _err("QE: clip " + clipIndex + " not found on audio track " + trackIndex);
         var tr = qe.project.getAudioTransitionByName(transitionName);
         if (!tr) return _err("QE: audio transition '" + transitionName + "' not found");
-        qeClip.addTransition(tr, true, duration.toString());
+        qeClip.addTransition(tr, true, timing.qeDuration);
         var verified = _verifiedTransitionData(domTrack, beforeState, transitionName, duration);
         if (verified.error) return _err(verified.error + ": " + transitionName);
         verified.data.trackIndex = trackIndex;
         verified.data.clipIndex = clipIndex;
+        verified.data.requestedFrames = timing.frameCount;
+        verified.data.quantizedDuration = timing.quantizedDuration;
+        verified.data.frameRate = timing.frameRate;
+        verified.data.qeDuration = timing.qeDuration;
         return _ok(verified.data);
     } catch (e) { return _err("addAudioTransition failed: " + e.message); }
 }
@@ -10749,23 +10782,28 @@ function applyTransitionToAllCuts(trackIndex, transitionName, duration) {
         if (!seq) return _err("No active sequence");
         trackIndex = parseInt(trackIndex, 10) || 0;
         transitionName = transitionName || "Cross Dissolve";
-        duration = parseFloat(duration) || 1.0;
+        var timing = _qeTransitionDurationSpec(seq, duration);
+        if (timing.error) return _err(timing.error);
+        duration = timing.requestedDuration;
         if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index out of range");
         var track = seq.videoTracks[trackIndex];
-        var qe = null;
-        try { qe = app.enableQE(); } catch(qex) {}
-        if (!qe) return _err("QE DOM not available");
-        var qeSeq = qe.project.getActiveSequence();
-        var qeTrack = qeSeq.getVideoTrackAt(trackIndex);
         var applied = 0;
         var numClips = track.clips.numItems;
+        var totalCuts = Math.max(0, numClips - 1);
+        var transitions = [];
+        var errors = [];
         for (var i = 0; i < numClips - 1; i++) {
             try {
-                var qeClip = qeTrack.getItemAt(i);
-                if (qeClip) { qeClip.addTransition(qe.project.getVideoTransitionByName(transitionName), false, duration.toString()); applied++; }
-            } catch (te) {}
+                var result = JSON.parse(addVideoTransition(trackIndex, i, transitionName, duration, false));
+                if (!result.success) { errors.push("Clip " + i + ": " + result.error); continue; }
+                transitions.push(result.data);
+                applied++;
+            } catch (te) { errors.push("Clip " + i + ": " + te.message); }
         }
-        return _ok({trackIndex: trackIndex, transitionName: transitionName, duration: duration, cutsProcessed: numClips - 1, transitionsApplied: applied});
+        if (errors.length) return _err("Applied " + applied + " of " + totalCuts + " transitions with readback; " + errors.join("; "));
+        return _ok({trackIndex: trackIndex, transitionName: transitionName, duration: duration, cutsProcessed: totalCuts,
+            transitionsApplied: applied, transitions: transitions, requestedFrames: timing.frameCount,
+            quantizedDuration: timing.quantizedDuration, frameRate: timing.frameRate, qeDuration: timing.qeDuration, verified: true});
     } catch (e) { return _err("applyTransitionToAllCuts failed: " + e.message); }
 }
 
@@ -14645,11 +14683,13 @@ function batchSetSpeed(trackType, trackIndex, speed) {
 // 23. batchApplyTransitions
 function batchApplyTransitions(trackIndex, transitionName, duration) {
     try {
-        if (!transitionName) return _err("transitionName is required"); if (!app.project || !app.project.activeSequence) return _err("No active sequence");
-        var seq = app.project.activeSequence; if (trackIndex < 0 || trackIndex >= seq.videoTracks.numTracks) return _err("Invalid track index");
-        var track = seq.videoTracks[trackIndex]; var dur = (duration !== undefined && duration !== null) ? duration : 1.0; var applied = 0;
-        for (var i = 0; i < track.clips.numItems - 1; i++) { try { if (typeof qe !== "undefined") { var qeSeq = qe.project.getActiveSequence(); var qeTrack = qeSeq.getVideoTrackAt(trackIndex); var qeClip = qeTrack.getItemAt(i); if (qeClip && qeClip.addTransition) { qeClip.addTransition(transitionName, dur); applied++; } } } catch (te) {} }
-        return _ok({applied: applied, transitionName: transitionName, duration: dur, totalCuts: Math.max(0, track.clips.numItems - 1)});
+        if (!transitionName) return _err("transitionName is required");
+        var result = JSON.parse(applyTransitionToAllCuts(trackIndex, transitionName, duration));
+        if (result.success) {
+            result.data.applied = result.data.transitionsApplied;
+            result.data.totalCuts = result.data.cutsProcessed;
+        }
+        return JSON.stringify(result);
     } catch (e) { return _err("batchApplyTransitions failed: " + e.message); }
 }
 
@@ -27987,7 +28027,7 @@ function mcpSetAudioLevel(argsJson) {
         var property = _findVolumeParam(clipRef.clip);
         if (!property || !property.setValue || !property.getValue) return _err("Volume/Level parameter is not readable and writable on audio clip");
         var amplitude = _dbToAmplitude(level);
-        var write = _setComponentParamAndVerify(property, amplitude);
+        var write = _mcpSetAudioAmplitudeAndVerify(property, amplitude);
         if (write.error) return _err("Could not set audio level: " + write.error);
         var actualDb = _amplitudeToDb(write.value);
         if (Math.abs(actualDb - level) > 0.25) return _err("Premiere did not accept the requested audio level");
@@ -28498,32 +28538,112 @@ function _mcpBinaryToBase64(data) {
 
 function captureFrameAsBase64(argsJson) {
     var outputFile = null;
+    var ownsOutputPath = false;
     try {
         if (!app.project || !app.project.activeSequence) return _err("No active sequence");
         var seq = app.project.activeSequence;
         var position = seq.getPlayerPosition();
         if (!position) return _err("Could not read the playhead position");
-        outputFile = new File(Folder.temp.fsName + "/premiere_mcp_frame_" + (new Date()).getTime() + ".png");
-        var exported = false;
-        if (seq.exportFramePNG) {
-            seq.exportFramePNG(String(position.ticks), outputFile.fsName);
-            exported = outputFile.exists;
+        app.enableQE();
+        var qeSeq = qe.project.getActiveSequence();
+        if (!qeSeq || !qeSeq.exportFramePNG) return _err("Frame export is unavailable in this Premiere version");
+        var settings = seq.getSettings();
+        if (!settings) return _err("Frame sequence settings are unavailable in this Premiere version");
+        // Adobe's QE frame-export sample uses CTI.timecode. Formatting the
+        // regular playhead using videoDisplayFormat can produce a frame count
+        // or feet-and-frames string instead of the timecode QE expects.
+        var frameTimecode = qeSeq.CTI ? qeSeq.CTI.timecode : null;
+        if (typeof frameTimecode !== "string" || !/^\d{2,}[:;]\d{2}[:;]\d{2}[:;]\d{2,3}$/.test(frameTimecode)) {
+            return _err("QE frame timecode is unavailable or invalid in this Premiere version");
         }
-        if (!exported) {
-            app.enableQE();
-            var qeSeq = qe.project.getActiveSequence();
-            if (!qeSeq || !qeSeq.exportFramePNG) return _err("Frame export is unavailable in this Premiere version");
-            qeSeq.exportFramePNG(position.ticks, outputFile.fsName);
-        }
+        // QE appends .png to the supplied output stem; including the suffix
+        // yields .png.png on current Premiere versions.
+        var outputStem = Folder.temp.fsName + "/premiere_mcp_frame_" + (new Date()).getTime() + "_" + Math.floor(Math.random() * 1000000000);
+        outputFile = new File(outputStem + ".png");
+        if (outputFile.exists) return _err("Captured frame temporary path already exists");
+        ownsOutputPath = true;
+        qeSeq.exportFramePNG(frameTimecode, outputStem);
         if (!outputFile.exists || outputFile.length === 0) return _err("Premiere did not create the captured PNG");
         outputFile.encoding = "BINARY";
         if (!outputFile.open("r")) return _err("Could not open the captured PNG");
         var binary = outputFile.read();
         outputFile.close();
-        var settings = null;
-        try { settings = seq.getSettings(); } catch (ignoreSettings) {}
         var width = settings ? parseInt(settings.videoFrameWidth, 10) || 0 : (seq.frameSizeHorizontal || 0);
         var height = settings ? parseInt(settings.videoFrameHeight, 10) || 0 : (seq.frameSizeVertical || 0);
+        if (binary.length < 33 || binary.substring(0, 8) !== "\x89PNG\r\n\x1a\n") {
+            return _err("Captured file is not a PNG image");
+        }
+        function uint32(offset) {
+            return (binary.charCodeAt(offset) & 255) * 16777216 + (binary.charCodeAt(offset + 1) & 255) * 65536 +
+                (binary.charCodeAt(offset + 2) & 255) * 256 + (binary.charCodeAt(offset + 3) & 255);
+        }
+        if (uint32(8) !== 13 || binary.substring(12, 16) !== "IHDR") return _err("Captured PNG has an invalid image header");
+        var pngWidth = uint32(16);
+        var pngHeight = uint32(20);
+        if (pngWidth <= 0 || pngHeight <= 0 || pngWidth > 2147483647 || pngHeight > 2147483647 ||
+            width <= 0 || height <= 0 || pngWidth !== width || pngHeight !== height) {
+            return _err("Captured PNG dimensions do not match the active sequence");
+        }
+        var bitDepth = binary.charCodeAt(24) & 255;
+        var colorType = binary.charCodeAt(25) & 255;
+        var validDepth = (colorType === 0 && (bitDepth === 1 || bitDepth === 2 || bitDepth === 4 || bitDepth === 8 || bitDepth === 16)) ||
+            ((colorType === 2 || colorType === 4 || colorType === 6) && (bitDepth === 8 || bitDepth === 16)) ||
+            (colorType === 3 && (bitDepth === 1 || bitDepth === 2 || bitDepth === 4 || bitDepth === 8));
+        if (!validDepth || (binary.charCodeAt(26) & 255) !== 0 || (binary.charCodeAt(27) & 255) !== 0 || (binary.charCodeAt(28) & 255) > 1) {
+            return _err("Captured PNG has invalid image-header fields");
+        }
+        // A signature and dimensions alone also match a truncated export.
+        // Validate the complete chunk stream and CRCs before returning bytes.
+        var crcTable = [];
+        for (var tableIndex = 0; tableIndex < 256; tableIndex++) {
+            var tableValue = tableIndex;
+            for (var bitIndex = 0; bitIndex < 8; bitIndex++) {
+                tableValue = (tableValue & 1) ? (0xedb88320 ^ (tableValue >>> 1)) : (tableValue >>> 1);
+            }
+            crcTable[tableIndex] = tableValue >>> 0;
+        }
+        var chunkOffset = 8;
+        var chunkIndex = 0;
+        var seenPalette = false;
+        var seenData = false;
+        var dataEnded = false;
+        var dataLength = 0;
+        var seenEnd = false;
+        while (chunkOffset < binary.length) {
+            if (binary.length - chunkOffset < 12) return _err("Captured PNG contains a truncated chunk");
+            var chunkLength = uint32(chunkOffset);
+            var chunkType = binary.substring(chunkOffset + 4, chunkOffset + 8);
+            var chunkEnd = chunkOffset + chunkLength + 12;
+            if (chunkLength > 2147483647 || chunkEnd > binary.length) return _err("Captured PNG contains a truncated or invalid chunk length");
+            if (!/^[A-Za-z]{4}$/.test(chunkType) || !/^[A-Z]$/.test(chunkType.charAt(2))) return _err("Captured PNG contains an invalid chunk type");
+            var crc = -1;
+            for (var byteIndex = chunkOffset + 4; byteIndex < chunkEnd - 4; byteIndex++) {
+                crc = (crc >>> 8) ^ crcTable[(crc ^ (binary.charCodeAt(byteIndex) & 255)) & 255];
+            }
+            if (((crc ^ -1) >>> 0) !== uint32(chunkEnd - 4)) return _err("Captured PNG contains a corrupt chunk checksum");
+            if (chunkIndex === 0) {
+                if (chunkType !== "IHDR" || chunkLength !== 13) return _err("Captured PNG must begin with one image header");
+            } else if (chunkType === "IHDR") {
+                return _err("Captured PNG contains a duplicate image header");
+            } else if (chunkType === "PLTE") {
+                if (seenPalette || seenData || colorType === 0 || colorType === 4 || chunkLength < 3 || chunkLength > 768 || chunkLength % 3 !== 0 ||
+                    (colorType === 3 && chunkLength / 3 > Math.pow(2, bitDepth))) return _err("Captured PNG contains an invalid palette");
+                seenPalette = true;
+            } else if (chunkType === "IDAT") {
+                if (dataEnded || (colorType === 3 && !seenPalette)) return _err("Captured PNG contains an invalid image-data order");
+                seenData = true;
+                dataLength += chunkLength;
+            } else if (chunkType === "IEND") {
+                if (chunkLength !== 0 || !seenData || dataLength === 0 || chunkEnd !== binary.length) return _err("Captured PNG has an invalid or incomplete image trailer");
+                seenEnd = true;
+            } else if ((chunkType.charCodeAt(0) & 32) === 0) {
+                return _err("Captured PNG contains an unsupported critical chunk");
+            }
+            if (seenData && chunkType !== "IDAT") dataEnded = true;
+            chunkOffset = chunkEnd;
+            chunkIndex++;
+        }
+        if (!seenEnd) return _err("Captured PNG is incomplete: image trailer is missing");
         var payload = {
             image_base64: _mcpBinaryToBase64(binary),
             format: "png",
@@ -28531,11 +28651,11 @@ function captureFrameAsBase64(argsJson) {
             height: height,
             timecode: _timeToSeconds(position)
         };
-        try { outputFile.remove(); } catch (ignoreCleanup) {}
         return _ok(payload);
     } catch (e) {
-        if (outputFile) { try { if (outputFile.opened) outputFile.close(); } catch (ignoreClose) {} try { if (outputFile.exists) outputFile.remove(); } catch (ignoreRemove) {} }
         return _err("captureFrameAsBase64 failed: " + e.message);
+    } finally {
+        if (outputFile && ownsOutputPath) { try { outputFile.close(); } catch (ignoreClose) {} try { if (outputFile.exists) outputFile.remove(); } catch (ignoreRemove) {} }
     }
 }
 

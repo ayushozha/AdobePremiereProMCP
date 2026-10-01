@@ -5,23 +5,61 @@
 function _ok(data) { return JSON.stringify({ success: true, data: data }); }
 function _err(message) { return JSON.stringify({ success: false, error: String(message) }); }
 
-// JSON polyfill for older ExtendScript
-if (typeof JSON === "undefined") {
+// Quote values and object keys identically, including every JSON control
+// character. Also escape line separators for the ES3 eval-based parser.
+function _mcpQuoteJSONString(value) {
+    return '"' + String(value).replace(/["\\\x00-\x1f\u2028\u2029]/g, function (character) {
+        if (character === '"') return '\\"';
+        if (character === "\\") return "\\\\";
+        if (character === "\b") return "\\b";
+        if (character === "\f") return "\\f";
+        if (character === "\n") return "\\n";
+        if (character === "\r") return "\\r";
+        if (character === "\t") return "\\t";
+        var hex = character.charCodeAt(0).toString(16);
+        while (hex.length < 4) hex = "0" + hex;
+        return "\\u" + hex;
+    }) + '"';
+}
+
+// Upgrade an already-loaded older polyfill as well as missing JSON. Keep a
+// working native serializer intact when the full host is lazily reloaded.
+var _mcpJSONNeedsPolyfill = typeof JSON === "undefined";
+if (!_mcpJSONNeedsPolyfill) {
+    try {
+        var _mcpJSONProbeKey = 'key"\\\n';
+        var _mcpJSONProbe = {};
+        _mcpJSONProbe[_mcpJSONProbeKey] = String.fromCharCode(0, 3, 8, 12);
+        var _mcpJSONProbeText = JSON.stringify(_mcpJSONProbe);
+        _mcpJSONNeedsPolyfill = typeof _mcpJSONProbeText !== "string" ||
+            /[\x00-\x1f]/.test(_mcpJSONProbeText) ||
+            _mcpJSONProbeText.indexOf(_mcpQuoteJSONString(_mcpJSONProbeKey) + ":") < 0;
+    } catch (ignoreJSONProbe) { _mcpJSONNeedsPolyfill = true; }
+}
+if (_mcpJSONNeedsPolyfill) {
     JSON = {
         stringify: function(obj) {
             if (obj === null) return "null";
-            if (typeof obj === "undefined") return undefined;
-            if (typeof obj === "string") return '"' + obj.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t") + '"';
+            if (typeof obj === "undefined" || typeof obj === "function") return undefined;
+            if (typeof obj === "string") return _mcpQuoteJSONString(obj);
             if (typeof obj === "number") return isFinite(obj) ? String(obj) : "null";
             if (typeof obj === "boolean") return String(obj);
             if (obj instanceof Array) {
                 var a = [];
-                for (var i = 0; i < obj.length; i++) a.push(JSON.stringify(obj[i]));
+                for (var i = 0; i < obj.length; i++) {
+                    var element = JSON.stringify(obj[i]);
+                    a.push(element === undefined ? "null" : element);
+                }
                 return "[" + a.join(",") + "]";
             }
             if (typeof obj === "object") {
                 var p = [];
-                for (var k in obj) if (obj.hasOwnProperty(k)) p.push('"' + k + '":' + JSON.stringify(obj[k]));
+                for (var k in obj) {
+                    if (Object.prototype.hasOwnProperty.call(obj, k)) {
+                        var property = JSON.stringify(obj[k]);
+                        if (property !== undefined) p.push(_mcpQuoteJSONString(k) + ':' + property);
+                    }
+                }
                 return "{" + p.join(",") + "}";
             }
             return '""';
