@@ -58,8 +58,18 @@ function fixture(options = {}) {
                         settings = value;
                         created.timebase = value.videoFrameRate.ticks;
                     }
+                    if (options.nameAfterSettings !== undefined) created.name = options.nameAfterSettings;
                     return true;
                 } };
+            let sequenceName = options.initialName === undefined ? name : options.initialName;
+            Object.defineProperty(created, "name", {
+                get() { return sequenceName; },
+                set(value) {
+                    calls.push("rename");
+                    if (options.throwRename) throw new Error("Name property rejected");
+                    if (!options.ignoreRename) sequenceName = value;
+                },
+            });
             // Creation need not activate it: identity must come from the list.
             sequences.unshift(created);
             if (options.ambiguous) sequences.push({ sequenceID: "unexpected", name });
@@ -97,12 +107,56 @@ test("creates an empty sequence without modal APIs and reads settings back", () 
     assert.equal(result.success, true);
     assert.deepEqual(result.data, { name: requested.name, sequenceID: "created", width: 320, height: 180,
         fps: 24, videoTrackCount: 1, audioTrackCount: 1, timebase: "10584000000", empty: true, verified: true });
-    assert.deepEqual(calls, ["create", "remove-seed", "remove-seed", "activate", "settings"]);
+    assert.deepEqual(calls, ["create", "rename", "remove-seed", "remove-seed", "activate", "settings"]);
     assert.equal(project.activeSequence.sequenceID, "created");
     assert.equal(project.activeSequence.videoTracks[0].clips.numItems, 0);
     assert.equal(project.activeSequence.audioTracks[0].clips.numItems, 0);
     assert.equal(previous.videoTracks[0].clips.numItems, 1);
     assert.deepEqual([seed.sourceIn, seed.sourceOut], [1, 5]);
+});
+
+for (const name of [
+    'Sequence - "e2e_test_pattern.mp4"',
+    'Ayush’s edit (第１版) — café 🎬 [cut]; "take 2".mp4',
+]) {
+    test("restores the exact requested name after native creation mangles " + JSON.stringify(name), () => {
+        const { dispatch, calls, project, previous } = fixture({ initialName: "Native sanitized filename" });
+        const result = dispatch({ ...requested, name });
+        assert.equal(result.success, true);
+        assert.equal(result.data.name, name);
+        assert.equal(project.activeSequence.name, name);
+        assert.equal(previous.name, "Existing");
+        assert.equal(calls.filter(call => call === "rename").length, 1);
+        assert.equal(calls.includes("rollback"), false);
+    });
+}
+
+for (const option of ["ignoreRename", "throwRename"]) {
+    test(option + " reports exact expected and actual names and rolls back only its new sequence", () => {
+        const initialName = 'Native \"wrong\" 名.mp4';
+        const { dispatch, project, previous, calls } = fixture({ initialName, [option]: true });
+        const result = dispatch();
+        assert.equal(result.success, false);
+        assert.ok(result.error.includes("expected " + JSON.stringify(requested.name)));
+        assert.ok(result.error.includes("got " + JSON.stringify(initialName)));
+        assert.match(result.error, /invalid sequence was deleted/);
+        assert.deepEqual(project.sequences.slice(), [previous]);
+        assert.equal(project.activeSequence, previous);
+        assert.equal(previous.name, "Existing");
+        assert.equal(calls.filter(call => call === "rollback").length, 1);
+        assert.equal(calls.includes("remove-seed"), false);
+    });
+}
+
+test("final name readback detects a name changed after settings were applied", () => {
+    const actualName = "Settings changed the name";
+    const { dispatch, project, previous } = fixture({ nameAfterSettings: actualName });
+    const result = dispatch();
+    assert.equal(result.success, false);
+    assert.ok(result.error.includes("expected " + JSON.stringify(requested.name)));
+    assert.ok(result.error.includes("got " + JSON.stringify(actualName)));
+    assert.deepEqual(project.sequences.slice(), [previous]);
+    assert.equal(project.activeSequence, previous);
 });
 
 test("ignored sequence settings fail readback and roll back only the new sequence", () => {
@@ -132,6 +186,7 @@ for (const option of ["noNewSequence", "ambiguous", "wrongReturn"]) {
         assert.equal(result.success, false);
         assert.match(result.error, /no cleanup was attempted/);
         assert.equal(calls.includes("rollback"), false);
+        assert.equal(calls.includes("rename"), false);
         assert.ok(project.sequences.includes(previous));
     });
 }

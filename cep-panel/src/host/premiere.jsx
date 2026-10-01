@@ -762,6 +762,18 @@ function createSequence(paramsJson) {
         var resolved = _mcpResolveSeededSequence(previousIds, creationResult);
         if (resolved.error) return _err(resolved.error);
         createdSequence = resolved.data;
+        // Creation may interpret the name as a filename. Sequence.name is a
+        // writable DOM property; assign the exact display name only after
+        // proving that this sequence belongs to the current creation request.
+        try { createdSequence.name = name; } catch (nameWriteError) {
+            throw new Error("Premiere rejected the requested sequence name: expected " + JSON.stringify(name) +
+                ", got " + JSON.stringify(String(createdSequence.name || "")) + "; " + nameWriteError.message);
+        }
+        var actualName = String(createdSequence.name || "");
+        if (actualName !== name) {
+            throw new Error("Premiere did not apply the requested sequence name: expected " + JSON.stringify(name) +
+                ", got " + JSON.stringify(actualName));
+        }
         var cleared = _mcpClearSequenceSeed(createdSequence, seed);
         if (cleared.error) throw new Error(cleared.error);
         var activated = _mcpActivateSequenceAndVerify(createdSequence);
@@ -781,10 +793,8 @@ function createSequence(paramsJson) {
             return _err(configured.error + (deleted ? "; the invalid sequence was deleted" : "; cleanup failed, so inspect the project before continuing"));
         }
         if (String(createdSequence.name || "") !== name) {
-            var nameDeleted = _mcpDeleteSequenceQuietly(createdSequence);
-            if (nameDeleted && previousActiveSequence) { try { app.project.activeSequence = previousActiveSequence; } catch (ignoreRestoreNameActive) {} }
-            createdSequence = null;
-            return _err("Premiere created the sequence with an unexpected name" + (nameDeleted ? "; it was deleted" : "; cleanup failed"));
+            throw new Error("Premiere changed the requested sequence name: expected " + JSON.stringify(name) +
+                ", got " + JSON.stringify(String(createdSequence.name || "")));
         }
 
         var actual = configured.data;
