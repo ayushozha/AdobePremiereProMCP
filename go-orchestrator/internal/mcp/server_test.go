@@ -29,7 +29,7 @@ func TestToolCount(t *testing.T) {
 	t.Setenv("MCP_TOOL_PROFILE", "all,unsafe")
 	s := NewMCPServer(nil, "test", zap.NewNop())
 
-	const expectedToolCount = 1064
+	const expectedToolCount = 1066
 	if got := len(s.ListTools()); got != expectedToolCount {
 		t.Fatalf("registered tool count = %d, want %d", got, expectedToolCount)
 	}
@@ -39,8 +39,8 @@ func TestDefaultToolProfileFitsModelFunctionLimit(t *testing.T) {
 	t.Setenv("MCP_TOOL_PROFILE", "")
 	tools := NewMCPServer(nil, "test", zap.NewNop()).ListTools()
 	t.Logf("default profile tool count: %d", len(tools))
-	if got := len(tools); got != 72 {
-		t.Fatalf("default profile contains %d tools, want documented count 72", got)
+	if got := len(tools); got != 74 {
+		t.Fatalf("default profile contains %d tools, want documented count 74", got)
 	}
 	if got := len(tools); got > 128 {
 		t.Fatalf("default profile contains %d tools, exceeding the 128-function model limit", got)

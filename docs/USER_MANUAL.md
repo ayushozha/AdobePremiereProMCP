@@ -29,8 +29,8 @@ The MCP implementation is open source under the MIT license and uses a local CEP
 
 ### What can it do?
 
-The source registry contains **1,064 tool schemas**. The default `standard`
-profile exposes **72 curated, readback-first tools** for project/timeline
+The source registry contains **1,066 tool schemas**. The default `standard`
+profile exposes **74 curated, readback-first tools** for project/timeline
 inspection, asset analysis, editing, SRT captions, installed effects and
 transitions, MOGRT titles, audio, and export. Select specialized profiles for
 dialogue, captions, social reframing, transitions, effects, proxies, or
@@ -410,7 +410,7 @@ CLI / MCP Client (Claude, GPT, any AI)
 
 ### Go -- MCP Server and Orchestrator
 
-The Go layer is the entry point for the system. It implements the MCP protocol (JSON-RPC 2.0 over stdio or SSE), registers 1,064 source schemas, applies the selected tool profile, and orchestrates requests across downstream gRPC services. Discovery is cursor-paginated and defaults to the 72-tool `standard` profile.
+The Go layer is the entry point for the system. It implements the MCP protocol (JSON-RPC 2.0 over stdio or SSE), registers 1,066 source schemas, applies the selected tool profile, and orchestrates requests across downstream gRPC services. Discovery is cursor-paginated and defaults to the 74-tool `standard` profile.
 
 - **Directory:** `go-orchestrator/`
 - **Entry point:** `cmd/server/main.go`
@@ -466,7 +466,7 @@ The CEP panel and TypeScript bridge create/read
 
 ### Tool Profiles and Workflow Skills
 
-By default the server exposes the 72-tool `standard` catalog. Set
+By default the server exposes the 74-tool `standard` catalog. Set
 `MCP_TOOL_PROFILE` to select another workflow-sized surface:
 
 | Profile | Focus |
@@ -479,7 +479,7 @@ By default the server exposes the 72-tool `standard` catalog. Set
 | `effects` | Installed-effect discovery, verified attachment, parameter updates, and readback |
 | `proxies` | Proxy creation, attachment, status, and conform |
 | `delivery` | Direct/AME export with explicit presets plus external media verification |
-| `standard` | Curated, readback-first editing set (default; 72 tools) |
+| `standard` | Curated, readback-first editing set (default; 74 tools) |
 | `all` | Complete catalog except unsafe arbitrary execution/file tools |
 | `unsafe` | Explicit opt-in for arbitrary scripts, shell commands, URLs, clipboard, external editors, and file I/O |
 
@@ -911,7 +911,7 @@ PremierProMCP/
 +-- go-orchestrator/          # Go -- MCP server & task orchestrator
 |   +-- cmd/server/           #   Entry point (main.go)
 |   +-- internal/             #   Core packages
-|   |   +-- mcp/              #     MCP protocol handler (1,064 registered schemas)
+|   |   +-- mcp/              #     MCP protocol handler (1,066 registered schemas)
 |   |   +-- orchestrator/     #     Task orchestration
 |   |   +-- health/           #     Health checks
 |   |   +-- grpc/             #     gRPC client/server

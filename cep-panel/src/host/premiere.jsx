@@ -5784,7 +5784,8 @@ function addVideoTransition(trackIndex, clipIndex, transitionName, duration, app
         if (!qeClip) return _err("QE: clip " + clipIndex + " not found on video track " + trackIndex);
         var tr = qe.project.getVideoTransitionByName(transitionName);
         if (!tr) return _err("QE: video transition '" + transitionName + "' not found");
-        qeClip.addTransition(tr, applyToEnd, timing.qeDuration);
+        // QE's boolean means addToStart; the public command means applyToEnd.
+        qeClip.addTransition(tr, !applyToEnd, timing.qeDuration);
         var verified = _verifiedTransitionData(domTrack, beforeState, transitionName, duration);
         if (verified.error) return _err(verified.error + ": " + transitionName);
         verified.data.trackIndex = trackIndex;
@@ -5796,6 +5797,309 @@ function addVideoTransition(trackIndex, clipIndex, transitionName, duration, app
         verified.data.qeDuration = timing.qeDuration;
         return _ok(verified.data);
     } catch (e) { return _err("addVideoTransition failed: " + e.message); }
+}
+
+function _mcpTransitionRecipeTime(value) {
+    if (value === undefined || value === null || value === "") throw new Error("Missing transition recipe time readback");
+    if (typeof value === "object" && value.secs !== undefined) {
+        var seconds = Number(value.secs);
+        if (!isFinite(seconds)) throw new Error("Invalid QE clip time readback");
+        return seconds;
+    }
+    return _timeToSeconds(value);
+}
+
+function _mcpTransitionRecipeCollectionCount(collection, key, label) {
+    var count = collection ? collection[key] : null;
+    if (typeof count !== "number" || !isFinite(count) || count < 0 || Math.floor(count) !== count) {
+        throw new Error("Cannot read " + label + " collection count for transition recipe verification");
+    }
+    return count;
+}
+
+/** Compare timeline contents without sequence/clip IDs, which cloning changes. */
+function _mcpTransitionRecipeTimelineState(sequence, skipVideoTransition) {
+    var state = { fps: _mcpActualSequenceSpec(sequence).fps, tracks: [] };
+    var groups = [sequence.videoTracks, sequence.audioTracks];
+    for (var gi = 0; gi < groups.length; gi++) {
+        var tracks = groups[gi];
+        var trackCount = _mcpTransitionRecipeCollectionCount(tracks, "numTracks", "source timeline tracks");
+        state.tracks.push({ type: gi, count: trackCount });
+        for (var ti = 0; ti < trackCount; ti++) {
+            var track = tracks[ti];
+            if (!track || !track.clips || !track.transitions) throw new Error("Cannot read all source timeline clips and transitions");
+            var clipCount = _mcpTransitionRecipeCollectionCount(track.clips, "numItems", "source timeline clips");
+            var transitionCount = _mcpTransitionRecipeCollectionCount(track.transitions, "numItems", "source timeline transitions");
+            var trackState = { clips: [], transitions: [] };
+            for (var ci = 0; ci < clipCount; ci++) {
+                var clip = track.clips[ci];
+                trackState.clips.push({ name: String(clip.name || ""), source: _mcpProjectItemIdentity(clip.projectItem),
+                    start: _mcpTransitionRecipeTime(clip.start), end: _mcpTransitionRecipeTime(clip.end),
+                    inPoint: _mcpTransitionRecipeTime(clip.inPoint), outPoint: _mcpTransitionRecipeTime(clip.outPoint),
+                    speed: clip.getSpeed ? Number(clip.getSpeed()) : null,
+                    reversed: typeof clip.isSpeedReversed === "function" ? !!clip.isSpeedReversed() : clip.isSpeedReversed === true });
+            }
+            for (var xi = 0; xi < transitionCount; xi++) {
+                if (skipVideoTransition && gi === 0 && ti === skipVideoTransition.trackIndex && xi === skipVideoTransition.transitionIndex) continue;
+                var transition = track.transitions[xi];
+                trackState.transitions.push({ name: String(transition.displayName || transition.name || transition.matchName || ""),
+                    start: _mcpTransitionRecipeTime(transition.start), end: _mcpTransitionRecipeTime(transition.end) });
+            }
+            state.tracks.push(trackState);
+        }
+    }
+    return JSON.stringify(state);
+}
+
+/** QE includes gaps/transitions, so DOM clip indexes are never QE item indexes. */
+function _mcpTransitionRecipeQEClip(sequence, trackIndex, clip, tolerance) {
+    var qeSequence = qe.project.getActiveSequence();
+    if (!qeSequence) return { error: "QE: no active sequence" };
+    var qeID = String(qeSequence.guid || qeSequence.sequenceID || "").replace(/[{}]/g, "").toLowerCase();
+    var domID = String(sequence.sequenceID || "").replace(/[{}]/g, "").toLowerCase();
+    if (!qeID || qeID !== domID) return { error: "QE active sequence identity could not be verified" };
+    var qeTrack = qeSequence.getVideoTrackAt(trackIndex);
+    if (!qeTrack || typeof qeTrack.getItemAt !== "function" || typeof qeTrack.numItems !== "number" ||
+        !isFinite(qeTrack.numItems) || qeTrack.numItems < 0 || Math.floor(qeTrack.numItems) !== qeTrack.numItems) {
+        return { error: "QE clip mapping requires a readable item collection" };
+    }
+    var matches = [];
+    var start = _mcpTransitionRecipeTime(clip.start);
+    var end = _mcpTransitionRecipeTime(clip.end);
+    for (var qi = 0; qi < qeTrack.numItems; qi++) {
+        var candidate = qeTrack.getItemAt(qi);
+        if (!candidate || String(candidate.type || "").toLowerCase() !== "clip") continue;
+        var candidateStart = _mcpTransitionRecipeTime(candidate.start);
+        var candidateEnd = _mcpTransitionRecipeTime(candidate.end);
+        if (Math.abs(candidateStart - start) <= tolerance && Math.abs(candidateEnd - end) <= tolerance &&
+            String(candidate.name || "") === String(clip.name || "")) matches.push({ clip: candidate, index: qi });
+    }
+    if (matches.length !== 1) return { error: "QE clip mapping is not unique; found " + matches.length + " matching clips" };
+    if (typeof matches[0].clip.addTransition !== "function") return { error: "QE clip does not expose native transition application" };
+    return matches[0];
+}
+
+// Keep this call outside applyTransitionRecipe, whose option has the same name.
+function _mcpDuplicateTransitionRecipeSequence(sequenceIndex) {
+    return JSON.parse(duplicateSequence(sequenceIndex));
+}
+
+/** Apply one exact native transition at an adjacent video cut, with readback. */
+function applyTransitionRecipe(recipeId, transitionName, durationFrames, trackIndex, clipIndex, dryRun, duplicateSequence) {
+    var sourceSequence = null;
+    var sourceState = null;
+    var appliedSequence = null;
+    var beforeIDs = null;
+    var data = { recipeId: recipeId, status: "error", dryRun: dryRun === undefined ? true : dryRun,
+        duplicateSequence: duplicateSequence === undefined ? true : duplicateSequence,
+        applied: false, mutationAttempted: false, verified: false, sourceSequence: null, appliedSequence: null,
+        sourcePreserved: null, requested: null, actual: null, diagnostics: {} };
+    function identity(sequence) {
+        return sequence ? { sequenceID: String(sequence.sequenceID || ""), name: String(sequence.name || ""), index: _mcpSequenceIndex(sequence) } : null;
+    }
+    function sourcePreserved() {
+        if (!sourceSequence || sourceState === null) return null;
+        try { return _mcpTransitionRecipeTimelineState(sourceSequence) === sourceState; } catch (ignoreReadback) { return false; }
+    }
+    function fail(message) {
+        if (!appliedSequence && beforeIDs) {
+            try { appliedSequence = _mcpFindNewSequence(beforeIDs); } catch (ignoreCopyLookup) {}
+        }
+        data.sourceSequence = identity(sourceSequence);
+        data.appliedSequence = identity(appliedSequence);
+        if (data.mutationAttempted && checked) {
+            try {
+                var observed = _captureTransitionState(checked.track);
+                data.diagnostics.transitionCountAfter = observed ? observed.length : null;
+                data.applied = !!(observed && JSON.stringify(observed) !== JSON.stringify(checked.beforeState));
+            } catch (ignoreMutationReadback) { data.diagnostics.transitionCountAfter = null; }
+        }
+        data.sourcePreserved = sourcePreserved();
+        data.status = "error";
+        data.verified = false;
+        // CEP/Go can retain only the error string on failure. Keep recovery
+        // identities and mutation evidence visible through that boundary too.
+        var recovery = " [sourceSequenceID=" + (data.sourceSequence ? data.sourceSequence.sequenceID : "none") +
+            "; appliedSequenceID=" + (data.appliedSequence ? data.appliedSequence.sequenceID : "none") +
+            "; mutationAttempted=" + data.mutationAttempted + "; applied=" + data.applied +
+            "; sourcePreserved=" + (data.sourcePreserved === null ? "unknown" : data.sourcePreserved) + "; verified=false]";
+        return JSON.stringify({ success: false, error: String(message) + recovery, data: data });
+    }
+    function nonNegativeInteger(value, label) {
+        if (typeof value !== "number" || !isFinite(value) || value < 0 || Math.floor(value) !== value) throw new Error(label + " must be a non-negative integer");
+    }
+    function preflight(sequence) {
+        var timing = _qeTransitionDurationSpec(sequence, durationFrames / _mcpActualSequenceSpec(sequence).fps);
+        if (timing.error) throw new Error(timing.error);
+        if (timing.frameCount !== durationFrames) throw new Error("Cannot encode the exact requested transition durationFrames");
+        var tolerance = 1 / timing.frameRate + 0.0000001;
+        var videoTrackCount = _mcpTransitionRecipeCollectionCount(sequence.videoTracks, "numTracks", "video tracks");
+        if (trackIndex >= videoTrackCount) throw new Error("Video track index out of range");
+        var track = sequence.videoTracks[trackIndex];
+        var clipCount = _mcpTransitionRecipeCollectionCount(track ? track.clips : null, "numItems", "video clips");
+        if (clipIndex + 1 >= clipCount) throw new Error("An adjacent outgoing and incoming clip are required at clipIndex");
+        if (track.isLocked && track.isLocked()) throw new Error("The requested video track is locked");
+        if (!track.transitions || typeof track.transitions.numItems !== "number" || !isFinite(track.transitions.numItems) ||
+            track.transitions.numItems < 0 || Math.floor(track.transitions.numItems) !== track.transitions.numItems) {
+            throw new Error("Premiere does not expose a readable transition collection for readback");
+        }
+        var beforeState = _captureTransitionState(track);
+        if (!beforeState) throw new Error("Premiere does not expose transition readback for this track");
+        var outgoing = track.clips[clipIndex];
+        var incoming = track.clips[clipIndex + 1];
+        var clips = [outgoing, incoming];
+        var bounds = [];
+        for (var bi = 0; bi < clips.length; bi++) {
+            var clip = clips[bi];
+            if (!clip || typeof clip.getSpeed !== "function") throw new Error("Cannot prove clip playback speed for transition handles");
+            var nativeSpeed = clip.getSpeed();
+            if (typeof nativeSpeed !== "number" || !isFinite(nativeSpeed)) throw new Error("Cannot prove numeric clip playback speed for transition handles");
+            var boundsState = _mcpReadClipTiming(clip);
+            if (boundsState.error) throw new Error(boundsState.error);
+            if (Math.abs(boundsState.rate - 1) > 0.000001) throw new Error("Transition recipes require normal clip playback speed");
+            if (Math.abs((boundsState.outPoint - boundsState.inPoint) - (boundsState.end - boundsState.start)) > tolerance) {
+                throw new Error("Clip source bounds do not match normal timeline playback");
+            }
+            var item = clip.projectItem;
+            if (!item || (item.isSequence && item.isSequence())) throw new Error("Cannot prove media handles for a nested or missing clip source");
+            if (item.isOffline && item.isOffline()) throw new Error("Cannot prove media handles for an offline clip source");
+            var mediaEnd = boundsState.mediaDuration;
+            if (mediaEnd === null) {
+                // Existing typed source marks prove a conservative endpoint;
+                // never change marks merely to discover extra source frames.
+                var sourceRange = _mcpReadProjectItemRange(item, "video");
+                if (sourceRange.error) throw new Error("Cannot prove transition media handles: " + sourceRange.error);
+                mediaEnd = sourceRange.outPoint;
+            }
+            boundsState.mediaEnd = mediaEnd;
+            bounds.push(boundsState);
+        }
+        var cut = bounds[0].end;
+        if (Math.abs(cut - bounds[1].start) > tolerance) throw new Error("The selected clips do not form an adjacent cut within one frame");
+        var durationSeconds = durationFrames / timing.frameRate;
+        if (bounds[0].end - bounds[0].start < durationSeconds || bounds[1].end - bounds[1].start < durationSeconds ||
+            bounds[0].mediaEnd - bounds[0].outPoint + 0.0000001 < durationSeconds || bounds[1].inPoint + 0.0000001 < durationSeconds) {
+            throw new Error("Insufficient proven source handles for the requested transition duration");
+        }
+        for (var xi = 0; xi < track.transitions.numItems; xi++) {
+            var transition = track.transitions[xi];
+            var start = _mcpTransitionRecipeTime(transition.start);
+            var end = _mcpTransitionRecipeTime(transition.end);
+            if (end <= start) throw new Error("Cannot prove existing transition bounds");
+            if (start <= cut + tolerance && end >= cut - tolerance) throw new Error("An existing transition already occupies the selected cut");
+        }
+        var qeClip = _mcpTransitionRecipeQEClip(sequence, trackIndex, outgoing, tolerance);
+        if (qeClip.error) throw new Error(qeClip.error);
+        return { track: track, beforeState: beforeState, qeClip: qeClip, timing: timing, cut: cut,
+            tolerance: tolerance, handles: { outgoingSeconds: bounds[0].mediaEnd - bounds[0].outPoint,
+                incomingSeconds: bounds[1].inPoint, requiredSeconds: durationSeconds } };
+    }
+    try {
+        if (typeof recipeId !== "string" || !recipeId.replace(/\s/g, "")) return fail("recipeId is required");
+        if (typeof transitionName !== "string" || !transitionName.replace(/\s/g, "")) return fail("transitionName is required");
+        if (typeof durationFrames !== "number" || !isFinite(durationFrames) || durationFrames <= 0 || Math.floor(durationFrames) !== durationFrames || durationFrames > 9007199254740991) return fail("durationFrames must be a positive finite integer");
+        nonNegativeInteger(trackIndex, "trackIndex");
+        nonNegativeInteger(clipIndex, "clipIndex");
+        if (typeof data.dryRun !== "boolean" || typeof data.duplicateSequence !== "boolean") return fail("dryRun and duplicateSequence must be booleans");
+        if (!app.project) return fail("No project is open");
+        sourceSequence = app.project.activeSequence;
+        if (!sourceSequence || !String(sourceSequence.sequenceID || "") || _mcpSequenceIndex(sourceSequence) < 0) return fail("Cannot verify the active source sequence identity");
+        data.sourceSequence = identity(sourceSequence);
+        var fps = _mcpActualSequenceSpec(sourceSequence).fps;
+        if (!isFinite(fps) || fps <= 0) return fail("Cannot read the sequence frame rate for transition duration");
+        app.enableQE();
+        if (typeof qe === "undefined" || !qe.project || typeof qe.project.getVideoTransitionList !== "function" ||
+            typeof qe.project.getVideoTransitionByName !== "function") return fail("QE native transition catalog is unavailable");
+        var catalog = _qeCatalogEntries(qe.project.getVideoTransitionList(), "video", "transition");
+        if (catalog.error) return fail(catalog.error);
+        var available = false;
+        for (var ni = 0; ni < catalog.entries.length; ni++) if (catalog.entries[ni].name === transitionName) available = true;
+        if (!available) return fail("Exact native video transition is unavailable: " + transitionName);
+        var nativeTransition = qe.project.getVideoTransitionByName(transitionName);
+        if (!nativeTransition) return fail("Native video transition not found: " + transitionName);
+        if (nativeTransition.name !== undefined && String(nativeTransition.name) !== transitionName) return fail("QE resolved a different transition name than the exact request");
+        var checked = preflight(sourceSequence);
+        sourceState = _mcpTransitionRecipeTimelineState(sourceSequence);
+        data.requested = { recipeId: recipeId, transitionName: transitionName, durationFrames: durationFrames,
+            durationSeconds: durationFrames / fps, trackIndex: trackIndex, clipIndex: clipIndex, cutSeconds: checked.cut };
+        data.diagnostics = { nativeAvailable: true, frameRate: fps, qeDuration: checked.timing.qeDuration,
+            qeClipIndex: checked.qeClip.index, toleranceFrames: 1, handles: checked.handles };
+        if (data.dryRun) {
+            data.status = "ready";
+            data.sourcePreserved = true;
+            return _ok(data);
+        }
+        if (data.duplicateSequence) {
+            beforeIDs = _mcpCaptureSequenceIds();
+            var copyResult = _mcpDuplicateTransitionRecipeSequence(_mcpSequenceIndex(sourceSequence));
+            if (!copyResult.success) return fail(copyResult.error);
+            appliedSequence = app.project.sequences[copyResult.data.newIndex];
+            if (!appliedSequence || appliedSequence === sourceSequence || String(appliedSequence.sequenceID || "") !== String(copyResult.data.newSequenceID || "") ||
+                String(appliedSequence.sequenceID || "") === String(sourceSequence.sequenceID || "")) return fail("Cannot verify a distinct sequence copy identity");
+            data.appliedSequence = identity(appliedSequence);
+            var sourceGroups = [sourceSequence.videoTracks, sourceSequence.audioTracks];
+            var copyGroups = [appliedSequence.videoTracks, appliedSequence.audioTracks];
+            for (var groupIndex = 0; groupIndex < sourceGroups.length; groupIndex++) {
+                if (sourceGroups[groupIndex] === copyGroups[groupIndex]) return fail("Sequence copy shares the source timeline track collection");
+                for (var copyTrackIndex = 0; copyTrackIndex < sourceGroups[groupIndex].numTracks; copyTrackIndex++) {
+                    var sourceTrack = sourceGroups[groupIndex][copyTrackIndex];
+                    var copyTrack = copyGroups[groupIndex][copyTrackIndex];
+                    if (copyTrack && (sourceTrack === copyTrack || sourceTrack.clips === copyTrack.clips || sourceTrack.transitions === copyTrack.transitions)) {
+                        return fail("Sequence copy shares a source timeline clip or transition collection");
+                    }
+                }
+            }
+            if (_mcpTransitionRecipeTimelineState(appliedSequence) !== sourceState) return fail("Sequence copy does not preserve the source clip and transition state");
+            if (!sourcePreserved()) return fail("The source timeline changed while cloning the sequence");
+            var activated = _mcpActivateSequenceAndVerify(appliedSequence);
+            if (activated.error) return fail(activated.error);
+            checked = preflight(appliedSequence);
+            data.diagnostics.qeClipIndex = checked.qeClip.index;
+        } else appliedSequence = sourceSequence;
+        data.appliedSequence = identity(appliedSequence);
+        data.mutationAttempted = true;
+        data.diagnostics.transitionCountBefore = checked.beforeState.length;
+        var nativeStatus = checked.qeClip.clip.addTransition(nativeTransition, false, checked.timing.qeDuration);
+        if (nativeStatus === false || (nativeStatus !== undefined && nativeStatus !== null && nativeStatus !== true && nativeStatus !== 0)) return fail("Premiere rejected native transition application (status " + String(nativeStatus) + ")");
+        var afterState = _captureTransitionState(checked.track);
+        if (!afterState || afterState.length !== checked.beforeState.length + 1) return fail("Native transition count did not increase by exactly one");
+        var remainingIdentities = afterState.slice(0);
+        for (var oldIndex = 0; oldIndex < checked.beforeState.length; oldIndex++) {
+            var oldFound = false;
+            for (var newIndex = 0; newIndex < remainingIdentities.length; newIndex++) {
+                if (remainingIdentities[newIndex] === checked.beforeState[oldIndex]) {
+                    remainingIdentities.splice(newIndex, 1);
+                    oldFound = true;
+                    break;
+                }
+            }
+            if (!oldFound) return fail("Native transition application did not preserve every pre-existing transition");
+        }
+        data.diagnostics.transitionCountAfter = afterState.length;
+        var added = _findAddedTransition(checked.track, checked.beforeState);
+        if (!added || !added.transition) return fail("Native transition readback did not expose a verifiable new transition");
+        var transition = added.transition;
+        var actualName = String(transition.displayName || transition.name || transition.matchName || "");
+        var actualStart = _mcpTransitionRecipeTime(transition.start);
+        var actualEnd = _mcpTransitionRecipeTime(transition.end);
+        var actualDuration = actualEnd - actualStart;
+        var actualCut = (actualStart + actualEnd) / 2;
+        data.actual = { transitionName: actualName, durationFrames: Math.round(actualDuration * fps), durationSeconds: actualDuration,
+            startSeconds: actualStart, endSeconds: actualEnd, cutSeconds: actualCut, transitionIndex: added.index };
+        data.applied = true;
+        if (actualName !== transitionName) return fail("Native transition name does not match the exact request");
+        if (actualDuration <= 0 || Math.abs(actualDuration - durationFrames / fps) > checked.tolerance) return fail("Native transition duration does not match the request within one frame");
+        if (Math.abs(actualCut - checked.cut) > checked.tolerance || actualStart > checked.cut + checked.tolerance || actualEnd < checked.cut - checked.tolerance) return fail("Native transition placement does not match the requested cut within one frame");
+        if (_mcpTransitionRecipeTimelineState(appliedSequence, { trackIndex: trackIndex, transitionIndex: added.index }) !== sourceState) {
+            return fail("Native transition application did not preserve the existing timeline clip and transition state");
+        }
+        data.sourcePreserved = sourcePreserved();
+        if (data.duplicateSequence && !data.sourcePreserved) return fail("The source timeline changed; source preservation could not be verified");
+        data.sourceSequence = identity(sourceSequence);
+        data.status = "applied";
+        data.verified = true;
+        return _ok(data);
+    } catch (e) { return fail("applyTransitionRecipe failed: " + e.message); }
 }
 
 function addAudioTransition(trackIndex, clipIndex, transitionName, duration) {
@@ -10898,7 +11202,7 @@ function applyTransitionToAllCuts(trackIndex, transitionName, duration) {
         var errors = [];
         for (var i = 0; i < numClips - 1; i++) {
             try {
-                var result = JSON.parse(addVideoTransition(trackIndex, i, transitionName, duration, false));
+                var result = JSON.parse(addVideoTransition(trackIndex, i, transitionName, duration, true));
                 if (!result.success) { errors.push("Clip " + i + ": " + result.error); continue; }
                 transitions.push(result.data);
                 applied++;

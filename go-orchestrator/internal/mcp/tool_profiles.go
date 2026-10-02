@@ -70,6 +70,8 @@ var toolProfilePatterns = map[string][]string{
 		"premiere_add_audio_transition",
 		"premiere_get_installed_transitions",
 		"premiere_get_transitions",
+		"premiere_list_transition_recipes",
+		"premiere_apply_transition_recipe",
 		"premiere_get_installed_effects",
 		"premiere_apply_video_effect",
 		"premiere_apply_audio_effect",
@@ -125,6 +127,8 @@ var toolProfilePatterns = map[string][]string{
 		"premiere_probe_media",
 	},
 	"transitions": {
+		"premiere_list_transition_recipes",
+		"premiere_apply_transition_recipe",
 		"premiere_get_available_transitions",
 		"premiere_get_installed_transitions",
 		"premiere_get_transitions",

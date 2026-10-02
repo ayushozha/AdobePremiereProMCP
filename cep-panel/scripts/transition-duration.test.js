@@ -41,7 +41,7 @@ function fixture(fps = 24, options = {}) {
             if (options.noop || (options.noopIndices && options.noopIndices.includes(clipIndex))) return true;
             const appliedFrames = options.appliedFrames === undefined ? nativeFrameCount : options.appliedFrames;
             const duration = appliedFrames / nativeFPS;
-            const start = options.start === undefined ? 4 : options.start;
+            const start = options.modelPlacement ? (applyToEnd ? 0 : 4 - duration / 2) : (options.start === undefined ? 4 : options.start);
             transitions.push({ nodeId: "new-" + transitions.length, displayName: transition.name,
                 start: { seconds: start }, end: { seconds: start + duration }, duration: { seconds: duration } });
             return true;
@@ -187,10 +187,17 @@ test("a zero-length native transition cannot be reported as verified", () => {
     assert.match(result.error, /duration could not be verified/);
 });
 
-test("transition placement still passes the caller's existing flag to QE", () => {
+test("applyToEnd=false selects the start of the clip through QE addToStart=true", () => {
     const host = fixture();
     assert.equal(host.apply("video", 0.5, false).success, true);
-    assert.equal(host.calls.find(call => typeof call === "object").applyToEnd, false);
+    assert.equal(host.calls.find(call => typeof call === "object").applyToEnd, true);
+});
+
+test("applyToEnd=true creates a transition at the outgoing cut, not the clip head", () => {
+    const host = fixture(24, { modelPlacement: true });
+    assert.equal(host.apply("video", 0.5, true).success, true);
+    assert.equal(host.transitions[0].start.seconds, 3.75);
+    assert.equal(host.transitions[0].end.seconds, 4.25);
 });
 
 for (const command of ["addTransition", "addAudioCrossfade", "applyTransitionToAllCuts", "batchApplyTransitions"]) {
@@ -206,7 +213,7 @@ for (const command of ["addTransition", "addAudioCrossfade", "applyTransitionToA
             for (const call of nativeCalls) {
                 assert.equal(call.qeDuration, example.qeDuration);
                 assert.equal(typeof call.transition, "object");
-                assert.equal(call.applyToEnd, !bulk);
+                assert.equal(call.applyToEnd, command === "addAudioCrossfade");
             }
             const actual = bulk ? result.data.transitions : [result.data];
             for (const transition of actual) {
