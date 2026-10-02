@@ -26,7 +26,7 @@ Video editors spend hours on repetitive tasks: syncing clips, rough cuts, color 
 
 ## Capabilities and Verification Boundary
 
-The source registry contains **1,064 MCP tool schemas** backed by **932 host command names**. The default `standard` profile exposes **72 curated, readback-first tools**, which fits common model function limits and covers normal editing work. The full registry remains available for compatibility and specialist use; schema or symbol presence is not proof that a command works in every Premiere version.
+The source registry contains **1,066 MCP tool schemas** backed by **934 literal host command names**. The default `standard` profile exposes **74 curated, readback-first tools**, which fits common model function limits and covers normal editing work. The full registry remains available for compatibility and specialist use; schema or symbol presence is not proof that a command works in every Premiere version.
 
 The curated surface includes:
 
@@ -35,6 +35,7 @@ The curated surface includes:
 - Script parsing, asset matching, EDL generation, and pacing analysis.
 - Caption-track creation from validated SRT with count readback.
 - Installed-effect and transition discovery, application, and public-DOM readback.
+- [12 native transition recipes](docs/native-transition-recipes.md), with dry-run checks, sequence copies, and exact cut/duration readback.
 - MOGRT-based titles, social derivatives, proxy workflows, and batch-delivery recipes.
 
 The audited caption, transition, effect, and graphics-template routes return
@@ -105,7 +106,7 @@ AdobePremiereProMCP/
 +-- go-orchestrator/          # Go -- MCP server & task orchestrator
 |   +-- cmd/server/           #   Entry point
 |   +-- internal/             #   Core packages
-|   |   +-- mcp/              #     MCP protocol handler (1,064 registered schemas)
+|   |   +-- mcp/              #     MCP protocol handler (1,066 registered schemas)
 |   |   +-- orchestrator/     #     Task orchestration
 |   |   +-- health/           #     Health checks
 |   |   +-- grpc/             #     gRPC client/server

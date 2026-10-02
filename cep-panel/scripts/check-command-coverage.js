@@ -14,6 +14,7 @@ var vm = require("vm");
 
 var repositoryRoot = path.resolve(__dirname, "..", "..");
 var orchestratorDirectory = path.join(repositoryRoot, "go-orchestrator", "internal", "orchestrator");
+var mcpDirectory = path.join(repositoryRoot, "go-orchestrator", "internal", "mcp");
 var hostPath = path.join(repositoryRoot, "cep-panel", "src", "host", "premiere.jsx");
 var panelPath = path.join(repositoryRoot, "cep-panel", "src", "panel.js");
 
@@ -21,15 +22,18 @@ var commandPattern = /EvalCommand\(ctx,\s*"([A-Za-z_$][A-Za-z0-9_$]*)"/g;
 var functionPattern = /(?:^|\n)function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g;
 var commands = {};
 
-fs.readdirSync(orchestratorDirectory).filter(function (name) {
-    return /\.go$/.test(name);
-}).forEach(function (name) {
-    var source = fs.readFileSync(path.join(orchestratorDirectory, name), "utf8");
-    var match;
-    while ((match = commandPattern.exec(source)) !== null) {
-        if (!commands[match[1]]) commands[match[1]] = [];
-        commands[match[1]].push(name);
-    }
+[orchestratorDirectory, mcpDirectory].forEach(function (directory) {
+    fs.readdirSync(directory).filter(function (name) {
+        if (/_test\.go$/.test(name)) return false;
+        return /\.go$/.test(name);
+    }).forEach(function (name) {
+        var source = fs.readFileSync(path.join(directory, name), "utf8");
+        var match;
+        while ((match = commandPattern.exec(source)) !== null) {
+            if (!commands[match[1]]) commands[match[1]] = [];
+            commands[match[1]].push(name);
+        }
+    });
 });
 
 var hostSource = fs.readFileSync(hostPath, "utf8");

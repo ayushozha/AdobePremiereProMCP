@@ -105,11 +105,13 @@ async function main() {
     assert(toolNames.has("premiere_add_subtitles_from_srt"), "caption import tool missing");
     assert(toolNames.has("premiere_apply_video_effect"), "verified effect tool missing");
     assert(toolNames.has("premiere_add_video_transition"), "verified transition tool missing");
+    assert(toolNames.has("premiere_list_transition_recipes"), "transition recipe catalog tool missing");
+    assert(toolNames.has("premiere_apply_transition_recipe"), "safe transition recipe application tool missing");
     assert(!toolNames.has("premiere_execute_system_command"), "unsafe system-command tool leaked into standard profile");
     assert(!toolNames.has("premiere_split_long_captions"), "unverified caption splitter leaked into standard profile");
     assert(prompts.prompts.length === 4, `standard prompt count = ${prompts.prompts.length}, want 4`);
   } else if (profile === "all,unsafe") {
-    assert(tools.length === 1064, `full profile tool count = ${tools.length}, want 1064`);
+    assert(tools.length === 1066, `full profile tool count = ${tools.length}, want 1066`);
     assert(toolNames.has("premiere_execute_system_command"), "explicit unsafe profile omitted system-command tool");
     assert(prompts.prompts.length === 5, `full prompt count = ${prompts.prompts.length}, want 5`);
   }

@@ -1,0 +1,575 @@
+{
+  "schema": "premiere-native-transition-recipes-acceptance/v1",
+  "completedAt": "2026-10-02T03:55:15.263Z",
+  "scope": "12 named native transition recipes; not the complete installed catalog",
+  "environment": {
+    "premiere": "26.5.2",
+    "macOS": "27.0.1",
+    "architecture": "arm64",
+    "locale": "en_US",
+    "width": 1280,
+    "height": 720,
+    "frameRate": 24,
+    "bridge": "cep"
+  },
+  "artifacts": {
+    "hostSourceSha256": "61cc7f8bb8e6cd016a0bea405496ba44ceb50a76926d127449c976736a2b4132",
+    "installedGoBinarySha256": "f95d615f9c37e0d0757e753bedc0f601e8daf74080c6b8c2eb76dc93924f1e01"
+  },
+  "summary": {
+    "nativeNamesAt12Frames": {
+      "passed": 12,
+      "failed": 0
+    },
+    "recipesAtDefaultFrames": {
+      "passed": 12,
+      "failed": 0
+    },
+    "clipEdgeChecks": {
+      "passed": 2,
+      "failed": 0
+    },
+    "originalActiveSequenceRestored": true,
+    "standardProfileToolCount": 74,
+    "safetyChecks": {
+      "passed": 6,
+      "failed": 0,
+      "mcpArgumentGuards": 5,
+      "nativeOccupiedCutGuard": 1
+    }
+  },
+  "checks": [
+    {
+      "recipeId": "cross_dissolve",
+      "nativeName": "Cross Dissolve",
+      "status": "pass",
+      "dryRunCreatesCopy": false,
+      "duplicateSequenceVerified": true,
+      "sourcePreserved": true,
+      "actual": {
+        "transitionName": "Cross Dissolve",
+        "durationFrames": 12,
+        "durationSeconds": 0.5,
+        "startSeconds": 1.75,
+        "endSeconds": 2.25,
+        "cutSeconds": 2,
+        "transitionIndex": 0
+      },
+      "readback": {
+        "index": 0,
+        "name": "Cross Dissolve",
+        "matchName": "AE.AE_Impact_Dissolve",
+        "start": 1.75,
+        "end": 2.25,
+        "duration": 0.5
+      },
+      "render": {
+        "status": "pass",
+        "file": "cross_dissolve.mp4",
+        "bytes": 1434807,
+        "sha256": "1df2050b83913cf0a070f53f640d450637928ccaab67ce05f8e6332e3aec0165",
+        "width": 1280,
+        "height": 720,
+        "fps": "24/1",
+        "duration": "4.000000"
+      }
+    },
+    {
+      "recipeId": "blur_dissolve",
+      "nativeName": "Blur Dissolve",
+      "status": "pass",
+      "dryRunCreatesCopy": false,
+      "duplicateSequenceVerified": true,
+      "sourcePreserved": true,
+      "actual": {
+        "transitionName": "Blur Dissolve",
+        "durationFrames": 12,
+        "durationSeconds": 0.5,
+        "startSeconds": 1.75,
+        "endSeconds": 2.25,
+        "cutSeconds": 2,
+        "transitionIndex": 0
+      },
+      "readback": {
+        "index": 0,
+        "name": "Blur Dissolve",
+        "matchName": "AE.AE_Impact_Blur_dissolve",
+        "start": 1.75,
+        "end": 2.25,
+        "duration": 0.5
+      },
+      "render": {
+        "status": "pass",
+        "file": "blur_dissolve.mp4",
+        "bytes": 1330463,
+        "sha256": "d196a74b7ab90a26df30469f88df8fdf36183e45974ad6370023783e6a568a32",
+        "width": 1280,
+        "height": 720,
+        "fps": "24/1",
+        "duration": "4.000000"
+      }
+    },
+    {
+      "recipeId": "push",
+      "nativeName": "Push",
+      "status": "pass",
+      "dryRunCreatesCopy": false,
+      "duplicateSequenceVerified": true,
+      "sourcePreserved": true,
+      "actual": {
+        "transitionName": "Push",
+        "durationFrames": 8,
+        "durationSeconds": 0.33333333333334,
+        "startSeconds": 1.83333333333333,
+        "endSeconds": 2.16666666666667,
+        "cutSeconds": 2,
+        "transitionIndex": 0
+      },
+      "readback": {
+        "index": 0,
+        "name": "Push",
+        "matchName": "AE.AE_Impact_Push",
+        "start": 1.83333333333333,
+        "end": 2.16666666666667,
+        "duration": 0.33333333333333
+      },
+      "render": {
+        "status": "pass",
+        "file": "push.mp4",
+        "bytes": 1345184,
+        "sha256": "0bb3e91dc0dd9874b202e869986ac9049944f208aa3b76a3b79f8face85ec35d",
+        "width": 1280,
+        "height": 720,
+        "fps": "24/1",
+        "duration": "4.000000"
+      }
+    },
+    {
+      "recipeId": "slide",
+      "nativeName": "Slide",
+      "status": "pass",
+      "dryRunCreatesCopy": false,
+      "duplicateSequenceVerified": true,
+      "sourcePreserved": true,
+      "actual": {
+        "transitionName": "Slide",
+        "durationFrames": 8,
+        "durationSeconds": 0.33333333333334,
+        "startSeconds": 1.83333333333333,
+        "endSeconds": 2.16666666666667,
+        "cutSeconds": 2,
+        "transitionIndex": 0
+      },
+      "readback": {
+        "index": 0,
+        "name": "Slide",
+        "matchName": "AE.AE_Custom_Impact_Fall",
+        "start": 1.83333333333333,
+        "end": 2.16666666666667,
+        "duration": 0.33333333333333
+      },
+      "render": {
+        "status": "pass",
+        "file": "slide.mp4",
+        "bytes": 1279083,
+        "sha256": "05737496bff2a43e4fdb1ad419ea4bf531f617fa20c0706959881c473a8a47f6",
+        "width": 1280,
+        "height": 720,
+        "fps": "24/1",
+        "duration": "4.000000"
+      }
+    },
+    {
+      "recipeId": "whip",
+      "nativeName": "Whip",
+      "status": "pass",
+      "dryRunCreatesCopy": false,
+      "duplicateSequenceVerified": true,
+      "sourcePreserved": true,
+      "actual": {
+        "transitionName": "Whip",
+        "durationFrames": 6,
+        "durationSeconds": 0.25,
+        "startSeconds": 1.875,
+        "endSeconds": 2.125,
+        "cutSeconds": 2,
+        "transitionIndex": 0
+      },
+      "readback": {
+        "index": 0,
+        "name": "Whip",
+        "matchName": "AE.Impact_Whip",
+        "start": 1.875,
+        "end": 2.125,
+        "duration": 0.25
+      },
+      "render": {
+        "status": "pass",
+        "file": "whip.mp4",
+        "bytes": 1332575,
+        "sha256": "d1583e80a8534c7a791e147907eb0a89a4f1f002e408777f074b9f776721b639",
+        "width": 1280,
+        "height": 720,
+        "fps": "24/1",
+        "duration": "4.000000"
+      }
+    },
+    {
+      "recipeId": "zoom_blur",
+      "nativeName": "Zoom Blur",
+      "status": "pass",
+      "dryRunCreatesCopy": false,
+      "duplicateSequenceVerified": true,
+      "sourcePreserved": true,
+      "actual": {
+        "transitionName": "Zoom Blur",
+        "durationFrames": 6,
+        "durationSeconds": 0.25,
+        "startSeconds": 1.875,
+        "endSeconds": 2.125,
+        "cutSeconds": 2,
+        "transitionIndex": 0
+      },
+      "readback": {
+        "index": 0,
+        "name": "Zoom Blur",
+        "matchName": "AE.AE_Impact_Zoom_Blur",
+        "start": 1.875,
+        "end": 2.125,
+        "duration": 0.25
+      },
+      "render": {
+        "status": "pass",
+        "file": "zoom_blur.mp4",
+        "bytes": 1365433,
+        "sha256": "675f9c0e6d17e386ed63071b6619cecffda65c1133989b8f4ef79672276dd3e2",
+        "width": 1280,
+        "height": 720,
+        "fps": "24/1",
+        "duration": "4.000000"
+      }
+    },
+    {
+      "recipeId": "film_dissolve",
+      "nativeName": "Film Dissolve",
+      "status": "pass",
+      "dryRunCreatesCopy": false,
+      "duplicateSequenceVerified": true,
+      "sourcePreserved": true,
+      "actual": {
+        "transitionName": "Film Dissolve",
+        "durationFrames": 12,
+        "durationSeconds": 0.5,
+        "startSeconds": 1.75,
+        "endSeconds": 2.25,
+        "cutSeconds": 2,
+        "transitionIndex": 0
+      },
+      "readback": {
+        "index": 0,
+        "name": "Film Dissolve",
+        "matchName": "AE.Impact_Film_Dissolve",
+        "start": 1.75,
+        "end": 2.25,
+        "duration": 0.5
+      },
+      "render": {
+        "status": "pass",
+        "file": "film_dissolve.mp4",
+        "bytes": 1483866,
+        "sha256": "1e70fa3a917382137e0ad0263b657927ccf691707f02e85561840d42c671ac2a",
+        "width": 1280,
+        "height": 720,
+        "fps": "24/1",
+        "duration": "4.000000"
+      }
+    },
+    {
+      "recipeId": "luma_fade",
+      "nativeName": "Luma Fade",
+      "status": "pass",
+      "dryRunCreatesCopy": false,
+      "duplicateSequenceVerified": true,
+      "sourcePreserved": true,
+      "actual": {
+        "transitionName": "Luma Fade",
+        "durationFrames": 12,
+        "durationSeconds": 0.5,
+        "startSeconds": 1.75,
+        "endSeconds": 2.25,
+        "cutSeconds": 2,
+        "transitionIndex": 0
+      },
+      "readback": {
+        "index": 0,
+        "name": "Luma Fade",
+        "matchName": "AE.AE_Impact_Luma_Fade",
+        "start": 1.75,
+        "end": 2.25,
+        "duration": 0.5
+      },
+      "render": {
+        "status": "pass",
+        "file": "luma_fade.mp4",
+        "bytes": 1556764,
+        "sha256": "8355a0a5863f7d2d9101ddd2cd89c1be2648bac69da97b6cb2a66b8baf616137",
+        "width": 1280,
+        "height": 720,
+        "fps": "24/1",
+        "duration": "4.000000"
+      }
+    },
+    {
+      "recipeId": "light_leak",
+      "nativeName": "Light Leak",
+      "status": "pass",
+      "dryRunCreatesCopy": false,
+      "duplicateSequenceVerified": true,
+      "sourcePreserved": true,
+      "actual": {
+        "transitionName": "Light Leak",
+        "durationFrames": 12,
+        "durationSeconds": 0.5,
+        "startSeconds": 1.75,
+        "endSeconds": 2.25,
+        "cutSeconds": 2,
+        "transitionIndex": 0
+      },
+      "readback": {
+        "index": 0,
+        "name": "Light Leak",
+        "matchName": "AE.AE_Impact_Light_Leaks",
+        "start": 1.75,
+        "end": 2.25,
+        "duration": 0.5
+      },
+      "render": {
+        "status": "pass",
+        "file": "light_leak.mp4",
+        "bytes": 1433108,
+        "sha256": "a9ab30966b4ecdafe55e76cb7fad0e546854afa63a7538154d721daf2ef8a29a",
+        "width": 1280,
+        "height": 720,
+        "fps": "24/1",
+        "duration": "4.000000"
+      }
+    },
+    {
+      "recipeId": "glitch",
+      "nativeName": "Glitch",
+      "status": "pass",
+      "dryRunCreatesCopy": false,
+      "duplicateSequenceVerified": true,
+      "sourcePreserved": true,
+      "actual": {
+        "transitionName": "Glitch",
+        "durationFrames": 6,
+        "durationSeconds": 0.25,
+        "startSeconds": 1.875,
+        "endSeconds": 2.125,
+        "cutSeconds": 2,
+        "transitionIndex": 0
+      },
+      "readback": {
+        "index": 0,
+        "name": "Glitch",
+        "matchName": "AE.AE_Impact_Glitch",
+        "start": 1.875,
+        "end": 2.125,
+        "duration": 0.25
+      },
+      "render": {
+        "status": "pass",
+        "file": "glitch.mp4",
+        "bytes": 1774938,
+        "sha256": "d2d09387f0949de9099d606a9a18e51d4e18da9ce2593318d6a280ff54cd9637",
+        "width": 1280,
+        "height": 720,
+        "fps": "24/1",
+        "duration": "4.000000"
+      }
+    },
+    {
+      "recipeId": "flash",
+      "nativeName": "Flash",
+      "status": "pass",
+      "dryRunCreatesCopy": false,
+      "duplicateSequenceVerified": true,
+      "sourcePreserved": true,
+      "actual": {
+        "transitionName": "Flash",
+        "durationFrames": 6,
+        "durationSeconds": 0.25,
+        "startSeconds": 1.875,
+        "endSeconds": 2.125,
+        "cutSeconds": 2,
+        "transitionIndex": 0
+      },
+      "readback": {
+        "index": 0,
+        "name": "Flash",
+        "matchName": "AE.AE_Impact_Flash",
+        "start": 1.875,
+        "end": 2.125,
+        "duration": 0.25
+      },
+      "render": {
+        "status": "pass",
+        "file": "flash.mp4",
+        "bytes": 1333239,
+        "sha256": "73ac0e8dc63794d0ac0709fd7807a148d85880873f64907ad8888f3945d27dc7",
+        "width": 1280,
+        "height": 720,
+        "fps": "24/1",
+        "duration": "4.000000"
+      }
+    },
+    {
+      "recipeId": "directional_blur",
+      "nativeName": "Directional Blur",
+      "status": "pass",
+      "dryRunCreatesCopy": false,
+      "duplicateSequenceVerified": true,
+      "sourcePreserved": true,
+      "actual": {
+        "transitionName": "Directional Blur",
+        "durationFrames": 6,
+        "durationSeconds": 0.25,
+        "startSeconds": 1.875,
+        "endSeconds": 2.125,
+        "cutSeconds": 2,
+        "transitionIndex": 0
+      },
+      "readback": {
+        "index": 0,
+        "name": "Directional Blur",
+        "matchName": "AE.AE_Impact_Directional_Blur",
+        "start": 1.875,
+        "end": 2.125,
+        "duration": 0.25
+      },
+      "render": {
+        "status": "pass",
+        "file": "directional_blur.mp4",
+        "bytes": 1357852,
+        "sha256": "06b09d00d2ef8add6ee22b452df71cb3d21484084b3c8e6071bab5491f09ff83",
+        "width": 1280,
+        "height": 720,
+        "fps": "24/1",
+        "duration": "4.000000"
+      }
+    }
+  ],
+  "guardScenarios": [
+    {
+      "scenario": "{\"clip_index\": 0, \"dry_run\": false, \"recipe_id\": \"unknown\", \"track_index\": 0}",
+      "status": "pass"
+    },
+    {
+      "scenario": "{\"clip_index\": 0, \"dry_run\": false, \"recipe_id\": \"whip\", \"track_index\": -1}",
+      "status": "pass"
+    },
+    {
+      "scenario": "{\"clip_index\": 0, \"dry_run\": false, \"duration_frames\": 0, \"recipe_id\": \"whip\", \"track_index\": 0}",
+      "status": "pass"
+    },
+    {
+      "scenario": "{\"clip_index\": 0, \"dry_run\": false, \"recipe_id\": \"whip\", \"track_index\": 0, \"transition_name\": \"custom\"}",
+      "status": "pass"
+    },
+    {
+      "scenario": "{\"clip_index\": 0, \"dry_run\": \"false\", \"recipe_id\": \"whip\", \"track_index\": 0}",
+      "status": "pass"
+    },
+    {
+      "scenario": "occupied cut rejected before clone",
+      "status": "pass"
+    }
+  ],
+  "clipEdges": {
+    "status": "pass",
+    "applyToEndTrue": {
+      "index": 0,
+      "name": "Cross Dissolve",
+      "matchName": "AE.AE_Impact_Dissolve",
+      "start": 1.75,
+      "end": 2.25,
+      "duration": 0.5
+    },
+    "applyToEndFalse": {
+      "index": 0,
+      "name": "Cross Dissolve",
+      "matchName": "AE.AE_Impact_Dissolve",
+      "start": 0,
+      "end": 0.5,
+      "duration": 0.5
+    }
+  },
+  "automatedValidation": {
+    "nonGo": {
+      "passed": 579,
+      "failed": 0,
+      "skipped": 0,
+      "suites": {
+        "cep": 358,
+        "python": 117,
+        "rust": 36,
+        "typescript": 21,
+        "cli": 4,
+        "npmPackage": 16,
+        "e2eAndUXP": 27
+      }
+    },
+    "go": {
+      "testedPackages": 7,
+      "goTest": "passed",
+      "race": "passed",
+      "vet": "passed"
+    },
+    "builds": {
+      "go": "passed",
+      "cep": "passed"
+    },
+    "diffCheck": "passed",
+    "fullLocalCI": {
+      "status": "passed",
+      "command": "just ci",
+      "logSha256": "fa332b231f2c35be2b86f44eccd8d719cde851661e37c71553829d608085e1c2"
+    },
+    "stdioSmoke": {
+      "standard": {
+        "tools": 74,
+        "backendServicesVerified": true
+      },
+      "allUnsafe": {
+        "tools": 1066
+      }
+    }
+  },
+  "evidenceReports": [
+    {
+      "file": "native-baseline-decoded.json",
+      "sha256": "ffa33daba3f9c020cfa9171d1212d1628e23dc953bf0b69857aff98698311c1c"
+    },
+    {
+      "file": "native-recipes-release.json",
+      "sha256": "8f514d03a5a11a3b5f4889a2a7301850d3fc1ca9eab17a13f1735f4bb4806ea6"
+    },
+    {
+      "file": "primitive-edge-verification.json",
+      "sha256": "4b6d4691899a76517d3b88dde91dde637b7f23528a8ec7216747b180999bc2dc"
+    },
+    {
+      "file": "host-lazy-reloaded-release.json",
+      "sha256": "08e6f680958490410f6b878c8e5cb438f51a675b2659bd092b561a8c210ed04b"
+    }
+  ],
+  "limits": [
+    "Dedicated disposable project and generated fixture media only; no production video edited.",
+    "Other Premiere versions, operating systems, locales, frame rates, vertical formats and performance are unverified.",
+    "Full H.264 decoding and fixture frame inspection do not certify perceptual quality.",
+    "Structural source comparison covers clip identities, trims, positions, speeds, track counts and transitions; not component parameters, keyframes or sequence markers.",
+    "An earlier test harness export failed because URL-encoded paths were passed to Premiere; corrected harness and release retest passed all 12 exports.",
+    "Clients caching the old 72-tool standard profile must reconnect to discover the two new tools."
+  ]
+}
