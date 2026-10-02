@@ -25,16 +25,18 @@
       "passed": 12,
       "failed": 0
     },
-    "nativeSafetyChecks": {
-      "passed": 6,
-      "failed": 0
-    },
     "clipEdgeChecks": {
       "passed": 2,
       "failed": 0
     },
     "originalActiveSequenceRestored": true,
-    "standardProfileToolCount": 74
+    "standardProfileToolCount": 74,
+    "safetyChecks": {
+      "passed": 6,
+      "failed": 0,
+      "mcpArgumentGuards": 5,
+      "nativeOccupiedCutGuard": 1
+    }
   },
   "checks": [
     {
@@ -528,7 +530,21 @@
       "go": "passed",
       "cep": "passed"
     },
-    "diffCheck": "passed"
+    "diffCheck": "passed",
+    "fullLocalCI": {
+      "status": "passed",
+      "command": "just ci",
+      "logSha256": "fa332b231f2c35be2b86f44eccd8d719cde851661e37c71553829d608085e1c2"
+    },
+    "stdioSmoke": {
+      "standard": {
+        "tools": 74,
+        "backendServicesVerified": true
+      },
+      "allUnsafe": {
+        "tools": 1066
+      }
+    }
   },
   "evidenceReports": [
     {

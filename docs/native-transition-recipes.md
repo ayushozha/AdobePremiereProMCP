@@ -52,7 +52,7 @@ Durations are frames at the active sequence's actual frame rate: 6 frames is 0.2
 
 ## Native acceptance evidence
 
-[Recorded native results](verification/native-transition-recipes-2026-10-01.json) cover all 12 names at a 12-frame duration and all 12 recipes at their 6-, 8-, or 12-frame defaults, including dry-run and copy verification, exact transition readback, H.264 export and complete decoding. Tests used dedicated fixture footage and did not edit a production project.
+[Recorded native results](verification/native-transition-recipes-2026-10-01.json) cover all 12 names at a 12-frame duration and all 12 recipes at their 6-, 8-, or 12-frame defaults, including dry-run and copy verification, exact transition readback, H.264 export and complete decoding. Five live MCP argument guards, one native occupied-cut guard, and both clip-edge flags also passed. Tests used dedicated fixture footage and did not edit a production project. Full raw reports and rendered previews were retained locally; the committed manifest records their hashes and per-recipe readbacks.
 
 The acceptance environment is Premiere 26.5.2, macOS 27.0.1 arm64, en_US, 1280×720, 24 fps. Other versions, platforms, frame rates, vertical formats, and performance remain unverified. Export decoding is not a perceptual-quality certificate.
 
