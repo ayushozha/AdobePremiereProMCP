@@ -2668,36 +2668,39 @@ function setActiveSequence(sequenceIndex) {
 // ---------------------------------------------------------------------------
 function getSequenceList() {
     try {
-        if (!app.project) {
-            return _err("No project is open");
+        if (!app.project) return _err("No project is open");
+        function count(collection, key, label) {
+            var value = collection ? collection[key] : undefined;
+            if (typeof value !== "number" || !isFinite(value) || value < 0 || Math.floor(value) !== value) {
+                throw new Error("Cannot read " + label + " count");
+            }
+            return value;
         }
-
+        var collection = app.project.sequences;
+        var total = count(collection, "numSequences", "sequence");
+        var active = app.project.activeSequence;
+        var activeID = active ? String(active.sequenceID || "") : "";
         var sequences = [];
-        var activeID = app.project.activeSequence ? (app.project.activeSequence.sequenceID || "") : "";
-
-        for (var i = 0; i < app.project.sequences.numSequences; i++) {
-            var seq = app.project.sequences[i];
+        for (var i = 0; i < total; i++) {
+            var seq = collection[i];
+            if (!seq || !String(seq.sequenceID || "")) throw new Error("Cannot read sequence identity at index " + i);
+            if (typeof seq.frameSizeHorizontal !== "number" || !isFinite(seq.frameSizeHorizontal) || seq.frameSizeHorizontal <= 0 ||
+                typeof seq.frameSizeVertical !== "number" || !isFinite(seq.frameSizeVertical) || seq.frameSizeVertical <= 0) {
+                throw new Error("Cannot read sequence dimensions at index " + i);
+            }
+            var timebase = String(seq.timebase || "");
+            if (!/^[0-9]+$/.test(timebase) || Number(timebase) <= 0) throw new Error("Cannot read sequence timebase at index " + i);
             sequences.push({
-                index: i,
-                name: seq.name || "",
-                sequenceID: seq.sequenceID || "",
-                frameSizeHorizontal: seq.frameSizeHorizontal || 0,
-                frameSizeVertical: seq.frameSizeVertical || 0,
-                timebase: seq.timebase || "",
-                videoTrackCount: seq.videoTracks ? seq.videoTracks.numTracks : 0,
-                audioTrackCount: seq.audioTracks ? seq.audioTracks.numTracks : 0,
-                isActive: (seq.sequenceID === activeID)
+                index: i, name: String(seq.name || ""), sequence_id: String(seq.sequenceID),
+                frame_size_horizontal: seq.frameSizeHorizontal, frame_size_vertical: seq.frameSizeVertical,
+                timebase: timebase,
+                video_track_count: count(seq.videoTracks, "numTracks", "video track"),
+                audio_track_count: count(seq.audioTracks, "numTracks", "audio track"),
+                is_active: String(seq.sequenceID) === activeID
             });
         }
-
-        return _ok({
-            count: sequences.length,
-            sequences: sequences,
-            activeSequenceID: activeID
-        });
-    } catch (e) {
-        return _err("getSequenceList failed: " + e.message);
-    }
+        return _ok({ count: sequences.length, sequences: sequences, active_sequence_id: activeID });
+    } catch (e) { return _err("getSequenceList failed: " + e.message); }
 }
 
 // ---------------------------------------------------------------------------
