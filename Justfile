@@ -121,7 +121,7 @@ e2e-runner-test:
     node --test scripts/e2e-premiere.test.mjs
 
 uxp-test:
-    node --test uxp-panel/test/inspect.test.js
+    node scripts/run-node-tests.mjs uxp-panel/test
 
 # ─── All ───
 

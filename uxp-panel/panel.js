@@ -16,3 +16,22 @@ button.addEventListener("click", async () => {
     button.disabled = false;
   }
 });
+
+const { exportSourceTranscript } = require("./transcript-export.js");
+const exportButton = document.getElementById("export-transcript");
+exportButton.addEventListener("click", async () => {
+  exportButton.disabled = true;
+  button.disabled = true;
+  output.textContent = "Reading the selected source clip transcript…";
+  try {
+    const result = await exportSourceTranscript(require("premierepro"), require("uxp").storage);
+    output.textContent = result.status === "cancelled"
+      ? "Export cancelled."
+      : "Source clip transcript exported and file content verified.\n" + JSON.stringify(result, null, 2);
+  } catch (error) {
+    output.textContent = "Source clip transcript export failed: " + String(error && error.message || error);
+  } finally {
+    exportButton.disabled = false;
+    button.disabled = false;
+  }
+});

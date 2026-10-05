@@ -127,7 +127,7 @@ jobs:
           E2E_REQUIRE_PARSER_TEST: '1'
         run: node --test scripts/e2e-premiere.test.mjs
       - name: Test UXP inspection reporting
-        run: node --test uxp-panel/test/inspect.test.js
+        run: node scripts/run-node-tests.mjs uxp-panel/test
 
   proto-lint:
     runs-on: ubuntu-latest
