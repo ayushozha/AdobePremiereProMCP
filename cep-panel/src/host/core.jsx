@@ -219,18 +219,39 @@ function getActiveSequence() {
 
 function getSequenceList() {
     try {
-        if (!app.project) return _err("No project is open.");
-        var seqs = [];
-        var numSeqs = 0;
-        try { numSeqs = app.project.sequences.numItems; } catch (e1) {}
-        for (var i = 0; i < numSeqs; i++) {
-            var s = app.project.sequences[i];
-            if (s) {
-                seqs.push({ index: i, name: s.name, id: s.sequenceID });
+        if (!app.project) return _err("No project is open");
+        function count(collection, key, label) {
+            var value = collection ? collection[key] : undefined;
+            if (typeof value !== "number" || !isFinite(value) || value < 0 || Math.floor(value) !== value) {
+                throw new Error("Cannot read " + label + " count");
             }
+            return value;
         }
-        return _ok({ sequences: seqs, count: seqs.length });
-    } catch (e) { return _err("Failed to list sequences: " + e.message); }
+        var collection = app.project.sequences;
+        var total = count(collection, "numSequences", "sequence");
+        var active = app.project.activeSequence;
+        var activeID = active ? String(active.sequenceID || "") : "";
+        var sequences = [];
+        for (var i = 0; i < total; i++) {
+            var seq = collection[i];
+            if (!seq || !String(seq.sequenceID || "")) throw new Error("Cannot read sequence identity at index " + i);
+            if (typeof seq.frameSizeHorizontal !== "number" || !isFinite(seq.frameSizeHorizontal) || seq.frameSizeHorizontal <= 0 ||
+                typeof seq.frameSizeVertical !== "number" || !isFinite(seq.frameSizeVertical) || seq.frameSizeVertical <= 0) {
+                throw new Error("Cannot read sequence dimensions at index " + i);
+            }
+            var timebase = String(seq.timebase || "");
+            if (!/^[0-9]+$/.test(timebase) || Number(timebase) <= 0) throw new Error("Cannot read sequence timebase at index " + i);
+            sequences.push({
+                index: i, name: String(seq.name || ""), sequence_id: String(seq.sequenceID),
+                frame_size_horizontal: seq.frameSizeHorizontal, frame_size_vertical: seq.frameSizeVertical,
+                timebase: timebase,
+                video_track_count: count(seq.videoTracks, "numTracks", "video track"),
+                audio_track_count: count(seq.audioTracks, "numTracks", "audio track"),
+                is_active: String(seq.sequenceID) === activeID
+            });
+        }
+        return _ok({ count: sequences.length, sequences: sequences, active_sequence_id: activeID });
+    } catch (e) { return _err("getSequenceList failed: " + e.message); }
 }
 
 // ── Media Import ──────────────────────────────────────────────────────
