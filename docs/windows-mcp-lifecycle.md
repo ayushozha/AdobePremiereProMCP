@@ -36,8 +36,11 @@ loop. Previously running services are never adopted or killed.
 
 Validation: real subprocess tests cover gated ES-module startup, occupied-port
 refusal, early exit, listener readiness, idempotent stop/reaping, and timeout
-cleanup. The Windows server and tests can be crosscompiled from macOS. These
-checks do not execute Windows Job Object APIs, `.cmd`, Cursor, or Premiere.
-Native Windows verification remains required: establish MCP, close its input,
-then separately force-stop its Go PID and check that its Node PID and any child
-processes disappear while unrelated Rust/Python/services remain running.
+cleanup. The Windows server and tests can be crosscompiled from macOS; this
+alone does not execute Windows Job Object APIs. The Windows CI runner executes
+additional real-Node tests for owner termination and descendant cleanup, plus
+shutdown when a descendant inherits output pipes. Those tests do not prove
+`.cmd`, Cursor, or Premiere integration. Manual host verification remains
+required: establish MCP, close its input, then separately force-stop its Go PID
+and check that its Node PID and any child processes disappear while unrelated
+Rust/Python/services remain running.
