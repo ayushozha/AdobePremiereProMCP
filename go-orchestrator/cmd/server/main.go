@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ayushozha/AdobePremiereProMCP/go-orchestrator/internal/config"
+	"github.com/ayushozha/AdobePremiereProMCP/go-orchestrator/internal/embeddedbridge"
 	grpcclients "github.com/ayushozha/AdobePremiereProMCP/go-orchestrator/internal/grpc"
 	"github.com/ayushozha/AdobePremiereProMCP/go-orchestrator/internal/health"
 	"github.com/ayushozha/AdobePremiereProMCP/go-orchestrator/internal/mcp"
@@ -47,6 +48,7 @@ func run() error {
 		port      = flag.Int("port", 0, "SSE HTTP port (only used with --transport=sse)")
 		logLevel  = flag.String("log-level", "", `Log level: "debug", "info", "warn", "error"`)
 	)
+	embedBridge := flag.Bool("embed-ts-bridge", false, "Windows only: own one TypeScript bridge for this MCP process (Rust/Python remain separate)")
 	flag.Parse()
 
 	// ── Config ────────────────────────────────────────────────────────
@@ -82,6 +84,16 @@ func run() error {
 		zap.String("built", date),
 		zap.String("transport", string(cfg.Transport)),
 	)
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+	if *embedBridge {
+		stop, err := embeddedbridge.Start(ctx, cfg.TypeScriptBridgeAddr, logger)
+		if err != nil {
+			return fmt.Errorf("starting embedded TypeScript bridge: %w", err)
+		}
+		defer stop()
+	}
 
 	// ── gRPC client connections ───────────────────────────────────────
 	clients, err := grpcclients.NewClients(&grpcclients.ClientsConfig{
@@ -121,9 +133,6 @@ func run() error {
 	mcpSrv := mcp.NewMCPServer(engine, version, logger, options...)
 
 	// ── Serve ─────────────────────────────────────────────────────────
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-
 	serveMCP := func(ctx context.Context) error {
 		switch cfg.Transport {
 		case config.TransportSSE:

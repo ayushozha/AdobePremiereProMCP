@@ -170,6 +170,13 @@ jobs:
           Push-Location go-orchestrator
           go build -o bin/premierpro-mcp.exe ./cmd/server
           Pop-Location
+      - name: Test native Windows bridge process ownership
+        shell: pwsh
+        run: |
+          Push-Location go-orchestrator
+          go test -v -timeout 90s ./internal/embeddedbridge
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
       - name: Build and test TypeScript bridge
         run: cd ts-bridge && npm ci && npm test
       - name: Build and test CLI
