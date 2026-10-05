@@ -1761,6 +1761,65 @@ function exportFrame(outputPath, format) {
     }
 }
 
+/** Resolve raw-source footage only; this never claims a composed preview. */
+function getFrameSourceAtTime(seconds) {
+    try {
+        var sequence = app.project ? app.project.activeSequence : null;
+        if (!sequence) return _err("No active sequence for source frame mapping");
+        if (seconds === undefined) seconds = _mcpTransitionRecipeTime(sequence.getPlayerPosition());
+        if (typeof seconds !== "number" || !isFinite(seconds) || seconds < 0) return _err("seconds must be a finite non-negative number");
+        var matches = [];
+        var tracks = sequence.videoTracks;
+        var trackCount = _mcpTransitionRecipeCollectionCount(tracks, "numTracks", "source frame video tracks");
+        for (var ti = 0; ti < trackCount; ti++) {
+            var track = tracks[ti];
+            if (!track || typeof track.isMuted !== "function") return _err("Cannot prove video track mute state");
+            var muted = track.isMuted();
+            if (typeof muted !== "boolean") return _err("Cannot prove video track mute state");
+            if (muted) continue;
+            var transitionCount = _mcpTransitionRecipeCollectionCount(track.transitions, "numItems", "source frame transitions");
+            for (var xi = 0; xi < transitionCount; xi++) {
+                var transition = track.transitions[xi];
+                var transitionStart = _mcpTransitionRecipeTime(transition.start);
+                var transitionEnd = _mcpTransitionRecipeTime(transition.end);
+                if (transitionEnd <= transitionStart) return _err("Cannot prove transition bounds");
+                if (seconds >= transitionStart && seconds < transitionEnd) return _err("Raw source frame fallback is unavailable during a transition");
+            }
+            var clipCount = _mcpTransitionRecipeCollectionCount(track.clips, "numItems", "source frame clips");
+            for (var ci = 0; ci < clipCount; ci++) {
+                var clip = track.clips[ci];
+                var start = _mcpTransitionRecipeTime(clip.start);
+                var end = _mcpTransitionRecipeTime(clip.end);
+                if (end <= start) return _err("Cannot prove clip timeline bounds");
+                if (seconds < start || seconds >= end) continue;
+                if (typeof clip.disabled !== "boolean") return _err("Cannot prove clip enabled state");
+                if (clip.disabled) continue;
+                if (typeof clip.getSpeed !== "function" || typeof clip.getSpeed() !== "number") return _err("Cannot prove numeric clip speed");
+                if (typeof clip.isSpeedReversed !== "function") return _err("Cannot prove clip reverse state");
+                var reversed = clip.isSpeedReversed();
+                // Native ExtendScript returns numeric 0/1; some hosts expose booleans.
+                if (reversed !== false && reversed !== true && reversed !== 0 && reversed !== 1) return _err("Cannot prove clip reverse state");
+                if (reversed === true || reversed === 1) return _err("Raw source frame fallback does not support reversed clips");
+                if (clip.inPoint === undefined || clip.outPoint === undefined) return _err("Missing clip source bounds");
+                var timing = _mcpReadClipTiming(clip);
+                if (timing.error) return _err(timing.error);
+                if (Math.abs(timing.rate - 1) > 0.000001) return _err("Raw source frame fallback requires normal clip speed");
+                if (Math.abs(timing.outPoint - timing.inPoint - (end - start)) > 0.000001) return _err("Clip source bounds do not match normal playback");
+                var item = clip.projectItem;
+                if (!item || typeof item.isSequence !== "function" || item.isSequence()) return _err("Cannot map a missing or nested source");
+                if (typeof item.isOffline !== "function" || item.isOffline()) return _err("Cannot map an offline or unreadable source");
+                if (typeof item.getMediaPath !== "function" || !String(item.getMediaPath() || "")) return _err("Source media path is unavailable");
+                var sourceSeconds = timing.inPoint + seconds - start;
+                if (sourceSeconds < timing.inPoint || sourceSeconds >= timing.outPoint) return _err("Source frame is outside clip bounds");
+                matches.push({ mediaPath: String(item.getMediaPath()), seconds: sourceSeconds, timelineSeconds: seconds });
+            }
+        }
+        if (!matches.length) return _err("No eligible source video clip at this time");
+        if (matches.length !== 1) return _err("Raw source fallback requires exactly one active video clip");
+        return _ok(matches[0]);
+    } catch (e) { return _err("getFrameSourceAtTime failed: " + e.message); }
+}
+
 // ---------------------------------------------------------------------------
 // exportAAF(sequenceIndex, outputPath, optionsJson)
 // Export a sequence as an AAF file.

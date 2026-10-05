@@ -71,6 +71,9 @@ func registerExportTools2(s *server.MCPServer, orch Orchestrator, logger *zap.Lo
 				gomcp.Description("Image format for the exported frame (default: 'PNG'). PNG is lossless with transparency support. JPEG is smaller but lossy with no transparency."),
 				gomcp.Enum("PNG", "JPEG"),
 			),
+			gomcp.WithBoolean("allow_source_fallback",
+				gomcp.Description("Default false. If native export fails, allow a raw source-file PNG. Excludes timeline effects, color, overlays and composition; never use as a timeline preview. Requires an unambiguous normal-speed source clip and a new output path."),
+			),
 		),
 		makeExportFrameHandler(orch, logger),
 	)
@@ -306,8 +309,9 @@ func makeExportFrameHandler(orch Orchestrator, logger *zap.Logger) server.ToolHa
 		}
 
 		params := &ExportFrameParams{
-			OutputPath: outputPath,
-			Format:     gomcp.ParseString(req, "format", "PNG"),
+			OutputPath:          outputPath,
+			Format:              gomcp.ParseString(req, "format", "PNG"),
+			AllowSourceFallback: gomcp.ParseBoolean(req, "allow_source_fallback", false),
 		}
 
 		result, err := orch.ExportFrame(ctx, params)

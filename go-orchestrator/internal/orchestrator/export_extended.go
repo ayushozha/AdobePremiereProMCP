@@ -60,14 +60,31 @@ func (e *Engine) ExportFrame(ctx context.Context, params *ExportFrameParams) (*G
 	if params.OutputPath == "" {
 		return nil, fmt.Errorf("export frame: output_path must not be empty")
 	}
-	argsJSON, _ := json.Marshal(map[string]any{
-		"params": params,
-	})
-	result, err := e.premiere.EvalCommand(ctx, "exportFrame", string(argsJSON))
-	if err != nil {
-		return nil, fmt.Errorf("ExportFrame: %w", err)
+	if params.AllowSourceFallback && params.Format != "" && params.Format != "PNG" {
+		return nil, fmt.Errorf("source fallback supports PNG only")
 	}
-	return &GenericExportResult{Status: "success", OutputPath: result}, nil
+	argsJSON, _ := json.Marshal(map[string]any{"params": params})
+	result, nativeErr := e.premiere.EvalCommand(ctx, "exportFrame", string(argsJSON))
+	if nativeErr == nil {
+		var envelope struct {
+			Success *bool  `json:"success"`
+			Error   string `json:"error"`
+		}
+		if json.Unmarshal([]byte(result), &envelope) == nil && envelope.Success != nil && !*envelope.Success {
+			nativeErr = fmt.Errorf("%s", envelope.Error)
+		}
+	}
+	if nativeErr == nil {
+		return &GenericExportResult{Status: "success", OutputPath: result}, nil
+	}
+	if !params.AllowSourceFallback || ctx.Err() != nil {
+		return nil, fmt.Errorf("ExportFrame: %w", nativeErr)
+	}
+	fallback, err := e.exportSourceFrameFallback(ctx, params.OutputPath)
+	if err != nil {
+		return nil, fmt.Errorf("ExportFrame native failed (%v); source fallback failed: %w", nativeErr, err)
+	}
+	return fallback, nil
 }
 
 // ExportAAF exports a sequence as an AAF file.
