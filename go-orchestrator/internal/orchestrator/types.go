@@ -481,8 +481,9 @@ type ExportViaAMEParams struct {
 
 // ExportFrameParams defines how to export a single frame.
 type ExportFrameParams struct {
-	OutputPath string `json:"output_path"`
-	Format     string `json:"format"` // "PNG" or "JPEG"
+	AllowSourceFallback bool   `json:"allow_source_fallback,omitempty"`
+	OutputPath          string `json:"output_path"`
+	Format              string `json:"format"` // "PNG" or "JPEG"
 }
 
 // ExportAAFParams defines how to export as AAF.
@@ -558,11 +559,15 @@ type ExportProgressResult struct {
 
 // GenericExportResult is a flexible result returned by various export operations.
 type GenericExportResult struct {
-	Status       string `json:"status"`
-	OutputPath   string `json:"output_path,omitempty"`
-	SequenceName string `json:"sequence_name,omitempty"`
-	ProjectName  string `json:"project_name,omitempty"`
-	JobID        string `json:"job_id,omitempty"`
+	Warning         string  `json:"warning,omitempty"`
+	SourcePath      string  `json:"source_path,omitempty"`
+	SourceSeconds   float64 `json:"source_seconds,omitempty"`
+	TimelineSeconds float64 `json:"timeline_seconds,omitempty"`
+	Status          string  `json:"status"`
+	OutputPath      string  `json:"output_path,omitempty"`
+	SequenceName    string  `json:"sequence_name,omitempty"`
+	ProjectName     string  `json:"project_name,omitempty"`
+	JobID           string  `json:"job_id,omitempty"`
 }
 
 // EDLExecutionResult is returned after executing a full EDL.

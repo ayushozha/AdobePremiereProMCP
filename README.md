@@ -26,7 +26,7 @@ Video editors spend hours on repetitive tasks: syncing clips, rough cuts, color 
 
 ## Capabilities and Verification Boundary
 
-The source registry contains **1,066 MCP tool schemas** backed by **934 literal host command names**. The default `standard` profile exposes **74 curated, readback-first tools**, which fits common model function limits and covers normal editing work. The full registry remains available for compatibility and specialist use; schema or symbol presence is not proof that a command works in every Premiere version.
+The source registry contains **1,066 MCP tool schemas** backed by **935 literal host command names**. The default `standard` profile exposes **74 curated, readback-first tools**, which fits common model function limits and covers normal editing work. The full registry remains available for compatibility and specialist use; schema or symbol presence is not proof that a command works in every Premiere version.
 
 The curated surface includes:
 
